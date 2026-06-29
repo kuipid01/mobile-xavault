@@ -1,4 +1,3 @@
-
 import {
   Bank,
   BankAccount,
@@ -26,9 +25,10 @@ import {
 import { useRequestWithdrawal } from "@/hooks/app/withdrawals";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -41,6 +41,27 @@ import {
   View,
 } from "react-native";
 import Toast from "react-native-toast-message";
+
+// ─── Design tokens ────────────────────────────────────────────────────────────
+
+const COLOR = {
+  forestDeep: "#063B2E",
+  forestMid: "#106B4F",
+  forestLight: "#EAF7F1",
+  forestBorder: "#CDEDE0",
+  forestMuted: "#7A8580",
+  forestFaint: "#9EAAA5",
+  surface: "#FFFFFF",
+  bg: "#F0F4F2",
+  border: "#DDE6E1",
+  bgSubtle: "#F4F7F5",
+  amber: "#946500",
+  amberBg: "#FFFBEE",
+  amberBorder: "#F2E4A8",
+  textBody: "#063B2E",
+  textMuted: "#7A8580",
+  textFaint: "#9EAAA5",
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,7 +78,9 @@ type WithdrawalTarget =
     envelope: Envelope;
   };
 
-type Step = "plan" | "source" | "amount" | "destination" | "confirm";
+// Merged PIN + Confirm into one step; removed redundant confirm step
+type Step = "plan" | "source" | "amount" | "destination" | "pin";
+
 type DestinationSelection = {
   type: "account" | "beneficiary";
   id: string;
@@ -97,7 +120,7 @@ const planWithdrawalTarget = (plan: Plan): WithdrawalTarget | null => {
     id: plan.id,
     label: plan.name,
     balance,
-    reason: matured ? "Reached end date" : "Flexible balance",
+    reason: matured ? "Reached end date" : "Flexible",
   };
 };
 
@@ -111,13 +134,13 @@ const envelopeWithdrawalTarget = (envelope: Envelope): WithdrawalTarget | null =
     id: envelope.id,
     label: envelope.name,
     balance,
-    reason: matured ? "Reached end date" : "Flexible balance",
+    reason: matured ? "Reached end date" : "Flexible",
     envelope,
   };
 };
 
 const maskAccountNumber = (value: string) =>
-  value.length > 4 ? `**${value.slice(-4)}` : value;
+  value.length > 4 ? `••${value.slice(-4)}` : value;
 
 const mapDestination = (
   account: BankAccount,
@@ -130,123 +153,503 @@ const mapDestination = (
   accountNumber: account.account_number,
 });
 
-// ─── Step indicator ───────────────────────────────────────────────────────────
+const createWithdrawalAttemptKey = () =>
+  `withdrawal:${Date.now()}:${Math.random().toString(36).slice(2)}:${Math.random()
+    .toString(36)
+    .slice(2)}`;
 
-const STEPS: Step[] = ["plan", "source", "amount", "destination", "confirm"];
+const showBottomToast = (options: Parameters<typeof Toast.show>[0]) =>
+  Toast.show({ position: "bottom", ...options });
+
+// ─── Step config ──────────────────────────────────────────────────────────────
+
+const STEPS: Step[] = ["plan", "source", "amount", "destination", "pin"];
 const STEP_LABELS: Record<Step, string> = {
   plan: "Plan",
   source: "Source",
   amount: "Amount",
   destination: "To",
-  confirm: "Review",
+  pin: "Confirm",
+};
+const STEP_ICONS: Record<Step, keyof typeof Ionicons.glyphMap> = {
+  plan: "layers-outline",
+  source: "wallet-outline",
+  amount: "cash-outline",
+  destination: "paper-plane-outline",
+  pin: "shield-checkmark-outline",
 };
 
-const StepBar = ({ current }: { current: Step }) => {
+// ─── Progress bar ─────────────────────────────────────────────────────────────
+
+const ProgressBar = ({ current }: { current: Step }) => {
   const currentIdx = STEPS.indexOf(current);
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.spring(progress, {
+      toValue: (currentIdx + 1) / STEPS.length,
+      useNativeDriver: false,
+      tension: 60,
+      friction: 10,
+    }).start();
+  }, [currentIdx]);
+
+  const barWidth = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0%", "100%"],
+  });
+
   return (
-    <View style={stepStyles.row}>
-      {STEPS.map((step, i) => {
-        const done = i < currentIdx;
-        const active = i === currentIdx;
-        return (
-          <View key={step} style={stepStyles.stepWrap}>
-            <View
-              style={[
-                stepStyles.dot,
-                done && stepStyles.dotDone,
-                active && stepStyles.dotActive,
-              ]}
-            >
-              {done ? (
-                <Ionicons name="checkmark" size={10} color="#FFFFFF" />
-              ) : (
-                <Text style={[stepStyles.dotNum, active && stepStyles.dotNumActive]}>
-                  {i + 1}
-                </Text>
-              )}
-            </View>
-            <Text
-              style={[
-                stepStyles.label,
-                active && stepStyles.labelActive,
-                done && stepStyles.labelDone,
-              ]}
-            >
-              {STEP_LABELS[step]}
-            </Text>
-            {i < STEPS.length - 1 && (
-              <View style={[stepStyles.line, done && stepStyles.lineDone]} />
-            )}
-          </View>
-        );
-      })}
+    <View style={progressStyles.wrap}>
+      <View style={progressStyles.track}>
+        <Animated.View style={[progressStyles.fill, { width: barWidth }]} />
+      </View>
+      <View style={progressStyles.labelRow}>
+        <Text style={progressStyles.stepName}>
+          {STEP_LABELS[current]}
+        </Text>
+        <Text style={progressStyles.stepCount}>
+          {currentIdx + 1} of {STEPS.length}
+        </Text>
+      </View>
     </View>
   );
 };
 
-const stepStyles = StyleSheet.create({
+const progressStyles = StyleSheet.create({
+  wrap: {
+    marginBottom: 24,
+    gap: 8,
+  },
+  track: {
+    height: 3,
+    borderRadius: 99,
+    backgroundColor: COLOR.border,
+    overflow: "hidden",
+  },
+  fill: {
+    height: "100%",
+    borderRadius: 99,
+    backgroundColor: COLOR.forestMid,
+  },
+  labelRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  stepName: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: COLOR.forestMid,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  stepCount: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: COLOR.textFaint,
+  },
+});
+
+// ─── Shared list row ──────────────────────────────────────────────────────────
+
+const SelectRow = ({
+  selected,
+  icon,
+  title,
+  meta,
+  tag,
+  balance,
+  currency,
+  onPress,
+}: {
+  selected: boolean;
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  meta?: string;
+  tag?: string;
+  balance?: number;
+  currency?: string;
+  onPress: () => void;
+}) => (
+  <TouchableOpacity
+    activeOpacity={0.8}
+    onPress={onPress}
+    style={[rowStyles.row, selected && rowStyles.rowSelected]}
+  >
+    <View style={[rowStyles.icon, selected && rowStyles.iconSelected]}>
+      <Ionicons name={icon} size={18} color={selected ? "#FFF" : COLOR.forestMuted} />
+    </View>
+    <View style={rowStyles.body}>
+      <Text style={[rowStyles.title, selected && rowStyles.titleSelected]} numberOfLines={1}>
+        {title}
+      </Text>
+      {meta ? (
+        <Text style={rowStyles.meta} numberOfLines={1}>
+          {meta}
+        </Text>
+      ) : null}
+      {tag ? (
+        <View style={[rowStyles.tag, selected && rowStyles.tagSelected]}>
+          <Text style={[rowStyles.tagText, selected && rowStyles.tagTextSelected]}>
+            {tag}
+          </Text>
+        </View>
+      ) : null}
+      {balance != null ? (
+        <Text style={[rowStyles.balance, selected && rowStyles.balanceSelected]}>
+          {formatMoney(balance, currency)} available
+        </Text>
+      ) : null}
+    </View>
+    <View style={[rowStyles.radio, selected && rowStyles.radioSelected]}>
+      {selected && <View style={rowStyles.radioDot} />}
+    </View>
+  </TouchableOpacity>
+);
+
+const rowStyles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 28,
+    gap: 12,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: COLOR.border,
+    backgroundColor: COLOR.surface,
+    padding: 14,
   },
-  stepWrap: {
-    flex: 1,
+  rowSelected: {
+    borderColor: COLOR.forestDeep,
+    backgroundColor: "#F4FAF7",
+  },
+  icon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: COLOR.bgSubtle,
     alignItems: "center",
-    position: "relative",
+    justifyContent: "center",
   },
-  dot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "#EDF1EE",
+  iconSelected: {
+    backgroundColor: COLOR.forestDeep,
+  },
+  body: { flex: 1, gap: 3 },
+  title: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: COLOR.textBody,
+  },
+  titleSelected: {
+    color: COLOR.forestDeep,
+  },
+  meta: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: COLOR.textFaint,
+  },
+  tag: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: COLOR.bgSubtle,
+    marginTop: 2,
+  },
+  tagSelected: {
+    backgroundColor: COLOR.forestLight,
+  },
+  tagText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: COLOR.textMuted,
+    textTransform: "capitalize",
+  },
+  tagTextSelected: {
+    color: COLOR.forestMid,
+  },
+  balance: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: COLOR.textBody,
+    marginTop: 2,
+  },
+  balanceSelected: {
+    color: COLOR.forestMid,
+  },
+  radio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: COLOR.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  radioSelected: {
+    borderColor: COLOR.forestDeep,
+  },
+  radioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: COLOR.forestDeep,
+  },
+});
+
+// ─── Loading / Empty states ───────────────────────────────────────────────────
+
+const LoadingState = ({ text }: { text: string }) => (
+  <View style={stateStyles.row}>
+    <ActivityIndicator color={COLOR.forestDeep} size="small" />
+    <Text style={stateStyles.text}>{text}</Text>
+  </View>
+);
+
+const EmptyState = ({
+  icon,
+  title,
+  subtitle,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  subtitle?: string;
+}) => (
+  <View style={stateStyles.emptyCard}>
+    <View style={stateStyles.emptyIcon}>
+      <Ionicons name={icon} size={22} color={COLOR.textFaint} />
+    </View>
+    <Text style={stateStyles.emptyTitle}>{title}</Text>
+    {subtitle ? <Text style={stateStyles.emptySub}>{subtitle}</Text> : null}
+  </View>
+);
+
+const stateStyles = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 24,
+    justifyContent: "center",
+  },
+  text: {
+    color: COLOR.textFaint,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  emptyCard: {
+    backgroundColor: COLOR.bgSubtle,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: COLOR.border,
+    padding: 28,
+    alignItems: "center",
+    gap: 8,
+  },
+  emptyIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: COLOR.surface,
+    borderWidth: 1,
+    borderColor: COLOR.border,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 4,
-    borderWidth: 1.5,
-    borderColor: "#DDE6E1",
   },
-  dotActive: {
-    backgroundColor: "#063B2E",
-    borderColor: "#063B2E",
-  },
-  dotDone: {
-    backgroundColor: "#106B4F",
-    borderColor: "#106B4F",
-  },
-  dotNum: {
-    fontSize: 10,
+  emptyTitle: {
+    fontSize: 14,
     fontWeight: "900",
-    color: "#9EAAA5",
+    color: COLOR.textBody,
   },
-  dotNumActive: {
-    color: "#FFFFFF",
+  emptySub: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: COLOR.textFaint,
+    textAlign: "center",
+    lineHeight: 18,
+    maxWidth: 240,
   },
-  label: {
-    fontSize: 9,
-    fontWeight: "700",
-    color: "#9EAAA5",
+});
+
+// ─── Summary card (reused in PIN + Confirm steps) ─────────────────────────────
+
+const SummaryCard = ({
+  plan,
+  target,
+  destination,
+  amountInKobo,
+  withdrawAll,
+  compact = false,
+}: {
+  plan?: Plan;
+  target?: WithdrawalTarget;
+  destination?: DestinationSelection;
+  amountInKobo: number;
+  withdrawAll: boolean;
+  compact?: boolean;
+}) => (
+  <View style={summaryStyles.card}>
+    <View style={summaryStyles.amountBlock}>
+      <Text style={summaryStyles.amountLabel}>You&apos;re withdrawing</Text>
+      <Text style={summaryStyles.amountValue}>
+        {formatMoney(amountInKobo, plan?.currency)}
+      </Text>
+      {withdrawAll && (
+        <View style={summaryStyles.badge}>
+          <Ionicons name="checkmark-circle" size={11} color={COLOR.forestMid} />
+          <Text style={summaryStyles.badgeText}>Full balance</Text>
+        </View>
+      )}
+    </View>
+    <View style={summaryStyles.divider} />
+    <View style={summaryStyles.rows}>
+      {!compact && (
+        <SummaryRow
+          label="Plan"
+          value={plan?.name}
+          icon="layers-outline"
+        />
+      )}
+      <SummaryRow
+        label="From"
+        value={target?.label}
+        icon={target?.type === "plan" ? "layers-outline" : "file-tray-outline"}
+        sub={target?.type === "envelope" ? "Envelope" : "Plan balance"}
+      />
+      <SummaryRow
+        label="To"
+        value={destination?.label}
+        icon="paper-plane-outline"
+        sub={
+          destination
+            ? `${destination.bank} · ${maskAccountNumber(destination.accountNumber)}`
+            : undefined
+        }
+        last
+      />
+    </View>
+  </View>
+);
+
+const SummaryRow = ({
+  label,
+  value,
+  icon,
+  sub,
+  last,
+}: {
+  label: string;
+  value?: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  sub?: string;
+  last?: boolean;
+}) => (
+  <View style={[summaryStyles.detailRow, last && summaryStyles.detailRowLast]}>
+    <View style={summaryStyles.detailIconWrap}>
+      <Ionicons name={icon} size={13} color={COLOR.forestMid} />
+    </View>
+    <View style={summaryStyles.detailContent}>
+      <Text style={summaryStyles.detailLabel}>{label}</Text>
+      <Text style={summaryStyles.detailValue} numberOfLines={1}>
+        {value ?? "—"}
+      </Text>
+      {sub ? <Text style={summaryStyles.detailSub}>{sub}</Text> : null}
+    </View>
+  </View>
+);
+
+const summaryStyles = StyleSheet.create({
+  card: {
+    backgroundColor: COLOR.surface,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: COLOR.border,
+    overflow: "hidden",
+    marginBottom: 16,
+  },
+  amountBlock: {
+    padding: 20,
+    gap: 6,
+    backgroundColor: COLOR.forestLight,
+  },
+  amountLabel: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: COLOR.forestMid,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  amountValue: {
+    fontSize: 32,
+    fontWeight: "900",
+    color: COLOR.forestDeep,
+    letterSpacing: -1,
+  },
+  badge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    alignSelf: "flex-start",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: COLOR.surface,
+    borderWidth: 1,
+    borderColor: COLOR.forestBorder,
+    marginTop: 2,
+  },
+  badgeText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: COLOR.forestMid,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: COLOR.border,
+  },
+  rows: {},
+  detailRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F0F4F2",
+  },
+  detailRowLast: {
+    borderBottomWidth: 0,
+  },
+  detailIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    backgroundColor: COLOR.forestLight,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  detailContent: {
+    flex: 1,
+    gap: 2,
+  },
+  detailLabel: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: COLOR.textFaint,
     textTransform: "uppercase",
     letterSpacing: 0.4,
   },
-  labelActive: {
-    color: "#063B2E",
-    fontWeight: "900",
+  detailValue: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: COLOR.textBody,
   },
-  labelDone: {
-    color: "#106B4F",
-  },
-  line: {
-    position: "absolute",
-    top: 12,
-    left: "50%",
-    right: "-50%",
-    height: 1.5,
-    backgroundColor: "#DDE6E1",
-    zIndex: -1,
-  },
-  lineDone: {
-    backgroundColor: "#106B4F",
+  detailSub: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: COLOR.textMuted,
   },
 });
 
@@ -263,6 +666,12 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
   const [newWithdrawalPin, setNewWithdrawalPin] = useState("");
   const [resetOtp, setResetOtp] = useState("");
   const [pinMode, setPinMode] = useState<"enter" | "reset">("enter");
+  const [withdrawalAttemptKey, setWithdrawalAttemptKey] = useState(
+    createWithdrawalAttemptKey
+  );
+  const [processingState, setProcessingState] = useState<
+    "processing" | "success" | undefined
+  >();
 
   const { data: plansData, isLoading: isPlansLoading } = usePlans();
   const plans = useMemo(() => plansData?.items || [], [plansData?.items]);
@@ -305,34 +714,30 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
   const destinationOptions: DestinationSelection[] = useMemo(
     () => [
       ...bankAccounts.map((account) => mapDestination(account, "account")),
-      ...beneficiaries.map((account) =>
-        mapDestination(account, "beneficiary")
-      ),
+      ...beneficiaries.map((account) => mapDestination(account, "beneficiary")),
     ],
     [bankAccounts, beneficiaries]
   );
   const selectedDestination = destinationOptions.find(
-    (destination) =>
-      `${destination.type}:${destination.id}` === selectedDestinationKey
+    (d) => `${d.type}:${d.id}` === selectedDestinationKey
   );
   const amountInKobo = withdrawAll
     ? selectedTarget?.balance || 0
     : nairaToKobo(amount);
   const amountIsValid =
-    !!selectedTarget &&
-    amountInKobo > 0 &&
-    amountInKobo <= selectedTarget.balance;
+    !!selectedTarget && amountInKobo > 0 && amountInKobo <= selectedTarget.balance;
   const hasWithdrawalPin = !!pinStatus?.has_pin;
   const pinToSubmit = hasWithdrawalPin ? withdrawalPin : newWithdrawalPin;
   const pinIsValid = /^\d{4}$/.test(pinToSubmit);
-  const canConfirmWithdrawal =
+  const canConfirm =
     !!selectedPlan &&
     !!selectedTarget &&
     !!selectedDestination &&
     amountIsValid &&
     !isPinStatusLoading &&
     pinMode === "enter" &&
-    pinIsValid;
+    pinIsValid &&
+    !processingState;
 
   // Auto-select first plan
   useEffect(() => {
@@ -357,6 +762,8 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
     setNewWithdrawalPin("");
     setResetOtp("");
     setPinMode("enter");
+    setWithdrawalAttemptKey(createWithdrawalAttemptKey());
+    setProcessingState(undefined);
     onClose();
   };
 
@@ -369,19 +776,19 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
   const handleContinue = () => {
     if (step === "plan") {
       if (!selectedPlanId) {
-        Toast.show({ type: "error", text1: "Select a plan to continue." });
+        showBottomToast({ type: "error", text1: "Select a plan to continue." });
         return;
       }
       setStep("source");
     } else if (step === "source") {
       if (!selectedTargetId) {
-        Toast.show({ type: "error", text1: "Select a withdrawal source." });
+        showBottomToast({ type: "error", text1: "Select a withdrawal source." });
         return;
       }
       setStep("amount");
     } else if (step === "amount") {
       if (!amountIsValid) {
-        Toast.show({
+        showBottomToast({
           type: "error",
           text1: "Invalid amount",
           text2: `Max: ${formatMoney(selectedTarget?.balance || 0)}`,
@@ -391,21 +798,26 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
       setStep("destination");
     } else if (step === "destination") {
       if (!selectedDestination) {
-        Toast.show({ type: "error", text1: "Select a destination account." });
+        showBottomToast({ type: "error", text1: "Select a destination account." });
         return;
       }
-      setStep("confirm");
+      setStep("pin");
+    } else if (step === "pin") {
+      void handleConfirm();
     }
   };
 
   const handleConfirm = async () => {
-    if (!canConfirmWithdrawal || !selectedPlan || !selectedTarget || !selectedDestination) return;
+    if (!canConfirm || !selectedPlan || !selectedTarget || !selectedDestination)
+      return;
 
+    // If user doesn't have a PIN yet, save it first
     if (!hasWithdrawalPin) {
       try {
         await saveWithdrawalPin(newWithdrawalPin);
+        setWithdrawalPin(newWithdrawalPin);
       } catch (error: any) {
-        Toast.show({
+        showBottomToast({
           type: "error",
           text1: "Could not save PIN",
           text2:
@@ -428,18 +840,17 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
       destination_type: selectedDestination.type,
       destination_id: selectedDestination.id,
       withdrawal_pin: pinToSubmit,
-      idempotency_key: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      idempotency_key: withdrawalAttemptKey,
     };
+
     try {
+      setProcessingState("processing");
       await requestWithdrawal({ planId: selectedPlan.id, payload });
-      Toast.show({
-        type: "success",
-        text1: "Withdrawal requested",
-        text2: `${formatMoney(amountInKobo, selectedPlan.currency)} is being sent.`,
-      });
-      resetAndClose();
+      setProcessingState("success");
     } catch (error: any) {
-      Toast.show({
+      setProcessingState(undefined);
+      setWithdrawalAttemptKey(createWithdrawalAttemptKey());
+      showBottomToast({
         type: "error",
         text1: "Withdrawal failed",
         text2:
@@ -450,13 +861,22 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
     }
   };
 
+  const isCTADisabled =
+    (step === "plan" && !selectedPlanId) ||
+    (step === "source" && !selectedTargetId) ||
+    (step === "amount" && !amountIsValid) ||
+    (step === "destination" && !selectedDestination) ||
+    (step === "pin" && (!canConfirm || isWithdrawing || isSettingPin));
+
+  const isLastStep = step === "pin";
+
   return (
     <Modal visible={visible} transparent animationType="slide">
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.overlay}
       >
-        <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
+        <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
         <Pressable style={StyleSheet.absoluteFill} onPress={resetAndClose} />
 
         <View style={styles.sheet}>
@@ -466,27 +886,25 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
           <View style={styles.sheetHeader}>
             <TouchableOpacity
               onPress={goBack}
-              style={styles.backButton}
+              style={styles.navButton}
               activeOpacity={0.75}
             >
-              <Ionicons name="chevron-back" size={18} color="#063B2E" />
+              <Ionicons name="chevron-back" size={18} color={COLOR.forestDeep} />
             </TouchableOpacity>
 
-            <View style={styles.sheetTitleWrap}>
-              <Text style={styles.sheetTitle}>Withdraw Money</Text>
-            </View>
+            <Text style={styles.sheetTitle}>Withdraw</Text>
 
             <TouchableOpacity
               onPress={resetAndClose}
-              style={styles.closeButton}
+              style={styles.navButton}
               activeOpacity={0.75}
             >
-              <Ionicons name="close" size={16} color="#063B2E" />
+              <Ionicons name="close" size={16} color={COLOR.forestDeep} />
             </TouchableOpacity>
           </View>
 
-          {/* ── Step bar ── */}
-          <StepBar current={step} />
+          {/* ── Progress ── */}
+          <ProgressBar current={step} />
 
           {/* ── Step content ── */}
           <ScrollView
@@ -494,7 +912,6 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
             contentContainerStyle={styles.content}
             keyboardShouldPersistTaps="handled"
           >
-            {/* STEP 1 — Pick plan */}
             {step === "plan" && (
               <StepPlan
                 plans={plans}
@@ -504,7 +921,6 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
               />
             )}
 
-            {/* STEP 2 — Pick source */}
             {step === "source" && (
               <StepSource
                 targetOptions={targetOptions}
@@ -515,7 +931,6 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
               />
             )}
 
-            {/* STEP 3 — Enter amount */}
             {step === "amount" && (
               <StepAmount
                 selectedTarget={selectedTarget}
@@ -534,7 +949,6 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
               />
             )}
 
-            {/* STEP 4 — Pick destination */}
             {step === "destination" && (
               <StepDestination
                 banks={banks}
@@ -563,9 +977,8 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
               />
             )}
 
-            {/* STEP 4 — Review */}
-            {step === "confirm" && (
-              <StepConfirm
+            {step === "pin" && (
+              <StepPin
                 selectedPlan={selectedPlan}
                 selectedTarget={selectedTarget}
                 selectedDestination={selectedDestination}
@@ -586,13 +999,13 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
                   try {
                     await forgotWithdrawalPin();
                     setPinMode("reset");
-                    Toast.show({
+                    showBottomToast({
                       type: "success",
                       text1: "OTP sent",
                       text2: "Check your email for the reset code.",
                     });
                   } catch (error: any) {
-                    Toast.show({
+                    showBottomToast({
                       type: "error",
                       text1: "Could not send OTP",
                       text2:
@@ -612,13 +1025,13 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
                     setNewWithdrawalPin("");
                     setResetOtp("");
                     setPinMode("enter");
-                    Toast.show({
+                    showBottomToast({
                       type: "success",
                       text1: "PIN reset",
                       text2: "You can now confirm this withdrawal.",
                     });
                   } catch (error: any) {
-                    Toast.show({
+                    showBottomToast({
                       type: "error",
                       text1: "Could not reset PIN",
                       text2:
@@ -638,44 +1051,37 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
           </ScrollView>
 
           {/* ── Footer CTA ── */}
-          {step !== "confirm" ? (
-            <TouchableOpacity
-              style={[
-                styles.cta,
-                ((step === "plan" && !selectedPlanId) ||
-                  (step === "source" && !selectedTargetId) ||
-                  (step === "amount" && !amountIsValid) ||
-                  (step === "destination" && !selectedDestination)) &&
-                styles.ctaDisabled,
-              ]}
-              onPress={handleContinue}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.ctaText}>Continue</Text>
-              <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[
-                styles.cta,
-                (isWithdrawing || isSettingPin || !canConfirmWithdrawal) &&
-                styles.ctaDisabled,
-              ]}
-              onPress={handleConfirm}
-              disabled={isWithdrawing || isSettingPin || !canConfirmWithdrawal}
-              activeOpacity={0.85}
-            >
-              {isWithdrawing || isSettingPin ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <>
-                  <Text style={styles.ctaText}>Confirm Withdrawal</Text>
-                  <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-                </>
-              )}
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={[styles.cta, isCTADisabled && styles.ctaDisabled]}
+            onPress={handleContinue}
+            disabled={isCTADisabled}
+            activeOpacity={0.85}
+          >
+            {(isWithdrawing || isSettingPin) && isLastStep ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <>
+                <Text style={styles.ctaText}>
+                  {isLastStep ? "Confirm withdrawal" : "Continue"}
+                </Text>
+                <Ionicons
+                  name={isLastStep ? "checkmark" : "arrow-forward"}
+                  size={16}
+                  color="#FFFFFF"
+                />
+              </>
+            )}
+          </TouchableOpacity>
         </View>
+
+        {/* ── Processing overlay (inline in same modal, not nested modal) ── */}
+        {processingState && (
+          <ProcessingOverlay
+            state={processingState}
+            amount={formatMoney(amountInKobo, selectedPlan?.currency)}
+            onDone={resetAndClose}
+          />
+        )}
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -694,79 +1100,27 @@ const StepPlan = ({
   selectedPlanId?: string;
   onSelect: (id: string) => void;
 }) => (
-  <View style={stepContentStyles.wrap}>
-    <Text style={stepContentStyles.heading}>Which plan?</Text>
-    <Text style={stepContentStyles.sub}>
-      Choose the spending plan you want to withdraw from.
-    </Text>
-
+  <View style={stepStyles.wrap}>
+    <StepHeading
+      title="Which plan?"
+      sub="Choose the plan you want to withdraw from."
+    />
     {isLoading ? (
-      <View style={stepContentStyles.loadingRow}>
-        <ActivityIndicator color="#063B2E" size="small" />
-        <Text style={stepContentStyles.loadingText}>Loading plans…</Text>
-      </View>
+      <LoadingState text="Loading plans…" />
     ) : plans.length === 0 ? (
-      <View style={stepContentStyles.emptyCard}>
-        <Ionicons name="folder-open-outline" size={24} color="#9EAAA5" />
-        <Text style={stepContentStyles.emptyText}>No plans found.</Text>
-      </View>
+      <EmptyState icon="folder-open-outline" title="No plans found" />
     ) : (
-      <View style={stepContentStyles.list}>
-        {plans.map((plan) => {
-          const selected = plan.id === selectedPlanId;
-          return (
-            <TouchableOpacity
-              key={plan.id}
-              activeOpacity={0.8}
-              onPress={() => onSelect(plan.id)}
-              style={[stepContentStyles.row, selected && stepContentStyles.rowActive]}
-            >
-              <View
-                style={[
-                  stepContentStyles.rowIcon,
-                  selected && stepContentStyles.rowIconActive,
-                ]}
-              >
-                <Ionicons
-                  name="layers-outline"
-                  size={18}
-                  color={selected ? "#FFFFFF" : "#7A8580"}
-                />
-              </View>
-
-              <View style={stepContentStyles.rowBody}>
-                <Text
-                  style={[
-                    stepContentStyles.rowTitle,
-                    selected && stepContentStyles.rowTitleActive,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {plan.name}
-                </Text>
-                <Text
-                  style={[
-                    stepContentStyles.rowMeta,
-                    selected && stepContentStyles.rowMetaActive,
-                  ]}
-                >
-                  {formatMoney(plan.amount, plan.currency)}
-                </Text>
-              </View>
-
-              <View
-                style={[
-                  stepContentStyles.radio,
-                  selected && stepContentStyles.radioActive,
-                ]}
-              >
-                {selected && (
-                  <View style={stepContentStyles.radioDot} />
-                )}
-              </View>
-            </TouchableOpacity>
-          );
-        })}
+      <View style={stepStyles.list}>
+        {plans.map((plan) => (
+          <SelectRow
+            key={plan.id}
+            selected={plan.id === selectedPlanId}
+            icon="layers-outline"
+            title={plan.name}
+            meta={formatMoney(plan.amount, plan.currency)}
+            onPress={() => onSelect(plan.id)}
+          />
+        ))}
       </View>
     )}
   </View>
@@ -787,104 +1141,33 @@ const StepSource = ({
   onSelect: (id: string) => void;
   currency?: string;
 }) => (
-  <View style={stepContentStyles.wrap}>
-    <Text style={stepContentStyles.heading}>Which source?</Text>
-    <Text style={stepContentStyles.sub}>
-      Only unlocked or matured balances are available to withdraw.
-    </Text>
-
+  <View style={stepStyles.wrap}>
+    <StepHeading
+      title="Which balance?"
+      sub="Only unlocked or matured balances can be withdrawn."
+    />
     {isLoading ? (
-      <View style={stepContentStyles.loadingRow}>
-        <ActivityIndicator color="#063B2E" size="small" />
-        <Text style={stepContentStyles.loadingText}>Checking sources…</Text>
-      </View>
+      <LoadingState text="Checking sources…" />
     ) : targetOptions.length === 0 ? (
-      <View style={stepContentStyles.lockedCard}>
-        <View style={stepContentStyles.lockedIcon}>
-          <Ionicons name="lock-closed-outline" size={22} color="#9EAAA5" />
-        </View>
-        <Text style={stepContentStyles.lockedTitle}>Everything is locked</Text>
-        <Text style={stepContentStyles.lockedText}>
-          Balances can only be withdrawn when a plan or envelope is flexible or
-          has reached its end date.
-        </Text>
-      </View>
+      <EmptyState
+        icon="lock-closed-outline"
+        title="Everything is locked"
+        subtitle="Balances unlock when a plan or envelope is flexible or reaches its end date."
+      />
     ) : (
-      <View style={stepContentStyles.list}>
-        {targetOptions.map((target) => {
-          const selected = target.id === selectedTargetId;
-          return (
-            <TouchableOpacity
-              key={`${target.type}-${target.id}`}
-              activeOpacity={0.8}
-              onPress={() => onSelect(target.id)}
-              style={[stepContentStyles.row, selected && stepContentStyles.rowActive]}
-            >
-              <View
-                style={[
-                  stepContentStyles.rowIcon,
-                  selected && stepContentStyles.rowIconActive,
-                ]}
-              >
-                <Ionicons
-                  name={
-                    target.type === "plan"
-                      ? "layers-outline"
-                      : "file-tray-outline"
-                  }
-                  size={18}
-                  color={selected ? "#FFFFFF" : "#7A8580"}
-                />
-              </View>
-
-              <View style={stepContentStyles.rowBody}>
-                <Text
-                  style={[
-                    stepContentStyles.rowTitle,
-                    selected && stepContentStyles.rowTitleActive,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {target.label}
-                </Text>
-                <View style={stepContentStyles.rowTagRow}>
-                  <View
-                    style={[
-                      stepContentStyles.tag,
-                      selected && stepContentStyles.tagActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        stepContentStyles.tagText,
-                        selected && stepContentStyles.tagTextActive,
-                      ]}
-                    >
-                      {target.reason}
-                    </Text>
-                  </View>
-                </View>
-                <Text
-                  style={[
-                    stepContentStyles.rowBalance,
-                    selected && stepContentStyles.rowBalanceActive,
-                  ]}
-                >
-                  {formatMoney(target.balance, currency)} available
-                </Text>
-              </View>
-
-              <View
-                style={[
-                  stepContentStyles.radio,
-                  selected && stepContentStyles.radioActive,
-                ]}
-              >
-                {selected && <View style={stepContentStyles.radioDot} />}
-              </View>
-            </TouchableOpacity>
-          );
-        })}
+      <View style={stepStyles.list}>
+        {targetOptions.map((target) => (
+          <SelectRow
+            key={`${target.type}-${target.id}`}
+            selected={target.id === selectedTargetId}
+            icon={target.type === "plan" ? "layers-outline" : "file-tray-outline"}
+            title={target.label}
+            tag={target.reason}
+            balance={target.balance}
+            currency={currency}
+            onPress={() => onSelect(target.id)}
+          />
+        ))}
       </View>
     )}
   </View>
@@ -909,38 +1192,38 @@ const StepAmount = ({
   onChangeAmount: (v: string) => void;
   onWithdrawAll: () => void;
 }) => (
-  <View style={stepContentStyles.wrap}>
-    <Text style={stepContentStyles.heading}>How much?</Text>
-    <Text style={stepContentStyles.sub}>
-      Enter the amount you want to withdraw from{" "}
-      <Text style={{ fontWeight: "900", color: "#063B2E" }}>
-        {selectedTarget?.label ?? "this source"}
-      </Text>
-      .
-    </Text>
+  <View style={stepStyles.wrap}>
+    <StepHeading
+      title="How much?"
+      sub={`Withdrawing from ${selectedTarget?.label ?? "this balance"}.`}
+    />
 
-    {/* Max available */}
-    <View style={amountStyles.maxCard}>
-      <Text style={amountStyles.maxLabel}>Available to withdraw</Text>
-      <Text style={amountStyles.maxValue}>
+    {/* Available balance chip */}
+    <View style={amountStyles.availableChip}>
+      <Ionicons name="wallet-outline" size={13} color={COLOR.forestMid} />
+      <Text style={amountStyles.availableLabel}>Available</Text>
+      <Text style={amountStyles.availableValue}>
         {formatMoney(selectedTarget?.balance || 0, currency)}
       </Text>
     </View>
 
-    {/* Input */}
-    <View style={amountStyles.inputWrap}>
+    {/* Large amount input */}
+    <View style={[amountStyles.inputWrap, withdrawAll && amountStyles.inputWrapMuted]}>
       <Text style={amountStyles.currencySymbol}>₦</Text>
       <TextInput
-        value={withdrawAll ? "" : amount}
-        onChangeText={onChangeAmount}
-        onFocus={() => {
-          if (withdrawAll) onChangeAmount(amount);
+        value={withdrawAll ? formatMoney(selectedTarget?.balance || 0, currency).replace(/[^0-9]/g, "") : amount}
+        onChangeText={(v) => {
+          if (withdrawAll) return;
+          onChangeAmount(v);
         }}
-        editable={!!selectedTarget}
+        onFocus={() => {
+          if (withdrawAll) onWithdrawAll();
+        }}
+        editable={!!selectedTarget && !withdrawAll}
         keyboardType="number-pad"
         placeholder="0"
-        placeholderTextColor="rgba(6,59,46,0.2)"
-        style={amountStyles.input}
+        placeholderTextColor={`${COLOR.forestDeep}22`}
+        style={[amountStyles.input, withdrawAll && amountStyles.inputMuted]}
         autoFocus={!withdrawAll}
       />
     </View>
@@ -949,45 +1232,36 @@ const StepAmount = ({
     <TouchableOpacity
       activeOpacity={0.8}
       onPress={onWithdrawAll}
-      style={[amountStyles.allButton, withdrawAll && amountStyles.allButtonActive]}
+      style={[amountStyles.allRow, withdrawAll && amountStyles.allRowActive]}
     >
-      <View
-        style={[
-          amountStyles.allCheck,
-          withdrawAll && amountStyles.allCheckActive,
-        ]}
-      >
-        {withdrawAll && (
-          <Ionicons name="checkmark" size={12} color="#FFFFFF" />
-        )}
+      <View style={[amountStyles.checkbox, withdrawAll && amountStyles.checkboxActive]}>
+        {withdrawAll && <Ionicons name="checkmark" size={12} color="#FFF" />}
       </View>
-      <Text
-        style={[
-          amountStyles.allText,
-          withdrawAll && amountStyles.allTextActive,
-        ]}
-      >
-        Withdraw full amount ({formatMoney(selectedTarget?.balance || 0, currency)})
+      <Text style={[amountStyles.allLabel, withdrawAll && amountStyles.allLabelActive]}>
+        Withdraw full amount
+      </Text>
+      <Text style={amountStyles.allAmount}>
+        {formatMoney(selectedTarget?.balance || 0, currency)}
       </Text>
     </TouchableOpacity>
 
     {/* Live preview */}
-    {amountInKobo > 0 && (
+    {amountInKobo > 0 && !withdrawAll && (
       <View style={amountStyles.preview}>
-        <Ionicons name="information-circle-outline" size={15} color="#106B4F" />
+        <Ionicons name="arrow-forward-circle-outline" size={15} color={COLOR.forestMid} />
         <Text style={amountStyles.previewText}>
-          You will withdraw{" "}
+          Sending{" "}
           <Text style={{ fontWeight: "900" }}>
             {formatMoney(amountInKobo, currency)}
-          </Text>
-          .
+          </Text>{" "}
+          to your account.
         </Text>
       </View>
     )}
   </View>
 );
 
-// ─── Step 4: Review ───────────────────────────────────────────────────────────
+// ─── Step 4: Destination ──────────────────────────────────────────────────────
 
 const StepDestination = ({
   banks,
@@ -1026,33 +1300,27 @@ const StepDestination = ({
   const [destinationSearch, setDestinationSearch] = useState("");
   const [bankSearch, setBankSearch] = useState("");
 
-  const selectedBank = banks.find((bank) => bank.code === selectedBankCode);
-  const filteredDestinations = destinationOptions.filter((destination) => {
-    const query = destinationSearch.trim().toLowerCase();
-    if (!query) return true;
-
-    return [
-      destination.label,
-      destination.bank,
-      destination.accountNumber,
-      destination.type,
-    ].some((value) => value.toLowerCase().includes(query));
+  const selectedBank = banks.find((b) => b.code === selectedBankCode);
+  const filteredDestinations = destinationOptions.filter((d) => {
+    const q = destinationSearch.trim().toLowerCase();
+    if (!q) return true;
+    return [d.label, d.bank, d.accountNumber].some((v) =>
+      v.toLowerCase().includes(q)
+    );
   });
-  const filteredBanks = banks.filter((bank) => {
-    const query = bankSearch.trim().toLowerCase();
-    if (!query) return true;
-
-    return [bank.name, bank.code, bank.slug]
+  const filteredBanks = banks.filter((b) => {
+    const q = bankSearch.trim().toLowerCase();
+    if (!q) return true;
+    return [b.name, b.code, b.slug]
       .filter(Boolean)
-      .some((value) => value.toLowerCase().includes(query));
+      .some((v) => v.toLowerCase().includes(q));
   });
 
   const handleResolve = async () => {
     if (!selectedBankCode || accountNumber.length < 10) {
-      Toast.show({ type: "error", text1: "Enter bank and account number" });
+      showBottomToast({ type: "error", text1: "Enter bank and 10-digit account number" });
       return;
     }
-
     try {
       const result = await onResolve({
         bank_code: selectedBankCode,
@@ -1061,7 +1329,7 @@ const StepDestination = ({
       setResolved(result);
     } catch (error: any) {
       setResolved(undefined);
-      Toast.show({
+      showBottomToast({
         type: "error",
         text1: "Could not verify account",
         text2:
@@ -1074,7 +1342,6 @@ const StepDestination = ({
 
   const handleSave = async () => {
     if (!selectedBank || !resolved) return;
-
     const payload = {
       bank_name: selectedBank.name,
       bank_code: selectedBank.code,
@@ -1082,174 +1349,139 @@ const StepDestination = ({
       nickname,
       is_default: saveAs === "account" && accounts.length === 0,
     };
-
     try {
       if (saveAs === "account") await onCreateAccount(payload);
       else await onCreateBeneficiary(payload);
-
-      Toast.show({ type: "success", text1: "Account saved" });
+      showBottomToast({ type: "success", text1: "Account saved" });
       setShowAdd(false);
       setAccountNumber("");
       setNickname("");
       setResolved(undefined);
     } catch (error: any) {
-      Toast.show({
+      showBottomToast({
         type: "error",
         text1: "Could not save account",
         text2:
-          error?.response?.data?.message ||
-          error?.message ||
-          "Please try again.",
+          error?.response?.data?.message || error?.message || "Please try again.",
       });
     }
   };
 
   return (
-    <View style={stepContentStyles.wrap}>
-      <Text style={stepContentStyles.heading}>Send to where?</Text>
-      <Text style={stepContentStyles.sub}>
-        Choose a verified account or add a new one before confirming.
-      </Text>
+    <View style={stepStyles.wrap}>
+      <StepHeading
+        title="Send to where?"
+        sub="Pick a saved account or add a new one."
+      />
 
-      {isLoading ? (
-        <View style={stepContentStyles.loadingRow}>
-          <ActivityIndicator color="#063B2E" size="small" />
-          <Text style={stepContentStyles.loadingText}>Loading accounts...</Text>
-        </View>
-      ) : null}
+      {isLoading && <LoadingState text="Loading accounts…" />}
 
-      {destinationOptions.length > 0 ? (
-        <View style={stepContentStyles.list}>
-          <View style={destinationStyles.searchBox}>
-            <Ionicons name="search" size={16} color="#7A8580" />
+      {!isLoading && destinationOptions.length === 0 && !showAdd && (
+        <EmptyState
+          icon="card-outline"
+          title="No saved accounts"
+          subtitle="Add a bank account below to continue."
+        />
+      )}
+
+      {destinationOptions.length > 0 && (
+        <View style={stepStyles.list}>
+          {/* Search */}
+          <View style={destStyles.searchRow}>
+            <Ionicons name="search-outline" size={15} color={COLOR.textFaint} />
             <TextInput
               value={destinationSearch}
               onChangeText={setDestinationSearch}
               placeholder="Search saved accounts"
-              placeholderTextColor="#9EAAA5"
-              style={destinationStyles.searchInput}
+              placeholderTextColor={COLOR.textFaint}
+              style={destStyles.searchInput}
             />
+            {destinationSearch.length > 0 && (
+              <TouchableOpacity onPress={() => setDestinationSearch("")}>
+                <Ionicons name="close-circle" size={16} color={COLOR.textFaint} />
+              </TouchableOpacity>
+            )}
           </View>
 
           {filteredDestinations.length === 0 ? (
-            <View style={stepContentStyles.emptyCard}>
-              <Ionicons name="search-outline" size={24} color="#9EAAA5" />
-              <Text style={stepContentStyles.emptyText}>No matching account.</Text>
-            </View>
-          ) : null}
-
-          {filteredDestinations.map((destination) => {
-            const key = `${destination.type}:${destination.id}`;
-            const selected = key === selectedDestinationKey;
-            return (
-              <TouchableOpacity
-                key={key}
-                activeOpacity={0.8}
-                onPress={() => onSelect(key)}
-                style={[
-                  stepContentStyles.row,
-                  selected && stepContentStyles.rowActive,
-                ]}
-              >
-                <View
-                  style={[
-                    stepContentStyles.rowIcon,
-                    selected && stepContentStyles.rowIconActive,
-                  ]}
-                >
-                  <Ionicons
-                    name={
-                      destination.type === "account"
-                        ? "card-outline"
-                        : "person-outline"
-                    }
-                    size={18}
-                    color={selected ? "#FFFFFF" : "#7A8580"}
-                  />
-                </View>
-
-                <View style={stepContentStyles.rowBody}>
-                  <Text style={stepContentStyles.rowTitle} numberOfLines={1}>
-                    {destination.label}
-                  </Text>
-                  <Text style={stepContentStyles.rowMeta}>
-                    {destination.bank} - {maskAccountNumber(destination.accountNumber)}
-                  </Text>
-                </View>
-
-                <View
-                  style={[
-                    stepContentStyles.radio,
-                    selected && stepContentStyles.radioActive,
-                  ]}
-                >
-                  {selected && <View style={stepContentStyles.radioDot} />}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
+            <EmptyState icon="search-outline" title="No matching accounts" />
+          ) : (
+            filteredDestinations.map((dest) => {
+              const key = `${dest.type}:${dest.id}`;
+              return (
+                <SelectRow
+                  key={key}
+                  selected={key === selectedDestinationKey}
+                  icon={dest.type === "account" ? "card-outline" : "person-outline"}
+                  title={dest.label}
+                  meta={`${dest.bank} · ${maskAccountNumber(dest.accountNumber)}`}
+                  onPress={() => onSelect(key)}
+                />
+              );
+            })
+          )}
         </View>
-      ) : !isLoading ? (
-        <View style={stepContentStyles.emptyCard}>
-          <Ionicons name="card-outline" size={24} color="#9EAAA5" />
-          <Text style={stepContentStyles.emptyText}>No saved accounts yet.</Text>
-        </View>
-      ) : null}
+      )}
 
+      {/* Add account toggle */}
       <TouchableOpacity
         activeOpacity={0.8}
-        style={destinationStyles.addToggle}
-        onPress={() => setShowAdd((prev) => !prev)}
+        style={destStyles.addToggle}
+        onPress={() => setShowAdd((p) => !p)}
       >
-        <Ionicons name={showAdd ? "remove" : "add"} size={16} color="#063B2E" />
-        <Text style={destinationStyles.addToggleText}>
-          {showAdd ? "Hide new account" : "Add account"}
+        <View style={destStyles.addToggleIcon}>
+          <Ionicons name={showAdd ? "remove" : "add"} size={16} color={COLOR.forestDeep} />
+        </View>
+        <Text style={destStyles.addToggleText}>
+          {showAdd ? "Cancel" : "Add a new account"}
         </Text>
       </TouchableOpacity>
 
-      {showAdd ? (
-        <View style={destinationStyles.form}>
-          <View style={destinationStyles.segment}>
-            {(["account", "beneficiary"] as const).map((option) => (
+      {showAdd && (
+        <View style={destStyles.form}>
+          {/* Account type segment */}
+          <View style={destStyles.segment}>
+            {(["account", "beneficiary"] as const).map((opt) => (
               <TouchableOpacity
-                key={option}
+                key={opt}
                 activeOpacity={0.8}
-                onPress={() => setSaveAs(option)}
-                style={[
-                  destinationStyles.segmentItem,
-                  saveAs === option && destinationStyles.segmentItemActive,
-                ]}
+                onPress={() => setSaveAs(opt)}
+                style={[destStyles.segItem, saveAs === opt && destStyles.segItemActive]}
               >
+                <Ionicons
+                  name={opt === "account" ? "person-outline" : "people-outline"}
+                  size={13}
+                  color={saveAs === opt ? "#FFF" : COLOR.textMuted}
+                />
                 <Text
-                  style={[
-                    destinationStyles.segmentText,
-                    saveAs === option && destinationStyles.segmentTextActive,
-                  ]}
+                  style={[destStyles.segText, saveAs === opt && destStyles.segTextActive]}
                 >
-                  {option === "account" ? "My account" : "Beneficiary"}
+                  {opt === "account" ? "My account" : "Beneficiary"}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          <Text style={destinationStyles.label}>Bank</Text>
-          <View style={destinationStyles.searchBox}>
-            <Ionicons name="search" size={16} color="#7A8580" />
+          {/* Bank selection */}
+          <Text style={destStyles.fieldLabel}>Bank</Text>
+          <View style={destStyles.searchRow}>
+            <Ionicons name="search-outline" size={15} color={COLOR.textFaint} />
             <TextInput
               value={bankSearch}
               onChangeText={setBankSearch}
-              placeholder="Search bank by name"
-              placeholderTextColor="#9EAAA5"
-              style={destinationStyles.searchInput}
+              placeholder="Search banks"
+              placeholderTextColor={COLOR.textFaint}
+              style={destStyles.searchInput}
             />
           </View>
           <ScrollView
-            style={destinationStyles.bankScroll}
-            contentContainerStyle={destinationStyles.bankList}
+            style={destStyles.bankScroll}
+            contentContainerStyle={{ gap: 6 }}
             nestedScrollEnabled
+            showsVerticalScrollIndicator={false}
           >
             {filteredBanks.slice(0, 30).map((bank) => {
-              const selected = bank.code === selectedBankCode;
+              const sel = bank.code === selectedBankCode;
               return (
                 <TouchableOpacity
                   key={bank.code + bank.name}
@@ -1258,16 +1490,13 @@ const StepDestination = ({
                     setSelectedBankCode(bank.code);
                     setResolved(undefined);
                   }}
-                  style={[
-                    destinationStyles.bankChip,
-                    selected && destinationStyles.bankChipActive,
-                  ]}
+                  style={[destStyles.bankChip, sel && destStyles.bankChipActive]}
                 >
+                  {sel && (
+                    <Ionicons name="checkmark-circle" size={13} color={COLOR.forestMid} />
+                  )}
                   <Text
-                    style={[
-                      destinationStyles.bankChipText,
-                      selected && destinationStyles.bankChipTextActive,
-                    ]}
+                    style={[destStyles.bankChipText, sel && destStyles.bankChipTextActive]}
                     numberOfLines={1}
                   >
                     {bank.name}
@@ -1275,75 +1504,79 @@ const StepDestination = ({
                 </TouchableOpacity>
               );
             })}
-            {filteredBanks.length === 0 ? (
-              <Text style={destinationStyles.noBankText}>No matching bank.</Text>
-            ) : null}
+            {filteredBanks.length === 0 && (
+              <Text style={destStyles.noBank}>No matching bank.</Text>
+            )}
           </ScrollView>
 
-          <Text style={destinationStyles.label}>Account number</Text>
+          {/* Account number */}
+          <Text style={destStyles.fieldLabel}>Account number</Text>
           <TextInput
             value={accountNumber}
-            onChangeText={(value) => {
-              setAccountNumber(value.replace(/[^0-9]/g, "").slice(0, 10));
+            onChangeText={(v) => {
+              setAccountNumber(v.replace(/[^0-9]/g, "").slice(0, 10));
               setResolved(undefined);
             }}
             keyboardType="number-pad"
-            placeholder="0123456789"
-            placeholderTextColor="#9EAAA5"
-            style={destinationStyles.input}
+            placeholder="10-digit account number"
+            placeholderTextColor={COLOR.textFaint}
+            style={destStyles.fieldInput}
+            maxLength={10}
           />
 
-          <Text style={destinationStyles.label}>Nickname</Text>
+          {/* Nickname */}
+          <Text style={destStyles.fieldLabel}>Nickname (optional)</Text>
           <TextInput
             value={nickname}
             onChangeText={setNickname}
-            placeholder="Optional"
-            placeholderTextColor="#9EAAA5"
-            style={destinationStyles.input}
+            placeholder="e.g. Salary account"
+            placeholderTextColor={COLOR.textFaint}
+            style={destStyles.fieldInput}
           />
 
-          {resolved ? (
-            <View style={destinationStyles.resolvedBox}>
-              <Ionicons name="checkmark-circle" size={18} color="#106B4F" />
-              <Text style={destinationStyles.resolvedText}>
-                {resolved.account_name}
-              </Text>
+          {/* Resolved name */}
+          {resolved && (
+            <View style={destStyles.resolvedBox}>
+              <Ionicons name="checkmark-circle" size={16} color={COLOR.forestMid} />
+              <Text style={destStyles.resolvedName}>{resolved.account_name}</Text>
             </View>
-          ) : null}
+          )}
 
-          <View style={destinationStyles.formActions}>
+          <View style={destStyles.formActions}>
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={handleResolve}
               disabled={isResolving}
-              style={destinationStyles.secondaryButton}
+              style={destStyles.secondaryBtn}
             >
-              <Text style={destinationStyles.secondaryButtonText}>
-                {isResolving ? "Verifying..." : "Verify"}
-              </Text>
+              {isResolving ? (
+                <ActivityIndicator size="small" color={COLOR.forestDeep} />
+              ) : (
+                <Text style={destStyles.secondaryBtnText}>Verify</Text>
+              )}
             </TouchableOpacity>
-
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={handleSave}
               disabled={!resolved || isSaving}
-              style={[
-                destinationStyles.saveButton,
-                (!resolved || isSaving) && styles.ctaDisabled,
-              ]}
+              style={[destStyles.primaryBtn, (!resolved || isSaving) && { opacity: 0.4 }]}
             >
-              <Text style={destinationStyles.saveButtonText}>
-                {isSaving ? "Saving..." : "Save"}
-              </Text>
+              {isSaving ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <Text style={destStyles.primaryBtnText}>Save account</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
-      ) : null}
+      )}
     </View>
   );
 };
 
-const StepConfirm = ({
+// ─── Step 5: PIN + confirm (merged) ──────────────────────────────────────────
+
+const StepPin = ({
   selectedPlan,
   selectedTarget,
   selectedDestination,
@@ -1377,179 +1610,131 @@ const StepConfirm = ({
   resetOtp: string;
   isSendingPinOtp: boolean;
   isResettingPin: boolean;
-  onChangeWithdrawalPin: (value: string) => void;
-  onChangeNewWithdrawalPin: (value: string) => void;
-  onChangeResetOtp: (value: string) => void;
+  onChangeWithdrawalPin: (v: string) => void;
+  onChangeNewWithdrawalPin: (v: string) => void;
+  onChangeResetOtp: (v: string) => void;
   onForgotPin: () => void;
   onResetPin: () => void;
   onCancelReset: () => void;
 }) => {
-  const cleanPin = (value: string) => value.replace(/[^0-9]/g, "").slice(0, 4);
-  const cleanOtp = (value: string) => value.replace(/[^0-9]/g, "").slice(0, 6);
+  const cleanPin = (v: string) => v.replace(/[^0-9]/g, "").slice(0, 4);
+  const cleanOtp = (v: string) => v.replace(/[^0-9]/g, "").slice(0, 6);
   const resetReady = resetOtp.length === 6 && newWithdrawalPin.length === 4;
+  const activePin = hasWithdrawalPin ? withdrawalPin : newWithdrawalPin;
 
   return (
-    <View style={stepContentStyles.wrap}>
-      <Text style={stepContentStyles.heading}>Review &amp; confirm</Text>
-      <Text style={stepContentStyles.sub}>
-        Double-check the details before releasing your funds.
-      </Text>
+    <View style={stepStyles.wrap}>
+      <StepHeading
+        title="Review & approve"
+        sub="Confirm the details, then enter your PIN to send."
+      />
 
-      <View style={confirmStyles.summaryCard}>
-        <View style={confirmStyles.amountRow}>
-          <Text style={confirmStyles.amountLabel}>Withdrawal amount</Text>
-          <Text style={confirmStyles.amountValue}>
-            {formatMoney(amountInKobo, selectedPlan?.currency)}
-          </Text>
-          {withdrawAll && (
-            <View style={confirmStyles.allBadge}>
-              <Text style={confirmStyles.allBadgeText}>Full balance</Text>
-            </View>
-          )}
-        </View>
+      {/* Summary */}
+      <SummaryCard
+        plan={selectedPlan}
+        target={selectedTarget}
+        destination={selectedDestination}
+        amountInKobo={amountInKobo}
+        withdrawAll={withdrawAll}
+      />
 
-        <View style={confirmStyles.divider} />
-
-        <View style={confirmStyles.detailRow}>
-          <Text style={confirmStyles.detailLabel}>From</Text>
-          <Text style={confirmStyles.detailValue} numberOfLines={1}>
-            {selectedTarget?.label}
-          </Text>
-        </View>
-
-        <View style={confirmStyles.detailRow}>
-          <Text style={confirmStyles.detailLabel}>Plan</Text>
-          <Text style={confirmStyles.detailValue} numberOfLines={1}>
-            {selectedPlan?.name}
-          </Text>
-        </View>
-
-        <View style={confirmStyles.detailRow}>
-          <Text style={confirmStyles.detailLabel}>Type</Text>
-          <Text style={confirmStyles.detailValue}>
-            {selectedTarget?.type === "plan" ? "Plan balance" : "Envelope balance"}
-          </Text>
-        </View>
-
-        <View style={confirmStyles.detailRow}>
-          <Text style={confirmStyles.detailLabel}>To</Text>
-          <Text style={confirmStyles.detailValue} numberOfLines={1}>
-            {selectedDestination
-              ? `${selectedDestination.label} - ${maskAccountNumber(
-                selectedDestination.accountNumber
-              )}`
-              : "Account"}
-          </Text>
-        </View>
-      </View>
-
+      {/* PIN card */}
       <View style={pinStyles.card}>
-        <View style={pinStyles.header}>
-          <View style={pinStyles.icon}>
-            <Ionicons name="keypad-outline" size={18} color="#063B2E" />
+        <View style={pinStyles.cardHeader}>
+          <View style={pinStyles.cardIcon}>
+            <Ionicons name="shield-checkmark-outline" size={16} color={COLOR.forestDeep} />
           </View>
-          <View style={pinStyles.headerText}>
-            <Text style={pinStyles.title}>
+          <View style={{ flex: 1 }}>
+            <Text style={pinStyles.cardTitle}>
               {isPinStatusLoading
-                ? "Checking PIN"
+                ? "Checking security settings…"
                 : hasWithdrawalPin
-                  ? "Withdrawal PIN"
-                  : "Create withdrawal PIN"}
+                  ? "Enter your PIN"
+                  : "Create a withdrawal PIN"}
             </Text>
-            <Text style={pinStyles.subtitle}>
-              {isPinStatusLoading
-                ? "Please wait while we confirm your security settings."
-                : hasWithdrawalPin
-                ? "Enter your 4-digit PIN to approve this withdrawal."
-                : "Set a 4-digit PIN before confirming this withdrawal."}
+            <Text style={pinStyles.cardSub}>
+              {!isPinStatusLoading && !hasWithdrawalPin
+                ? "You'll use this 4-digit PIN for all future withdrawals."
+                : "This PIN secures all your withdrawals."}
             </Text>
           </View>
         </View>
 
         {isPinStatusLoading ? (
-          <View style={stepContentStyles.loadingRow}>
-            <ActivityIndicator color="#063B2E" size="small" />
-            <Text style={stepContentStyles.loadingText}>Checking PIN status...</Text>
-          </View>
+          <LoadingState text="Checking PIN status…" />
         ) : pinMode === "reset" ? (
           <View style={pinStyles.form}>
-            <TextInput
-              value={resetOtp}
-              onChangeText={(value) => onChangeResetOtp(cleanOtp(value))}
-              keyboardType="number-pad"
-              placeholder="Email OTP"
-              placeholderTextColor="#9EAAA5"
-              style={pinStyles.input}
-              maxLength={6}
-            />
-            <TextInput
+            <View style={pinStyles.otpWrap}>
+              <Text style={pinStyles.otpLabel}>Email OTP</Text>
+              <TextInput
+                value={resetOtp}
+                onChangeText={(v) => onChangeResetOtp(cleanOtp(v))}
+                keyboardType="number-pad"
+                placeholder="6-digit code"
+                placeholderTextColor={COLOR.textFaint}
+                style={pinStyles.otpInput}
+                maxLength={6}
+              />
+            </View>
+            <Text style={pinStyles.newPinLabel}>New PIN</Text>
+            <PinDots value={newWithdrawalPin} />
+            <PinKeypad
               value={newWithdrawalPin}
-              onChangeText={(value) => onChangeNewWithdrawalPin(cleanPin(value))}
-              keyboardType="number-pad"
-              placeholder="New 4-digit PIN"
-              placeholderTextColor="#9EAAA5"
-              secureTextEntry
-              style={pinStyles.input}
-              maxLength={4}
+              onChange={(v) => onChangeNewWithdrawalPin(cleanPin(v))}
             />
             <View style={pinStyles.actions}>
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={onCancelReset}
-                style={pinStyles.secondaryButton}
+                style={pinStyles.secondaryBtn}
               >
-                <Text style={pinStyles.secondaryButtonText}>Cancel</Text>
+                <Text style={pinStyles.secondaryBtnText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={onResetPin}
                 disabled={!resetReady || isResettingPin}
-                style={[
-                  pinStyles.primaryButton,
-                  (!resetReady || isResettingPin) && styles.ctaDisabled,
-                ]}
+                style={[pinStyles.primaryBtn, (!resetReady || isResettingPin) && { opacity: 0.4 }]}
               >
-                <Text style={pinStyles.primaryButtonText}>
-                  {isResettingPin ? "Resetting..." : "Reset PIN"}
-                </Text>
+                {isResettingPin ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={pinStyles.primaryBtnText}>Reset PIN</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
         ) : (
           <View style={pinStyles.form}>
-            <TextInput
-              value={hasWithdrawalPin ? withdrawalPin : newWithdrawalPin}
-              onChangeText={(value) =>
+            <PinDots value={activePin} />
+            <PinKeypad
+              value={activePin}
+              onChange={(v) =>
                 hasWithdrawalPin
-                  ? onChangeWithdrawalPin(cleanPin(value))
-                  : onChangeNewWithdrawalPin(cleanPin(value))
+                  ? onChangeWithdrawalPin(cleanPin(v))
+                  : onChangeNewWithdrawalPin(cleanPin(v))
               }
-              keyboardType="number-pad"
-              placeholder="4-digit PIN"
-              placeholderTextColor="#9EAAA5"
-              secureTextEntry
-              style={pinStyles.input}
-              maxLength={4}
             />
-            {hasWithdrawalPin ? (
+            {hasWithdrawalPin && (
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={onForgotPin}
                 disabled={isSendingPinOtp}
-                style={pinStyles.linkButton}
+                style={pinStyles.forgotBtn}
               >
-                <Text style={pinStyles.linkText}>
-                  {isSendingPinOtp ? "Sending OTP..." : "Forgot PIN?"}
+                <Text style={pinStyles.forgotBtnText}>
+                  {isSendingPinOtp ? "Sending OTP…" : "Forgot PIN?"}
                 </Text>
               </TouchableOpacity>
-            ) : null}
+            )}
           </View>
         )}
       </View>
 
-      <View style={confirmStyles.notice}>
-        <Ionicons name="alert-circle-outline" size={15} color="#946500" />
-        <Text style={confirmStyles.noticeText}>
+      {/* Warning notice */}
+      <View style={stepStyles.notice}>
+        <Ionicons name="alert-circle-outline" size={14} color={COLOR.amber} />
+        <Text style={stepStyles.noticeText}>
           Withdrawals are processed immediately and cannot be reversed.
         </Text>
       </View>
@@ -1557,332 +1742,293 @@ const StepConfirm = ({
   );
 };
 
-// ─── Step content shared styles ───────────────────────────────────────────────
+// ─── PIN sub-components ───────────────────────────────────────────────────────
 
-const stepContentStyles = StyleSheet.create({
-  wrap: { gap: 4 },
+// Standard phone keypad order: 1 2 3 / 4 5 6 / 7 8 9 / _ 0 ⌫
+const PIN_ROWS = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]];
 
+const PinDots = ({ value }: { value: string }) => (
+  <View style={pinStyles.dots}>
+    {[0, 1, 2, 3].map((i) => (
+      <View key={i} style={[pinStyles.dot, value.length > i && pinStyles.dotFilled]} />
+    ))}
+  </View>
+);
+
+const PinKeypad = ({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) => (
+  <View style={pinStyles.keypad}>
+    {PIN_ROWS.map((row, ri) => (
+      <View key={ri} style={pinStyles.keyRow}>
+        {row.map((key) => (
+          <TouchableOpacity
+            key={key}
+            activeOpacity={0.75}
+            onPress={() => {
+              if (value.length < 4) onChange(`${value}${key}`);
+            }}
+            style={pinStyles.key}
+          >
+            <Text style={pinStyles.keyText}>{key}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    ))}
+    {/* Bottom row: empty / 0 / backspace */}
+    <View style={pinStyles.keyRow}>
+      <View style={pinStyles.keyGhost} />
+      <TouchableOpacity
+        activeOpacity={0.75}
+        onPress={() => {
+          if (value.length < 4) onChange(`${value}0`);
+        }}
+        style={pinStyles.key}
+      >
+        <Text style={pinStyles.keyText}>0</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        activeOpacity={0.75}
+        onPress={() => onChange(value.slice(0, -1))}
+        style={pinStyles.key}
+      >
+        <Ionicons name="backspace-outline" size={22} color={COLOR.forestDeep} />
+      </TouchableOpacity>
+    </View>
+  </View>
+);
+
+// ─── Processing overlay (inline, not nested modal) ────────────────────────────
+
+const ProcessingOverlay = ({
+  state,
+  amount,
+  onDone,
+}: {
+  state: "processing" | "success";
+  amount: string;
+  onDone: () => void;
+}) => (
+  <View style={overlayStyles.wrap}>
+    <View style={overlayStyles.card}>
+      {state === "success" ? (
+        <View style={overlayStyles.successIcon}>
+          <Ionicons name="checkmark" size={30} color="#FFF" />
+        </View>
+      ) : (
+        <View style={overlayStyles.spinnerWrap}>
+          <ActivityIndicator color={COLOR.forestDeep} size="large" />
+        </View>
+      )}
+      <Text style={overlayStyles.title}>
+        {state === "success" ? "Withdrawal sent!" : "Sending withdrawal…"}
+      </Text>
+      <Text style={overlayStyles.sub}>
+        {state === "success"
+          ? `${amount} is now being processed by Paystack.`
+          : "Keep this screen open while we process your request."}
+      </Text>
+      {state === "success" && (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={onDone}
+          style={overlayStyles.doneBtn}
+        >
+          <Text style={overlayStyles.doneBtnText}>Done</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  </View>
+);
+
+// ─── Step heading helper ──────────────────────────────────────────────────────
+
+const StepHeading = ({ title, sub }: { title: string; sub: string }) => (
+  <View style={{ marginBottom: 20 }}>
+    <Text style={stepStyles.heading}>{title}</Text>
+    <Text style={stepStyles.sub}>{sub}</Text>
+  </View>
+);
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const stepStyles = StyleSheet.create({
+  wrap: { gap: 0 },
+  list: { gap: 10 },
   heading: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "900",
-    color: "#063B2E",
-    letterSpacing: -0.5,
-    marginBottom: 4,
+    color: COLOR.forestDeep,
+    letterSpacing: -0.6,
+    marginBottom: 6,
   },
-
   sub: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#9EAAA5",
+    color: COLOR.textMuted,
     lineHeight: 19,
-    marginBottom: 22,
   },
-
-  list: { gap: 10 },
-
-  row: {
+  notice: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#DDE6E1",
-    backgroundColor: "#FFFFFF",
-    padding: 14,
-  },
-
-  rowActive: {
-    borderColor: "#063B2E",
-    backgroundColor: "#F4FAF7",
-  },
-
-  rowIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: "#EDF1EE",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  rowIconActive: {
-    backgroundColor: "#063B2E",
-  },
-
-  rowBody: { flex: 1, gap: 3 },
-
-  rowTitle: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#063B2E",
-  },
-
-  rowTitleActive: { color: "#063B2E" },
-
-  rowMeta: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#9EAAA5",
-  },
-
-  rowMetaActive: { color: "#7A8580" },
-
-  rowTagRow: { flexDirection: "row", gap: 6, marginTop: 2 },
-
-  tag: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-    backgroundColor: "#EDF1EE",
-  },
-
-  tagActive: { backgroundColor: "#DFF5EB" },
-
-  tagText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#7A8580",
-    textTransform: "capitalize",
-  },
-
-  tagTextActive: { color: "#106B4F" },
-
-  rowBalance: {
-    fontSize: 13,
-    fontWeight: "900",
-    color: "#063B2E",
-    marginTop: 2,
-  },
-
-  rowBalanceActive: { color: "#106B4F" },
-
-  radio: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: "#DDE6E1",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  radioActive: { borderColor: "#063B2E" },
-
-  radioDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#063B2E",
-  },
-
-  loadingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingVertical: 20,
-  },
-
-  loadingText: {
-    color: "#9EAAA5",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-
-  emptyCard: {
-    backgroundColor: "#F4F7F5",
-    borderRadius: 18,
-    padding: 24,
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 8,
-  },
-
-  emptyText: {
-    color: "#9EAAA5",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-
-  lockedCard: {
-    backgroundColor: "#F4F7F5",
-    borderRadius: 18,
+    backgroundColor: COLOR.amberBg,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#DDE6E1",
-    padding: 24,
-    alignItems: "center",
-    gap: 10,
+    borderColor: COLOR.amberBorder,
+    padding: 12,
   },
-
-  lockedIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 18,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#DDE6E1",
-    marginBottom: 4,
-  },
-
-  lockedTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: "#063B2E",
-  },
-
-  lockedText: {
+  noticeText: {
+    flex: 1,
     fontSize: 12,
-    fontWeight: "600",
-    color: "#9EAAA5",
-    textAlign: "center",
+    fontWeight: "700",
+    color: COLOR.amber,
     lineHeight: 18,
-    maxWidth: 260,
   },
 });
 
-// ─── Amount step styles ───────────────────────────────────────────────────────
-
 const amountStyles = StyleSheet.create({
-  maxCard: {
-    backgroundColor: "#EAF7F1",
-    borderRadius: 16,
+  availableChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    backgroundColor: COLOR.forestLight,
     borderWidth: 1,
-    borderColor: "#CDEDE0",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    marginBottom: 18,
-    gap: 4,
+    borderColor: COLOR.forestBorder,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 16,
   },
-
-  maxLabel: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: "#7A8580",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+  availableLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: COLOR.forestMuted,
   },
-
-  maxValue: {
-    fontSize: 20,
+  availableValue: {
+    fontSize: 12,
     fontWeight: "900",
-    color: "#063B2E",
-    letterSpacing: -0.5,
+    color: COLOR.forestDeep,
   },
-
   inputWrap: {
-    height: 80,
+    height: 84,
     borderRadius: 20,
-    backgroundColor: "#F4F7F5",
+    backgroundColor: COLOR.bgSubtle,
     borderWidth: 1.5,
-    borderColor: "#DDE6E1",
+    borderColor: COLOR.border,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 20,
-    marginBottom: 14,
+    marginBottom: 12,
   },
-
+  inputWrapMuted: {
+    backgroundColor: COLOR.forestLight,
+    borderColor: COLOR.forestBorder,
+  },
   currencySymbol: {
     fontSize: 28,
     fontWeight: "900",
-    color: "rgba(6,59,46,0.25)",
+    color: `${COLOR.forestDeep}33`,
     marginRight: 6,
   },
-
   input: {
     flex: 1,
-    fontSize: 36,
+    fontSize: 38,
     fontWeight: "900",
-    color: "#063B2E",
-    letterSpacing: -1,
+    color: COLOR.forestDeep,
+    letterSpacing: -1.2,
     paddingVertical: 0,
   },
-
-  allButton: {
+  inputMuted: {
+    color: COLOR.forestMid,
+  },
+  allRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#DDE6E1",
-    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: COLOR.border,
+    backgroundColor: COLOR.surface,
     paddingVertical: 12,
     paddingHorizontal: 14,
-    marginBottom: 16,
+    marginBottom: 14,
   },
-
-  allButtonActive: {
-    borderColor: "#063B2E",
+  allRowActive: {
+    borderColor: COLOR.forestDeep,
     backgroundColor: "#F4FAF7",
   },
-
-  allCheck: {
+  checkbox: {
     width: 22,
     height: 22,
     borderRadius: 7,
     borderWidth: 1.5,
-    borderColor: "#DDE6E1",
+    borderColor: COLOR.border,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  allCheckActive: {
-    backgroundColor: "#063B2E",
-    borderColor: "#063B2E",
+  checkboxActive: {
+    backgroundColor: COLOR.forestDeep,
+    borderColor: COLOR.forestDeep,
   },
-
-  allText: {
+  allLabel: {
+    flex: 1,
     fontSize: 13,
     fontWeight: "700",
-    color: "#9EAAA5",
-    flex: 1,
+    color: COLOR.textMuted,
   },
-
-  allTextActive: {
-    color: "#063B2E",
+  allLabelActive: {
+    color: COLOR.forestDeep,
     fontWeight: "800",
   },
-
+  allAmount: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: COLOR.forestMid,
+  },
   preview: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: 8,
-    backgroundColor: "#EAF7F1",
-    borderRadius: 14,
+    backgroundColor: COLOR.forestLight,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#CDEDE0",
+    borderColor: COLOR.forestBorder,
     padding: 12,
   },
-
   previewText: {
     flex: 1,
     fontSize: 13,
     fontWeight: "600",
-    color: "#106B4F",
+    color: COLOR.forestMid,
     lineHeight: 19,
   },
 });
 
-const destinationStyles = StyleSheet.create({
-  searchBox: {
-    minHeight: 46,
+const destStyles = StyleSheet.create({
+  searchRow: {
+    height: 46,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#DDE6E1",
-    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: COLOR.border,
+    backgroundColor: COLOR.surface,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     paddingHorizontal: 12,
   },
-
   searchInput: {
     flex: 1,
-    color: "#063B2E",
+    color: COLOR.textBody,
     fontSize: 14,
     fontWeight: "700",
     paddingVertical: 0,
   },
-
   addToggle: {
     marginTop: 14,
     flexDirection: "row",
@@ -1890,470 +2036,460 @@ const destinationStyles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#DDE6E1",
-    backgroundColor: "#FFFFFF",
-    paddingVertical: 12,
+    borderWidth: 1.5,
+    borderColor: COLOR.border,
+    borderStyle: "dashed",
+    backgroundColor: COLOR.surface,
+    paddingVertical: 13,
   },
-
-  addToggleText: {
-    color: "#063B2E",
-    fontSize: 13,
-    fontWeight: "800",
-  },
-
-  form: {
-    marginTop: 14,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#DDE6E1",
-    backgroundColor: "#FFFFFF",
-    padding: 14,
-    gap: 10,
-  },
-
-  segment: {
-    flexDirection: "row",
-    backgroundColor: "#F4F7F5",
-    borderRadius: 14,
-    padding: 4,
-    gap: 4,
-  },
-
-  segmentItem: {
-    flex: 1,
-    height: 38,
-    borderRadius: 11,
+  addToggleIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: COLOR.forestLight,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  segmentItemActive: {
-    backgroundColor: "#063B2E",
+  addToggleText: {
+    color: COLOR.forestDeep,
+    fontSize: 13,
+    fontWeight: "800",
   },
-
-  segmentText: {
-    color: "#7A8580",
+  form: {
+    marginTop: 14,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: COLOR.border,
+    backgroundColor: COLOR.surface,
+    padding: 16,
+    gap: 12,
+  },
+  segment: {
+    flexDirection: "row",
+    backgroundColor: COLOR.bgSubtle,
+    borderRadius: 12,
+    padding: 4,
+    gap: 4,
+  },
+  segItem: {
+    flex: 1,
+    flexDirection: "row",
+    height: 38,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  segItemActive: {
+    backgroundColor: COLOR.forestDeep,
+  },
+  segText: {
+    color: COLOR.textMuted,
     fontSize: 12,
     fontWeight: "800",
   },
-
-  segmentTextActive: {
-    color: "#FFFFFF",
+  segTextActive: {
+    color: "#FFF",
   },
-
-  label: {
-    color: "#7A8580",
+  fieldLabel: {
+    color: COLOR.textFaint,
     fontSize: 10,
     fontWeight: "900",
     textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginTop: 4,
+    letterSpacing: 0.6,
+    marginBottom: -6,
   },
-
   bankScroll: {
-    maxHeight: 186,
-  },
-
-  bankList: {
-    gap: 8,
-  },
-
-  bankChip: {
-    width: "100%",
+    maxHeight: 180,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#DDE6E1",
-    backgroundColor: "#F4F7F5",
+    borderColor: COLOR.border,
+    backgroundColor: COLOR.bgSubtle,
+    padding: 8,
+  },
+  bankChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLOR.border,
+    backgroundColor: COLOR.surface,
     paddingHorizontal: 12,
     paddingVertical: 9,
   },
-
   bankChipActive: {
-    borderColor: "#063B2E",
-    backgroundColor: "#EAF7F1",
+    borderColor: COLOR.forestMid,
+    backgroundColor: COLOR.forestLight,
   },
-
   bankChipText: {
-    color: "#7A8580",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-
-  bankChipTextActive: {
-    color: "#063B2E",
-    fontWeight: "900",
-  },
-
-  noBankText: {
-    color: "#9EAAA5",
+    color: COLOR.textMuted,
     fontSize: 13,
     fontWeight: "700",
-    paddingVertical: 10,
+    flex: 1,
   },
-
-  input: {
+  bankChipTextActive: {
+    color: COLOR.forestDeep,
+    fontWeight: "800",
+  },
+  noBank: {
+    color: COLOR.textFaint,
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "center",
+    paddingVertical: 12,
+  },
+  fieldInput: {
     height: 48,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#DDE6E1",
-    backgroundColor: "#F4F7F5",
-    color: "#063B2E",
+    borderWidth: 1.5,
+    borderColor: COLOR.border,
+    backgroundColor: COLOR.bgSubtle,
+    color: COLOR.textBody,
     fontSize: 15,
     fontWeight: "800",
     paddingHorizontal: 14,
   },
-
   resolvedBox: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#CDEDE0",
-    backgroundColor: "#EAF7F1",
+    borderColor: COLOR.forestBorder,
+    backgroundColor: COLOR.forestLight,
     padding: 12,
   },
-
-  resolvedText: {
-    color: "#106B4F",
+  resolvedName: {
+    color: COLOR.forestMid,
     fontSize: 13,
     fontWeight: "900",
     flex: 1,
   },
-
   formActions: {
     flexDirection: "row",
     gap: 10,
-    marginTop: 4,
   },
-
-  secondaryButton: {
+  secondaryBtn: {
     flex: 1,
     height: 46,
     borderRadius: 14,
-    backgroundColor: "#F4F7F5",
+    backgroundColor: COLOR.bgSubtle,
+    borderWidth: 1.5,
+    borderColor: COLOR.border,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  secondaryButtonText: {
-    color: "#063B2E",
+  secondaryBtnText: {
+    color: COLOR.forestDeep,
     fontSize: 13,
     fontWeight: "900",
   },
-
-  saveButton: {
-    flex: 1,
+  primaryBtn: {
+    flex: 2,
     height: 46,
     borderRadius: 14,
-    backgroundColor: "#106B4F",
+    backgroundColor: COLOR.forestMid,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  saveButtonText: {
-    color: "#FFFFFF",
+  primaryBtnText: {
+    color: "#FFF",
     fontSize: 13,
     fontWeight: "900",
   },
 });
 
-// ─── Confirm step styles ──────────────────────────────────────────────────────
-
 const pinStyles = StyleSheet.create({
   card: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: COLOR.surface,
     borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#DDE6E1",
-    padding: 14,
-    gap: 14,
+    borderWidth: 1.5,
+    borderColor: COLOR.border,
+    padding: 16,
+    gap: 16,
     marginBottom: 14,
   },
-
-  header: {
+  cardHeader: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 12,
   },
-
-  icon: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: "#EAF7F1",
+  cardIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: COLOR.forestLight,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  headerText: {
-    flex: 1,
-    gap: 3,
-  },
-
-  title: {
-    color: "#063B2E",
+  cardTitle: {
+    color: COLOR.textBody,
     fontSize: 14,
     fontWeight: "900",
+    marginBottom: 3,
   },
-
-  subtitle: {
-    color: "#7A8580",
+  cardSub: {
+    color: COLOR.textMuted,
     fontSize: 12,
     fontWeight: "600",
     lineHeight: 17,
   },
-
   form: {
+    gap: 12,
+  },
+  dots: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 16,
+    paddingVertical: 6,
+  },
+  dot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: COLOR.border,
+    backgroundColor: COLOR.surface,
+  },
+  dotFilled: {
+    backgroundColor: COLOR.forestDeep,
+    borderColor: COLOR.forestDeep,
+  },
+  keypad: {
     gap: 10,
   },
-
-  input: {
+  keyRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 10,
+  },
+  key: {
+    width: 90,
+    height: 56,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: COLOR.border,
+    backgroundColor: COLOR.bgSubtle,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  keyGhost: {
+    width: 90,
+    height: 56,
+  },
+  keyText: {
+    color: COLOR.forestDeep,
+    fontSize: 22,
+    fontWeight: "900",
+  },
+  otpWrap: {
+    gap: 6,
+  },
+  otpLabel: {
+    color: COLOR.textFaint,
+    fontSize: 10,
+    fontWeight: "900",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  otpInput: {
     height: 48,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#DDE6E1",
-    backgroundColor: "#F4F7F5",
-    color: "#063B2E",
+    borderWidth: 1.5,
+    borderColor: COLOR.border,
+    backgroundColor: COLOR.bgSubtle,
+    color: COLOR.textBody,
     fontSize: 16,
     fontWeight: "900",
     paddingHorizontal: 14,
+    letterSpacing: 4,
   },
-
+  newPinLabel: {
+    color: COLOR.textFaint,
+    fontSize: 10,
+    fontWeight: "900",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    textAlign: "center",
+  },
   actions: {
     flexDirection: "row",
     gap: 10,
   },
-
-  secondaryButton: {
+  secondaryBtn: {
     flex: 1,
     height: 44,
     borderRadius: 14,
-    backgroundColor: "#F4F7F5",
+    backgroundColor: COLOR.bgSubtle,
+    borderWidth: 1.5,
+    borderColor: COLOR.border,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  secondaryButtonText: {
-    color: "#063B2E",
+  secondaryBtnText: {
+    color: COLOR.forestDeep,
     fontSize: 13,
     fontWeight: "900",
   },
-
-  primaryButton: {
+  primaryBtn: {
     flex: 1,
     height: 44,
     borderRadius: 14,
-    backgroundColor: "#106B4F",
+    backgroundColor: COLOR.forestMid,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  primaryButtonText: {
-    color: "#FFFFFF",
+  primaryBtnText: {
+    color: "#FFF",
     fontSize: 13,
     fontWeight: "900",
   },
-
-  linkButton: {
-    alignSelf: "flex-start",
+  forgotBtn: {
+    alignSelf: "center",
     paddingVertical: 4,
+    paddingHorizontal: 8,
   },
-
-  linkText: {
-    color: "#106B4F",
+  forgotBtnText: {
+    color: COLOR.forestMid,
     fontSize: 13,
     fontWeight: "900",
   },
 });
 
-const confirmStyles = StyleSheet.create({
-  summaryCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: "#DDE6E1",
-    overflow: "hidden",
-    marginBottom: 14,
-  },
-
-  amountRow: {
-    padding: 20,
-    gap: 6,
-    alignItems: "flex-start",
-  },
-
-  amountLabel: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: "#9EAAA5",
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-  },
-
-  amountValue: {
-    fontSize: 34,
-    fontWeight: "900",
-    color: "#063B2E",
-    letterSpacing: -1,
-  },
-
-  allBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: "#EAF7F1",
-    borderWidth: 1,
-    borderColor: "#CDEDE0",
-  },
-
-  allBadgeText: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: "#106B4F",
-  },
-
-  divider: {
-    height: 1,
-    backgroundColor: "#F0F4F2",
-  },
-
-  detailRow: {
-    flexDirection: "row",
+const overlayStyles = StyleSheet.create({
+  wrap: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(6,20,16,0.72)",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 13,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F0F4F2",
+    justifyContent: "center",
+    padding: 32,
   },
-
-  detailLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#9EAAA5",
+  card: {
+    width: "100%",
+    maxWidth: 320,
+    borderRadius: 24,
+    backgroundColor: COLOR.surface,
+    padding: 28,
+    alignItems: "center",
+    gap: 14,
   },
-
-  detailValue: {
+  spinnerWrap: {
+    width: 58,
+    height: 58,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: COLOR.border,
+    backgroundColor: COLOR.bgSubtle,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  successIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 20,
+    backgroundColor: COLOR.forestMid,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  title: {
+    color: COLOR.textBody,
+    fontSize: 18,
+    fontWeight: "900",
+    textAlign: "center",
+    letterSpacing: -0.3,
+  },
+  sub: {
+    color: COLOR.textMuted,
     fontSize: 13,
-    fontWeight: "800",
-    color: "#063B2E",
-    maxWidth: 200,
-    textAlign: "right",
-  },
-
-  notice: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-    backgroundColor: "#FFFBEE",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#F2E4A8",
-    padding: 12,
-  },
-
-  noticeText: {
-    flex: 1,
-    fontSize: 12,
     fontWeight: "700",
-    color: "#946500",
-    lineHeight: 18,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+  doneBtn: {
+    alignSelf: "stretch",
+    height: 50,
+    borderRadius: 16,
+    backgroundColor: COLOR.forestDeep,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+  },
+  doneBtnText: {
+    color: "#FFF",
+    fontSize: 15,
+    fontWeight: "900",
   },
 });
-
-// ─── Sheet styles ─────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: "flex-end",
   },
-
   sheet: {
-    maxHeight: "92%",
-    backgroundColor: "#F0F4F2",
+    maxHeight: "94%",
+    backgroundColor: COLOR.bg,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: Platform.OS === "ios" ? 36 : 24,
+    paddingBottom: Platform.OS === "ios" ? 40 : 24,
   },
-
   handle: {
-    width: 44,
+    width: 40,
     height: 4,
     borderRadius: 999,
-    backgroundColor: "#DDE6E1",
+    backgroundColor: COLOR.border,
     alignSelf: "center",
-    marginBottom: 20,
+    marginBottom: 18,
   },
-
   sheetHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 24,
+    marginBottom: 20,
   },
-
-  backButton: {
+  navButton: {
     width: 38,
     height: 38,
     borderRadius: 13,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#DDE6E1",
+    backgroundColor: COLOR.surface,
+    borderWidth: 1.5,
+    borderColor: COLOR.border,
     alignItems: "center",
     justifyContent: "center",
   },
-
-  sheetTitleWrap: { flex: 1, alignItems: "center" },
-
   sheetTitle: {
     fontSize: 15,
     fontWeight: "900",
-    color: "#063B2E",
+    color: COLOR.textBody,
     letterSpacing: -0.2,
   },
-
-  closeButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 13,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#DDE6E1",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
   content: {
     paddingBottom: 16,
+    gap: 0,
   },
-
   cta: {
-    height: 54,
+    height: 56,
     borderRadius: 18,
-    backgroundColor: "#063B2E",
+    backgroundColor: COLOR.forestDeep,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
     gap: 8,
     marginTop: 12,
-    shadowColor: "#063B2E",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.22,
-    shadowRadius: 12,
-    elevation: 5,
+    shadowColor: COLOR.forestDeep,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 14,
+    elevation: 6,
   },
-
   ctaDisabled: {
-    opacity: 0.4,
+    opacity: 0.38,
   },
-
   ctaText: {
-    color: "#FFFFFF",
+    color: "#FFF",
     fontSize: 15,
     fontWeight: "900",
   },

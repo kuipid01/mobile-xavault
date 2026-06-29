@@ -1,46 +1,81 @@
-import { Input } from '@/components/Input';
-import { useRegister } from '@/hooks/auth/auth';
-import { COLORS, Padding } from '@/themes/colors';
-import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import React, { useState } from 'react';
-import { Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import Toast from 'react-native-toast-message';
+import { Input } from "@/components/Input";
+import { useRegister } from "@/hooks/auth/auth";
+import { COLORS, Padding } from "@/themes/colors";
+import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
+import React, { useState } from "react";
+import {
+  Pressable,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import Toast from "react-native-toast-message";
+
+type SupportedCountry = "NG" | "GH";
+
+const countryMeta: Record<
+  SupportedCountry,
+  { label: string; maxLength: number; alternateLength: number; hint: string }
+> = {
+  NG: {
+    label: "Nigeria",
+    maxLength: 11,
+    alternateLength: 10,
+    hint: "Use 10 digits, or 11 digits starting with 0.",
+  },
+  GH: {
+    label: "Ghana",
+    maxLength: 10,
+    alternateLength: 9,
+    hint: "Use 9 digits, or 10 digits starting with 0.",
+  },
+};
 
 const RegisterScreen = () => {
   const [viewPassword, setViewPassword] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [country, setCountry] = useState<SupportedCountry>("NG");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const { mutateAsync: register, isPending } = useRegister();
 
   const getApiErrorMessage = (error: any) => {
     const data = error?.response?.data;
 
-    if (data?.error && typeof data.error === 'object') {
+    if (data?.error && typeof data.error === "object") {
       const firstError = Object.values(data.error)[0];
-
-      if (typeof firstError === 'string') {
-        return firstError;
-      }
+      if (typeof firstError === "string") return firstError;
     }
 
-    if (typeof data?.message === 'string') {
-      return data.message;
-    }
+    if (typeof data?.message === "string") return data.message;
+    if (typeof error?.message === "string") return error.message;
 
-    if (typeof error?.message === 'string') {
-      return error.message;
-    }
-
-    return 'Please try again.';
+    return "Please try again.";
   };
 
   const handleRegister = async () => {
+    const cleanPhone = phone.replace(/\D/g, "");
+    const selectedCountry = countryMeta[country];
+    const validLength =
+      cleanPhone.length === selectedCountry.maxLength ||
+      cleanPhone.length === selectedCountry.alternateLength;
+
+    if (!validLength) {
+      Toast.show({
+        type: "error",
+        text1: "Check phone number",
+        text2: selectedCountry.hint,
+      });
+      return;
+    }
+
     if (password !== confirmPassword) {
       Toast.show({
-        type: 'error',
-        text1: 'Passwords do not match',
+        type: "error",
+        text1: "Passwords do not match",
       });
       return;
     }
@@ -48,50 +83,103 @@ const RegisterScreen = () => {
     try {
       const normalizedEmail = email.trim().toLowerCase();
 
-      await register({ email: normalizedEmail, password, confirm_password: confirmPassword });
+      await register({
+        email: normalizedEmail,
+        password,
+        confirm_password: confirmPassword,
+        country,
+        phone_number: cleanPhone,
+      });
 
       Toast.show({
-        type: 'success',
-        text1: 'Account created, we sent a mail to your account',
-        text2: 'Welcome to XAVAULT 🎉',
+        type: "success",
+        text1: "Account created",
+        text2: "Enter the OTP we sent to your email.",
       });
 
       router.replace({
-        pathname: '/(auth)/verify-mail',
+        pathname: "/(auth)/verify-mail",
         params: { email: normalizedEmail },
       });
     } catch (error: any) {
-      console.log(error, 'ERROR');
-
       Toast.show({
-        type: 'error',
-        text1: 'Registration failed',
+        type: "error",
+        text1: "Registration failed",
         text2: getApiErrorMessage(error),
       });
     }
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      {/* Header */}
+    <ScrollView
+      contentContainerStyle={styles.container}
+      keyboardShouldPersistTaps="handled"
+    >
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color="#000" />
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <Ionicons name="chevron-back" size={22} color={COLORS.primary} />
         </TouchableOpacity>
 
         <View style={styles.titleContainer}>
           <Text style={styles.title}>Create an account</Text>
           <Text style={styles.subtitle}>
-            Sign up to get started and enjoy our services.
+            Start protecting your plans with email OTP verification.
           </Text>
         </View>
       </View>
 
-      {/* Form */}
       <View style={styles.form}>
-        <Input placeholder='Enter Email' label="Email" icon="mail-outline" value={email} onChangeText={setEmail} />
         <Input
-          placeholder='Enter Password'
+          placeholder="Enter email"
+          label="Email"
+          icon="mail-outline"
+          value={email}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          onChangeText={setEmail}
+        />
+
+        <Text style={styles.segmentLabel}>Country</Text>
+        <View style={styles.countryGroup}>
+          {(["NG", "GH"] as SupportedCountry[]).map((option) => (
+            <Pressable
+              key={option}
+              onPress={() => {
+                setCountry(option);
+                setPhone("");
+              }}
+              style={[
+                styles.countryOption,
+                country === option && styles.countryOptionActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.countryText,
+                  country === option && styles.countryTextActive,
+                ]}
+              >
+                {countryMeta[option].label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Input
+          placeholder={country === "NG" ? "08012345678" : "0241234567"}
+          label="Phone Number"
+          icon="call-outline"
+          value={phone}
+          keyboardType="phone-pad"
+          maxLength={countryMeta[country].maxLength}
+          onChangeText={(value) => setPhone(value.replace(/\D/g, ""))}
+        />
+
+        <Input
+          placeholder="Enter password"
           label="Password"
           icon="lock-closed-outline"
           secureTextEntry
@@ -101,7 +189,7 @@ const RegisterScreen = () => {
           onChangeText={setPassword}
         />
         <Input
-          placeholder='Confirm Password'
+          placeholder="Confirm password"
           label="Confirm Password"
           icon="lock-closed-outline"
           secureTextEntry
@@ -111,18 +199,22 @@ const RegisterScreen = () => {
           onChangeText={setConfirmPassword}
         />
 
-        {/* Button */}
-        <TouchableOpacity style={[styles.button, isPending && styles.buttonDisabled]} disabled={isPending} onPress={handleRegister}>
-          <Text style={styles.buttonText}>{isPending ? 'Creating...' : 'Create Account'}</Text>
+        <TouchableOpacity
+          style={[styles.button, isPending && styles.buttonDisabled]}
+          disabled={isPending}
+          onPress={handleRegister}
+        >
+          <Text style={styles.buttonText}>
+            {isPending ? "Creating..." : "Create Account"}
+          </Text>
         </TouchableOpacity>
       </View>
-      <View>
-        <Pressable onPress={() => router.push("/(auth)/login")}>
-          <Text style={styles.footerText}>
-            Already have an account? <Text style={styles.link}>Log in</Text>
-          </Text>
-        </Pressable>
-      </View>
+
+      <Pressable onPress={() => router.push("/(auth)/login")}>
+        <Text style={styles.footerText}>
+          Already have an account? <Text style={styles.link}>Log in</Text>
+        </Text>
+      </Pressable>
     </ScrollView>
   );
 };
@@ -142,53 +234,98 @@ const styles = {
   },
 
   backButton: {
+    alignItems: "center" as const,
     backgroundColor: COLORS.white,
-    width: 44,
+    borderRadius: 14,
     height: 44,
-    borderRadius: 999,
-    justifyContent: 'center' as const,
-    alignItems: 'center' as const,
+    justifyContent: "center" as const,
+    width: 44,
   },
 
   titleContainer: {
+    alignItems: "center" as const,
     marginTop: 24,
-    alignItems: 'center' as const,
   },
 
   title: {
-    fontSize: 26,
-    fontWeight: '700' as const,
     color: COLORS.primary,
+    fontFamily: "PlayfairDisplay_700Bold",
+    fontSize: 27,
     marginBottom: 6,
   },
 
   subtitle: {
+    color: "#6B7280",
+    fontFamily: "PlayfairDisplay_400Regular",
     fontSize: 13,
-    color: '#6B7280',
-    textAlign: 'center' as const,
     paddingHorizontal: 10,
+    textAlign: "center" as const,
   },
 
   form: {
-    marginTop: 32,
     backgroundColor: COLORS.white,
-    borderRadius: 22,
-    padding: 18,
+    borderColor: "#E7ECE9",
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#E7ECE9',
-    shadowColor: '#063B2E',
+    elevation: 3,
+    marginTop: 32,
+    padding: 18,
+    shadowColor: "#063B2E",
     shadowOpacity: 0.05,
     shadowRadius: 18,
-    elevation: 3,
+  },
+
+  segmentLabel: {
+    color: COLORS.text,
+    fontFamily: "PlayfairDisplay_700Bold",
+    fontSize: 11,
+    letterSpacing: 1,
+    marginBottom: 8,
+    textTransform: "uppercase" as const,
+  },
+
+  countryGroup: {
+    backgroundColor: "#F4F6F5",
+    borderRadius: 12,
+    flexDirection: "row" as const,
+    gap: 8,
+    marginBottom: 14,
+    padding: 5,
+  },
+
+  countryOption: {
+    alignItems: "center" as const,
+    borderRadius: 9,
+    flex: 1,
+    height: 42,
+    justifyContent: "center" as const,
+  },
+
+  countryOptionActive: {
+    backgroundColor: COLORS.white,
+    elevation: 2,
+    shadowColor: "#063B2E",
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+  },
+
+  countryText: {
+    color: "#72807A",
+    fontFamily: "PlayfairDisplay_600SemiBold",
+    fontSize: 13,
+  },
+
+  countryTextActive: {
+    color: COLORS.primary,
   },
 
   button: {
-    marginTop: 20,
+    alignItems: "center" as const,
     backgroundColor: COLORS.primary,
-    height: 52,
     borderRadius: 12,
-    justifyContent: 'center' as const,
-    alignItems: 'center' as const,
+    height: 52,
+    justifyContent: "center" as const,
+    marginTop: 20,
   },
 
   buttonDisabled: {
@@ -196,19 +333,20 @@ const styles = {
   },
 
   buttonText: {
-    color: 'white',
-    fontWeight: '700' as const,
+    color: "white",
+    fontFamily: "PlayfairDisplay_700Bold",
     fontSize: 15,
   },
 
   footerText: {
-    marginTop: 20,
-    textAlign: 'center' as const,
     color: COLORS.text,
+    fontFamily: "PlayfairDisplay_400Regular",
+    marginTop: 20,
+    textAlign: "center" as const,
   },
 
   link: {
     color: COLORS.primary,
-    fontWeight: '700' as const,
+    fontFamily: "PlayfairDisplay_700Bold",
   },
 };

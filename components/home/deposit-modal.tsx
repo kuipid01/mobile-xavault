@@ -68,8 +68,9 @@ const DepositModal = ({
                     <Text style={styles.subtitle}>
                         Enter the amount you want to deposit into your vault.
                     </Text>
+                    {/* //TODO:IMPLEMENT GENERATING DEDICATED ACCOUNT */}
 
-                    <View style={styles.transferBox}>
+                    {/* <View style={styles.transferBox}>
                         <Text style={styles.transferTitle}>Bank transfer</Text>
                         {wallet?.dedicated_account_number ? (
                             <>
@@ -102,7 +103,7 @@ const DepositModal = ({
                                 </TouchableOpacity>
                             </>
                         )}
-                    </View>
+                    </View> */}
 
                     <View style={styles.inputBox}>
                         <Text style={styles.currency}>₦</Text>

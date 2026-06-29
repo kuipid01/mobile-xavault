@@ -1,21 +1,57 @@
 import { OnboardingProvider } from "@/context/OnboardingContext";
+import {
+  PlayfairDisplay_400Regular,
+  PlayfairDisplay_500Medium,
+  PlayfairDisplay_600SemiBold,
+  PlayfairDisplay_700Bold,
+  useFonts,
+} from "@expo-google-fonts/playfair-display";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, Text, TextInput, View } from "react-native";
 import Toast from "react-native-toast-message";
 import { useAuth } from "../api/auth";
 import "../global.css";
 
 const queryClient = new QueryClient();
+type ComponentWithDefaultProps = {
+  defaultProps?: {
+    style?: unknown;
+  };
+};
 
 export default function RootLayout() {
   const { isLoading: authLoading, isAuthenticated } = useAuth();
+  const [fontsLoaded] = useFonts({
+    PlayfairDisplay_400Regular,
+    PlayfairDisplay_500Medium,
+    PlayfairDisplay_600SemiBold,
+    PlayfairDisplay_700Bold,
+  });
 
   const [loading, setLoading] = useState(true);
   const [firstTime, setFirstTime] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!fontsLoaded) return;
+
+    const defaultText = Text as unknown as ComponentWithDefaultProps;
+    defaultText.defaultProps = defaultText.defaultProps || {};
+    defaultText.defaultProps.style = [
+      { fontFamily: "PlayfairDisplay_400Regular" },
+      defaultText.defaultProps.style,
+    ];
+
+    const defaultTextInput = TextInput as unknown as ComponentWithDefaultProps;
+    defaultTextInput.defaultProps = defaultTextInput.defaultProps || {};
+    defaultTextInput.defaultProps.style = [
+      { fontFamily: "PlayfairDisplay_400Regular" },
+      defaultTextInput.defaultProps.style,
+    ];
+  }, [fontsLoaded]);
 
   useEffect(() => {
     const check = async () => {
@@ -33,7 +69,7 @@ export default function RootLayout() {
     check();
   }, []);
 
-  if (loading || authLoading) {
+  if (loading || authLoading || !fontsLoaded) {
     return (
       <View
         style={{
@@ -54,7 +90,7 @@ export default function RootLayout() {
         <StatusBar style="light" />
 
         <Stack screenOptions={{ headerShown: false }}>
-          {firstTime ? (
+          {!firstTime ? (
             <Stack.Screen name="(onboarding)" />
           ) : isAuthenticated ? (
             <Stack.Screen name="(app)" />

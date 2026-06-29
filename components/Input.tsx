@@ -1,4 +1,11 @@
-import { View, Text, TextInput, TextInputProps, TouchableOpacity, StyleSheet } from "react-native";
+import {
+  View,
+  Text,
+  TextInput,
+  TextInputProps,
+  TouchableOpacity,
+  StyleSheet,
+} from "react-native";
 import React from "react";
 import { COLORS, Radius } from "@/themes/colors";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,6 +26,8 @@ export const Input = ({
   secureTextEntry,
   viewPassword,
   setViewPassword,
+  style,
+  ...inputProps
 }: Props) => {
   const isPassword = secureTextEntry;
 
@@ -43,10 +52,12 @@ export const Input = ({
           value={value}
           onChangeText={onChangeText}
           secureTextEntry={isPassword && !viewPassword}
+          {...inputProps}
           style={[
             styles.input,
             icon && { paddingLeft: 40 },
             isPassword && { paddingRight: 45 },
+            style,
           ]}
         />
 
@@ -79,6 +90,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: 8,
     fontWeight: "800",
+    fontFamily: "PlayfairDisplay_700Bold",
   },
 
   inputContainer: {
@@ -101,6 +113,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: COLORS.text,
     fontWeight: "600",
+    fontFamily: "PlayfairDisplay_600SemiBold",
   },
 
   leftIcon: {

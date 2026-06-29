@@ -1,7 +1,8 @@
-import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { useOnboarding } from "@/context/OnboardingContext";
 import { COLORS } from "@/themes/colors";
+import { Ionicons } from "@expo/vector-icons";
+import React from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 export function SplashScreen() {
   const { setStep } = useOnboarding();
@@ -15,26 +16,21 @@ export function SplashScreen() {
       <View />
 
       <View style={styles.centerContent}>
-        <View style={styles.iconContainer}>
-          <Text style={styles.icon}>🔒</Text>
+        <View>
+          <Ionicons
+            style={{
+              fontSize: 100,
+              color: "white",
+              marginBottom: 10,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            name="wallet-sharp"
+          />
         </View>
-
         <Text style={styles.title}>XAVAULT</Text>
-
-        <Text style={styles.subtitle}>
-          Salary planning, simplified.
-        </Text>
       </View>
-
-      <View style={styles.footer}>
-        <Text style={styles.securityText}>
-          🛡️ Institutional Grade Security
-        </Text>
-
-        <Text style={styles.copyright}>
-          © 2026 XAVAULT FINANCIAL TECHNOLOGY
-        </Text>
-      </View>
+      <View />
     </TouchableOpacity>
   );
 }
@@ -68,9 +64,9 @@ const styles = StyleSheet.create({
 
   title: {
     color: "#FFFFFF",
-    fontSize: 36,
-    fontWeight: "900",
-    letterSpacing: 4,
+    fontSize: 46,
+    fontFamily: "PlayfairDisplay_700Bold",
+    letterSpacing: 1,
     textAlign: "center",
   },
 
@@ -79,7 +75,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 12,
     letterSpacing: 1,
-    fontWeight: "500",
+    fontFamily: "PlayfairDisplay_500Medium",
   },
 
   footer: {
@@ -90,7 +86,7 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.4)",
     fontSize: 10,
     letterSpacing: 2,
-    fontWeight: "700",
+    fontFamily: "PlayfairDisplay_700Bold",
     textTransform: "uppercase",
   },
 
@@ -98,5 +94,6 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.2)",
     fontSize: 9,
     marginTop: 4,
+    fontFamily: "PlayfairDisplay_400Regular",
   },
 });
