@@ -2,6 +2,7 @@ import { nairaToKobo } from "@/api/money";
 import { usePlans } from "@/hooks/app/plans";
 import {
   useInitiateDeposit,
+  useEnsureDedicatedAccount,
   useWallet,
   useWalletLedger,
 } from "@/hooks/app/wallet";
@@ -24,6 +25,10 @@ export default function Home() {
   const { data: plans, isLoading: isPlansLoading } = usePlans();
   const { data: ledger, isLoading: isLedgerLoading } = useWalletLedger();
   const { mutateAsync: deposit, isPending: isDepositing } = useInitiateDeposit();
+  const {
+    mutateAsync: ensureTransferAccount,
+    isPending: isCreatingTransferAccount,
+  } = useEnsureDedicatedAccount();
 
   const refreshWallet = async () => {
     await refetch();
@@ -62,6 +67,26 @@ export default function Home() {
     }
   };
 
+  const handleCreateTransferAccount = async () => {
+    try {
+      await ensureTransferAccount();
+      Toast.show({
+        type: "success",
+        text1: "Transfer account ready",
+        text2: "You can now deposit by bank transfer.",
+      });
+    } catch (error: any) {
+      Toast.show({
+        type: "error",
+        text1: "Could not create transfer account",
+        text2:
+          error?.response?.data?.message ||
+          error?.message ||
+          "Please try again.",
+      });
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
@@ -84,7 +109,10 @@ export default function Home() {
           visible={depositVisible}
           onClose={() => setDepositVisible(false)}
           onDeposit={handleDeposit}
+          onCreateTransferAccount={handleCreateTransferAccount}
+          wallet={wallet}
           isPending={isDepositing}
+          isCreatingTransferAccount={isCreatingTransferAccount}
         />
 
         <WithdrawalModal

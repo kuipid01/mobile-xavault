@@ -2,8 +2,12 @@ import { api } from "./client";
 import { ApiResponse } from "./types";
 
 export type WithdrawPayload = {
-  amount?: number;
-  withdraw_all?: boolean;
+  source_type: "plan_unboxed" | "envelope";
+  envelope_id?: string;
+  amount: number;
+  destination_type: "account" | "beneficiary";
+  destination_id: string;
+  withdrawal_pin: string;
   idempotency_key: string;
 };
 
@@ -13,24 +17,9 @@ export type WithdrawResponse = {
   status?: string;
 };
 
-export const withdrawFromPlan = async (
-  planId: string,
-  payload: WithdrawPayload
-) => {
+export const requestWithdrawal = async (planId: string, payload: WithdrawPayload) => {
   const res = await api.post<ApiResponse<WithdrawResponse>>(
-    `/plans/${planId}/withdraw`,
-    payload
-  );
-  return res.data.data;
-};
-
-export const withdrawFromEnvelope = async (
-  planId: string,
-  envelopeId: string,
-  payload: WithdrawPayload
-) => {
-  const res = await api.post<ApiResponse<WithdrawResponse>>(
-    `/plans/${planId}/envelopes/${envelopeId}/withdraw`,
+    `/withdrawals/${planId}/request`,
     payload
   );
   return res.data.data;

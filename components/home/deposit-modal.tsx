@@ -11,16 +11,28 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import { Wallet } from "../../api/types";
 import { COLORS } from "../../themes/colors";
 
 type Props = {
     visible: boolean;
     onClose: () => void;
     onDeposit: (amount: string) => Promise<void> | void;
+    onCreateTransferAccount: () => Promise<void> | void;
+    wallet?: Wallet;
     isPending?: boolean;
+    isCreatingTransferAccount?: boolean;
 };
 
-const DepositModal = ({ visible, onClose, onDeposit, isPending }: Props) => {
+const DepositModal = ({
+    visible,
+    onClose,
+    onDeposit,
+    onCreateTransferAccount,
+    wallet,
+    isPending,
+    isCreatingTransferAccount,
+}: Props) => {
     const [amount, setAmount] = useState("");
 
     const formattedAmount = amount ? Number(amount).toLocaleString("en-NG") : "0";
@@ -56,6 +68,41 @@ const DepositModal = ({ visible, onClose, onDeposit, isPending }: Props) => {
                     <Text style={styles.subtitle}>
                         Enter the amount you want to deposit into your vault.
                     </Text>
+
+                    <View style={styles.transferBox}>
+                        <Text style={styles.transferTitle}>Bank transfer</Text>
+                        {wallet?.dedicated_account_number ? (
+                            <>
+                                <Text style={styles.transferBank}>
+                                    {wallet.dedicated_bank_name || "Paystack Bank"}
+                                </Text>
+                                <Text style={styles.transferNumber}>
+                                    {wallet.dedicated_account_number}
+                                </Text>
+                                <Text style={styles.transferName}>
+                                    {wallet.dedicated_account_name}
+                                </Text>
+                            </>
+                        ) : (
+                            <>
+                                <Text style={styles.transferHint}>
+                                    Generate a transfer account for direct deposits.
+                                </Text>
+                                <TouchableOpacity
+                                    activeOpacity={0.8}
+                                    style={styles.transferButton}
+                                    onPress={onCreateTransferAccount}
+                                    disabled={isCreatingTransferAccount}
+                                >
+                                    <Text style={styles.transferButtonText}>
+                                        {isCreatingTransferAccount
+                                            ? "Creating..."
+                                            : "Generate Account"}
+                                    </Text>
+                                </TouchableOpacity>
+                            </>
+                        )}
+                    </View>
 
                     <View style={styles.inputBox}>
                         <Text style={styles.currency}>₦</Text>
@@ -129,6 +176,66 @@ const styles = StyleSheet.create({
         color: COLORS.text,
         lineHeight: 20,
         marginBottom: 24,
+    },
+
+    transferBox: {
+        borderRadius: 18,
+        backgroundColor: "#EFF8F4",
+        borderWidth: 1,
+        borderColor: "rgba(15, 107, 79, 0.16)",
+        padding: 16,
+        marginBottom: 18,
+    },
+
+    transferTitle: {
+        color: COLORS.primary,
+        fontSize: 12,
+        fontWeight: "900",
+        textTransform: "uppercase",
+        letterSpacing: 0.5,
+        marginBottom: 8,
+    },
+
+    transferBank: {
+        color: COLORS.border,
+        fontSize: 12,
+        fontWeight: "700",
+        marginBottom: 4,
+    },
+
+    transferNumber: {
+        color: COLORS.primary,
+        fontSize: 28,
+        fontWeight: "900",
+        marginBottom: 4,
+    },
+
+    transferName: {
+        color: COLORS.secondary,
+        fontSize: 13,
+        fontWeight: "800",
+    },
+
+    transferHint: {
+        color: COLORS.text,
+        fontSize: 13,
+        fontWeight: "600",
+        lineHeight: 18,
+        marginBottom: 12,
+    },
+
+    transferButton: {
+        height: 44,
+        borderRadius: 14,
+        backgroundColor: COLORS.primary,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+
+    transferButtonText: {
+        color: COLORS.white,
+        fontSize: 13,
+        fontWeight: "900",
     },
 
     inputBox: {

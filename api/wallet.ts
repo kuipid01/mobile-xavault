@@ -3,7 +3,11 @@ import { ApiResponse, DepositInitResponse, Wallet, WalletDeposit, WalletLedger }
 
 export const getWallet = async () => {
   const res = await api.get<ApiResponse<Wallet>>("/wallet");
-  console.log(res.data)
+  return res.data.data;
+};
+
+export const ensureDedicatedAccount = async () => {
+  const res = await api.post<ApiResponse<Wallet>>("/wallet/dedicated-account");
   return res.data.data;
 };
 

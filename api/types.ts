@@ -18,6 +18,12 @@ export type Wallet = {
   locked_balance: number;
   ledger_balance: number;
   currency: string;
+  paystack_customer_code?: string;
+  dedicated_account_id?: string;
+  dedicated_account_number?: string;
+  dedicated_account_name?: string;
+  dedicated_bank_name?: string;
+  dedicated_bank_slug?: string;
   created_at: string;
   updated_at: string;
 };
