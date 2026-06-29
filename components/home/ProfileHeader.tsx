@@ -1,0 +1,129 @@
+import { Ionicons } from "@expo/vector-icons";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { COLORS } from "../../themes/colors";
+
+const ProfileHeader = () => {
+    return (
+        <View style={styles.container}>
+            <View style={styles.profileRow}>
+                <View style={styles.avatarWrap}>
+                    <Image
+                        source={{
+                            uri: "https://i.pinimg.com/1200x/31/02/62/3102629a406ed439592d5833f0faa979.jpg",
+                        }}
+                        style={styles.avatar}
+                    />
+                </View>
+
+                <View style={styles.userText}>
+                    <Text style={styles.greeting}>Good Morning</Text>
+                    <Text style={styles.name} numberOfLines={1}>
+                        Adegoke Stephen
+                    </Text>
+                </View>
+            </View>
+
+            <View style={styles.actions}>
+                <TouchableOpacity activeOpacity={0.75} style={styles.iconButton}>
+                    <Ionicons name="search" size={18} color={COLORS.white} />
+                </TouchableOpacity>
+
+                <TouchableOpacity activeOpacity={0.75} style={styles.iconButton}>
+                    <View style={styles.notificationDot} />
+                    <Ionicons
+                        name="notifications-outline"
+                        size={18}
+                        color={COLORS.white}
+                    />
+                </TouchableOpacity>
+            </View>
+        </View>
+    );
+};
+
+export default ProfileHeader;
+
+const styles = StyleSheet.create({
+    container: {
+        width: "100%",
+        minHeight: 58,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+    },
+
+    profileRow: {
+        flexDirection: "row",
+        gap: 12,
+        alignItems: "center",
+        flex: 1,
+        paddingRight: 12,
+    },
+
+    avatarWrap: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: "rgba(255,255,255,0.16)",
+        alignItems: "center",
+        justifyContent: "center",
+        borderWidth: 1,
+        borderColor: "rgba(255,255,255,0.18)",
+    },
+
+    avatar: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: COLORS.white,
+    },
+
+    userText: {
+        flex: 1,
+    },
+
+    greeting: {
+        color: COLORS.white,
+        fontSize: 20,
+        fontWeight: "900",
+        letterSpacing: -0.4,
+    },
+
+    name: {
+        color: "rgba(255,255,255,0.68)",
+        fontSize: 13,
+        fontWeight: "700",
+        marginTop: 3,
+    },
+
+    actions: {
+        flexDirection: "row",
+        gap: 8,
+        alignItems: "center",
+    },
+
+    iconButton: {
+        width: 42,
+        height: 42,
+        backgroundColor: "rgba(255,255,255,0.13)",
+        borderRadius: 21,
+        alignItems: "center",
+        justifyContent: "center",
+        borderWidth: 1,
+        borderColor: "rgba(255,255,255,0.14)",
+        position: "relative",
+    },
+
+    notificationDot: {
+        position: "absolute",
+        top: 10,
+        right: 11,
+        width: 7,
+        height: 7,
+        borderRadius: 4,
+        backgroundColor: "#F4C95D",
+        borderWidth: 1,
+        borderColor: "#106B4F",
+        zIndex: 2,
+    },
+});
