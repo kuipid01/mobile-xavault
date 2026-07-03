@@ -1,23 +1,37 @@
-import { Input } from "@/components/Input";
 import { useLogin } from "@/hooks/auth/auth";
 import { COLORS, Radius } from "@/themes/colors";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Image } from 'expo-image';
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import Toast from "react-native-toast-message";
+import { FlatInput } from "../flatinput";
 
 const LoginScreen = () => {
   const [viewPassword, setViewPassword] = useState(false);
   const [email, setEmail] = useState("");
+  const [mailAvailable, setMailAvailable] = useState(false)
   const [password, setPassword] = useState("");
   const { mutateAsync: login, isPending } = useLogin();
-
+  useEffect(() => {
+    const checkMail = async () => {
+      const mailInStorage = await AsyncStorage.getItem("email");
+      if (mailInStorage) {
+        setEmail(mailInStorage)
+        setMailAvailable(true)
+      }
+    }
+    checkMail();
+  }, [])
   const handleLogin = async () => {
     try {
       await login({
         email: email.trim().toLowerCase(),
         password,
       });
+      await AsyncStorage.removeItem("pendingVerificationEmail");
+      await AsyncStorage.setItem("email", email.trim().toLowerCase())
       Toast.show({
         type: "success",
         text1: "Login successful",
@@ -39,42 +53,35 @@ const LoginScreen = () => {
       contentContainerStyle={styles.container}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={styles.brandMark}>
-        <Text style={styles.brandMarkText}>XA</Text>
-      </View>
-      <Text style={styles.brand}>XAVAULT</Text>
 
-      <View style={styles.segment}>
-        <TouchableOpacity style={styles.segmentActive}>
-          <Text style={styles.segmentActiveText}>Sign in</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => router.push("/(auth)/register")}
-          style={styles.segmentItem}
-        >
-          <Text style={styles.segmentText}>Sign up</Text>
-        </TouchableOpacity>
-      </View>
 
+      <View style={{ width: "100%", justifyContent: "center", alignItems: "center" }}>
+        <Image
+          source={require("@/assets/images/coin.svg")}
+          style={{ width: 250, height: 250, marginBottom: 3 }}
+          contentFit="contain"
+        />
+      </View>
       <View style={styles.header}>
-        <Text style={styles.title}>Welcome back,</Text>
-        <Text style={styles.subtitle}>Good to see you again.</Text>
+        <Text style={styles.title}>Welcome back, Stephen</Text>
       </View>
 
       <View style={styles.card}>
-        <Input
+
+        {!mailAvailable && <FlatInput
           label="Email"
           placeholder="Enter your email"
           value={email}
           autoCapitalize="none"
           keyboardType="email-address"
           onChangeText={setEmail}
-        />
-        <Input
+        />}
+        <FlatInput
           label="Password"
           placeholder="Enter your password"
           value={password}
           onChangeText={setPassword}
+
           secureTextEntry
           viewPassword={viewPassword}
           setViewPassword={setViewPassword}
@@ -95,14 +102,24 @@ const LoginScreen = () => {
             {isPending ? "Signing in..." : "Sign In"}
           </Text>
         </TouchableOpacity>
-
         <Text
-          onPress={() => router.push("/(auth)/register")}
+          onPress={() => router.push("/(auth)/initial")}
           style={styles.footerText}
         >
-          Don&apos;t have an account?{" "}
-          <Text style={styles.link}>Create one</Text>
+          {/* :TODO USE REAL NAME  */}
+          Not Stephen ?
+          <Text style={styles.link}>Switch Account</Text>
         </Text>
+
+        {/* //this is just so the keyboard shows on click  */}
+        <View
+          style={{ height: 100 }}
+        >
+
+        </View>
+
+
+
       </View>
     </ScrollView>
   );
@@ -170,7 +187,8 @@ const styles = {
 
   header: {
     alignItems: "flex-start" as const,
-    marginBottom: 18,
+    marginVertical: 8,
+
   },
 
   title: {
@@ -187,15 +205,9 @@ const styles = {
   },
 
   card: {
-    backgroundColor: COLORS.white,
-    borderColor: "#E7ECE9",
-    borderRadius: 18,
-    borderWidth: 1,
-    elevation: 4,
-    padding: 20,
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 18,
+
+
+
   },
 
   button: {
@@ -221,7 +233,7 @@ const styles = {
   forgotText: {
     color: COLORS.primary,
     fontFamily: "PlayfairDisplay_600SemiBold",
-    fontSize: 12,
+    fontSize: 14,
     marginBottom: 14,
     marginTop: -4,
     textAlign: "right" as const,

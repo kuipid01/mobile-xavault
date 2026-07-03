@@ -3,6 +3,7 @@ import { useRegister } from "@/hooks/auth/auth";
 import { COLORS, Padding } from "@/themes/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useState } from "react";
 import {
   Pressable,
@@ -90,6 +91,8 @@ const RegisterScreen = () => {
         country,
         phone_number: cleanPhone,
       });
+
+      await AsyncStorage.setItem("pendingVerificationEmail", normalizedEmail);
 
       Toast.show({
         type: "success",

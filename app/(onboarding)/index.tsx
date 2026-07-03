@@ -1,13 +1,12 @@
 import { useOnboarding } from '@/context/OnboardingContext';
 import { SplashScreen } from '@/components/SplashScreen';
 import { OnboardingScreen } from '@/components/OnboardingScreen';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 
 // When the user completes onboarding, mark them as not first-time
 // and send to auth flow via router
 export default function OnboardingIndex() {
-  const { currentStep } = useOnboarding();
+  const { currentStep, completeOnboarding } = useOnboarding();
 
   // Override WelcomeAuthScreen behaviour: after onboarding is done,
   // record the flag and navigate to auth group
@@ -16,7 +15,7 @@ export default function OnboardingIndex() {
 
   // 'welcome' step — finish onboarding, mark done and redirect
   const finish = async () => {
-    await AsyncStorage.setItem('firstTimeUser', 'done');
+    await completeOnboarding();
     router.replace('/(auth)/welcome');
   };
 

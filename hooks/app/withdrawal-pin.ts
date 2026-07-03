@@ -3,6 +3,7 @@ import {
   getWithdrawalPinStatus,
   resetWithdrawalPin,
   setWithdrawalPin,
+  verifyWithdrawalPin,
 } from "@/api/withdrawal-pin";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -31,6 +32,12 @@ export const useSetWithdrawalPin = () => {
 export const useForgotWithdrawalPin = () => {
   return useMutation({
     mutationFn: forgotWithdrawalPin,
+  });
+};
+
+export const useVerifyWithdrawalPin = () => {
+  return useMutation({
+    mutationFn: verifyWithdrawalPin,
   });
 };
 

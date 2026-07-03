@@ -1,8 +1,34 @@
+import { getAccessToken } from "@/api/auth";
 import { Ionicons } from "@expo/vector-icons";
+import { jwtDecode } from "jwt-decode";
+import { useEffect, useState } from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { COLORS } from "../../themes/colors";
 
+const getGreeting = (): string => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good Morning";
+    if (hour < 17) return "Good Afternoon";
+    return "Good Evening";
+};
+
+type JwtWithEmail = { email?: string; sub?: string;[key: string]: unknown };
+
 const ProfileHeader = () => {
+    const [email, setEmail] = useState<string | null>(null);
+
+    useEffect(() => {
+        getAccessToken().then((token) => {
+            if (!token) return;
+            try {
+                const payload = jwtDecode<JwtWithEmail>(token);
+                setEmail(payload.email ?? payload.sub ?? null);
+            } catch {
+                // leave email null
+            }
+        });
+    }, []);
+
     return (
         <View style={styles.container}>
             <View style={styles.profileRow}>
@@ -16,17 +42,19 @@ const ProfileHeader = () => {
                 </View>
 
                 <View style={styles.userText}>
-                    <Text style={styles.greeting}>Good Morning</Text>
-                    <Text style={styles.name} numberOfLines={1}>
-                        Adegoke Stephen
-                    </Text>
+                    <Text style={styles.greeting}>{getGreeting()}</Text>
+                    {email && (
+                        <Text style={styles.name} numberOfLines={1}>
+                            {email}
+                        </Text>
+                    )}
                 </View>
             </View>
 
             <View style={styles.actions}>
-                <TouchableOpacity activeOpacity={0.75} style={styles.iconButton}>
+                {/* <TouchableOpacity activeOpacity={0.75} style={styles.iconButton}>
                     <Ionicons name="search" size={18} color={COLORS.white} />
-                </TouchableOpacity>
+                </TouchableOpacity> */}
 
                 <TouchableOpacity activeOpacity={0.75} style={styles.iconButton}>
                     <View style={styles.notificationDot} />

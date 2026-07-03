@@ -48,6 +48,10 @@ type ForgetPasswordPayload = {
   email: string;
 };
 
+type ResendVerificationMailPayload = {
+  email: string;
+};
+
 type ResetPasswordPayload = {
   otp: string;
   password: string;
@@ -108,6 +112,13 @@ export const validateMail = async (data: ValidateMailPayload) => {
   log.info("Validating email:", data.email);
   const res = await api.post("/auth/validate-mail", data);
   log.info("Email validation successful");
+  return res.data;
+};
+
+export const resendVerificationMail = async (data: ResendVerificationMailPayload) => {
+  log.info("Resending verification mail to:", data.email);
+  const res = await api.post("/auth/resend-verification-mail", data);
+  log.info("Verification mail resend successful");
   return res.data;
 };
 

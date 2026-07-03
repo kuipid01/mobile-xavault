@@ -24,16 +24,57 @@ export default function AppLayout() {
       />
 
       <Tabs.Screen
-        name="cards"
+        name="profile"
         options={{
-          title: "Cards",
+          title: "Profile",
         }}
       />
 
       <Tabs.Screen
-        name="profile"
+        name="my-profile"
         options={{
-          title: "Profile",
+          title: "My Profile",
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="change-email"
+        options={{
+          title: "Change Email",
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="payment-settings"
+        options={{
+          title: "Payment Settings",
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="login-settings"
+        options={{
+          title: "Login Settings",
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="security-questions"
+        options={{
+          title: "Security Questions",
+          href: null,
+        }}
+      />
+
+      <Tabs.Screen
+        name="feedback-suggestions"
+        options={{
+          title: "Feedback & Suggestions",
+          href: null,
         }}
       />
     </Tabs>

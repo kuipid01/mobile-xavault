@@ -9,16 +9,16 @@ const TAB_ICONS: Record<
 > = {
     home: { inactive: "home-outline", active: "home" },
     "(plan)": { inactive: "swap-horizontal-outline", active: "swap-horizontal" },
-    cards: { inactive: "card-outline", active: "card" },
     profile: { inactive: "person-outline", active: "person" },
 };
 
 const TAB_LABELS: Record<string, string> = {
     home: "Home",
     "(plan)": "Plans",
-    cards: "Cards",
-    profile: "Profile",
+    profile: "Settings",
 };
+
+const VISIBLE_TABS = new Set(["home", "(plan)", "profile"]);
 
 export default function CustomTabBar({
     state,
@@ -28,9 +28,15 @@ export default function CustomTabBar({
     return (
         <View style={styles.wrapper}>
             <View style={styles.tabBar}>
-                {state.routes.map((route, index) => {
-                    const isFocused = state.index === index;
+                {state.routes.map((route) => {
+                    if (!VISIBLE_TABS.has(route.name)) return null;
+
+                    const routeIndex = state.routes.findIndex((item) => item.key === route.key);
+                    const isFocused = state.index === routeIndex;
                     const { options } = descriptors[route.key];
+                    const routeOptions = options as typeof options & { href?: string | null };
+                    if (routeOptions.href === null) return null;
+
                     const label =
                         options.title ??
                         TAB_LABELS[route.name] ??

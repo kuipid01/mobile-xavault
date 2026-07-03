@@ -5,6 +5,7 @@ import {
   registerUser,
   resetPassword,
   validateMail,
+  resendVerificationMail,
 } from "@/api/auth";
 
 export const useLogin = () => {
@@ -22,6 +23,12 @@ export const useRegister = () => {
 export const useValidateMail = () => {
   return useMutation({
     mutationFn: validateMail,
+  });
+};
+
+export const useResendVerificationMail = () => {
+  return useMutation({
+    mutationFn: resendVerificationMail,
   });
 };
 
