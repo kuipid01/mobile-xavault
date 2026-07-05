@@ -1,5 +1,12 @@
 import * as SecureStore from "expo-secure-store";
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   ACCESS_TOKEN_KEY,
   REFRESH_TOKEN_KEY,
@@ -12,8 +19,6 @@ import {
   unregisterLogoutCallback,
 } from "./client";
 
-// ─── Logging ──────────────────────────────────────────────────────────────────
-
 const log = {
   info: (msg: string, ...args: unknown[]) =>
     console.log(`[Auth] ${msg}`, ...args),
@@ -22,8 +27,6 @@ const log = {
   error: (msg: string, ...args: unknown[]) =>
     console.error(`[Auth] ${msg}`, ...args),
 };
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 type LoginPayload = {
   email: string;
@@ -34,8 +37,20 @@ type RegisterPayload = {
   email: string;
   password: string;
   confirm_password: string;
+  first_name: string;
+  last_name: string;
   country: "NG" | "GH";
   phone_number: string;
+  nickname?: string;
+};
+
+type StartRegistrationPayload = {
+  email: string;
+};
+
+type VerifyRegistrationMailPayload = {
+  email: string;
+  otp: string;
 };
 
 type ValidateMailPayload = {
@@ -58,90 +73,127 @@ type ResetPasswordPayload = {
   confirm_password: string;
 };
 
-// ─── Token helpers (thin wrappers — logic lives in client.ts) ─────────────────
-
 export const getAccessToken = (): Promise<string | null> =>
   SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
 
 export const getRefreshToken = (): Promise<string | null> =>
   SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
 
-/** Alias kept for call-site compatibility */
 export const removeTokens = clearAuthTokens;
 
-// Re-export so consumers only need to import from one place
 export { isTokenExpired, saveTokens };
-
-// ─── Session check ────────────────────────────────────────────────────────────
 
 export const isLoggedIn = async (): Promise<boolean> => {
   log.info("Checking login state");
+
   let token = await getAccessToken();
 
   if (!token || isTokenExpired(token)) {
-    log.info("Access token missing or expired — attempting refresh");
+    log.info("Access token missing or expired, attempting refresh");
+
     token = await refreshAuthTokens();
+
     const result = !!token;
     log.info(`isLoggedIn result after refresh: ${result}`);
+
     return result;
   }
 
-  log.info("Access token valid — user is logged in");
+  log.info("Access token valid, user is logged in");
   return true;
 };
 
-// ─── Auth API calls ───────────────────────────────────────────────────────────
-
 export const loginUser = async (data: LoginPayload) => {
   log.info("Logging in user:", data.email);
+
   const res = await api.post("/auth/login", data);
   const response = res.data.data;
+
   await saveTokens(response.access_token, response.refresh_token);
+
   log.info("Login successful, tokens saved");
+
   return response;
 };
 
 export const registerUser = async (data: RegisterPayload) => {
   log.info("Registering user:", data.email);
+
   const res = await api.post("/auth/register", data);
+
   log.info("Registration successful");
+
+  return res.data;
+};
+
+export const startRegistration = async (data: StartRegistrationPayload) => {
+  log.info("Starting registration:", data.email);
+
+  const res = await api.post("/auth/register/start", data);
+
+  log.info("Registration OTP sent");
+
+  return res.data;
+};
+
+export const verifyRegistrationMail = async (
+  data: VerifyRegistrationMailPayload,
+) => {
+  log.info("Verifying registration email:", data.email);
+
+  const res = await api.post("/auth/register/verify-mail", data);
+
+  log.info("Registration email verified");
+
   return res.data;
 };
 
 export const validateMail = async (data: ValidateMailPayload) => {
   log.info("Validating email:", data.email);
+
   const res = await api.post("/auth/validate-mail", data);
+
   log.info("Email validation successful");
+
   return res.data;
 };
 
-export const resendVerificationMail = async (data: ResendVerificationMailPayload) => {
+export const resendVerificationMail = async (
+  data: ResendVerificationMailPayload,
+) => {
   log.info("Resending verification mail to:", data.email);
+
   const res = await api.post("/auth/resend-verification-mail", data);
+
   log.info("Verification mail resend successful");
+
   return res.data;
 };
 
 export const forgetPassword = async (data: ForgetPasswordPayload) => {
   log.info("Requesting password reset OTP:", data.email);
+
   const res = await api.post("/auth/forget-password", data);
+
   log.info("Password reset OTP requested");
+
   return res.data;
 };
 
 export const resetPassword = async (data: ResetPasswordPayload) => {
   log.info("Resetting password with OTP");
+
   const res = await api.post("/auth/reset-password", data);
+
   log.info("Password reset successful");
+
   return res.data;
 };
 
 export const logoutUser = async (): Promise<void> => {
-  log.info("Logging out user — clearing tokens");
+  log.info("Logging out user, clearing tokens");
   await clearAuthTokens();
 };
-
-// ─── useAuth hook ─────────────────────────────────────────────────────────────
 
 type AuthState = {
   userToken: string | null;
@@ -149,82 +201,126 @@ type AuthState = {
   isAuthenticated: boolean;
 };
 
-type UseAuthReturn = AuthState & {
-  /** Call this to log the user out from anywhere in the app */
+type AuthContextValue = AuthState & {
   logout: () => Promise<void>;
-  /** Call this after a successful login to update hook state without remounting */
   onLoginSuccess: (token: string) => void;
+  reloadAuthState: () => Promise<void>;
 };
 
-export const useAuth = (): UseAuthReturn => {
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [state, setState] = useState<AuthState>({
     userToken: null,
     isLoading: true,
     isAuthenticated: false,
   });
 
-  // Stable ref so the logout callback registered in client.ts
-  // always calls the latest version of this function.
   const logoutRef = useRef<() => Promise<void>>(null);
 
   const logout = useCallback(async () => {
-    log.info("useAuth: logout called");
+    log.info("AuthProvider: logout called");
+
     await logoutUser();
-    setState({ userToken: null, isLoading: false, isAuthenticated: false });
+
+    setState({
+      userToken: null,
+      isLoading: false,
+      isAuthenticated: false,
+    });
   }, []);
 
-  // Keep the ref in sync
   logoutRef.current = logout;
 
   const onLoginSuccess = useCallback((token: string) => {
-    log.info("useAuth: onLoginSuccess called");
-    setState({ userToken: token, isLoading: false, isAuthenticated: true });
+    log.info("AuthProvider: onLoginSuccess called");
+
+    setState({
+      userToken: token,
+      isLoading: false,
+      isAuthenticated: true,
+    });
+  }, []);
+
+  const reloadAuthState = useCallback(async () => {
+    log.info("AuthProvider: loading auth state");
+
+    setState((prev) => ({
+      ...prev,
+      isLoading: true,
+    }));
+
+    try {
+      let token = await getAccessToken();
+
+      if (!token || isTokenExpired(token)) {
+        log.info("AuthProvider: token missing or expired, attempting refresh");
+        token = await refreshAuthTokens();
+      }
+
+      if (!token) {
+        log.warn("AuthProvider: no valid token, user is logged out");
+
+        setState({
+          userToken: null,
+          isLoading: false,
+          isAuthenticated: false,
+        });
+
+        return;
+      }
+
+      log.info("AuthProvider: valid token found");
+
+      setState({
+        userToken: token,
+        isLoading: false,
+        isAuthenticated: true,
+      });
+    } catch (err) {
+      log.error("AuthProvider: unexpected error loading token:", err);
+
+      setState({
+        userToken: null,
+        isLoading: false,
+        isAuthenticated: false,
+      });
+    }
   }, []);
 
   useEffect(() => {
-    // Register a callback so client.ts can trigger logout when a refresh
-    // fails mid-session (e.g. during a background API call).
     registerLogoutCallback(() => {
-      log.warn("useAuth: logout triggered by client (token refresh failed)");
+      log.warn("AuthProvider: logout triggered by client");
       logoutRef.current?.();
     });
 
-    const loadToken = async () => {
-      log.info("useAuth: loading initial auth state");
-      try {
-        let token = await getAccessToken();
-
-        if (!token || isTokenExpired(token)) {
-          log.info("useAuth: token missing or expired — attempting refresh");
-          token = await refreshAuthTokens();
-        }
-
-        if (!token) {
-          log.warn(
-            "useAuth: no valid token after refresh — user is logged out",
-          );
-          setState({
-            userToken: null,
-            isLoading: false,
-            isAuthenticated: false,
-          });
-          return;
-        }
-
-        log.info("useAuth: valid token found, user is authenticated");
-        setState({ userToken: token, isLoading: false, isAuthenticated: true });
-      } catch (err) {
-        log.error("useAuth: unexpected error loading token:", err);
-        setState({ userToken: null, isLoading: false, isAuthenticated: false });
-      }
-    };
-
-    loadToken();
+    reloadAuthState();
 
     return () => {
       unregisterLogoutCallback();
     };
-  }, []);
+  }, [reloadAuthState]);
 
-  return { ...state, logout, onLoginSuccess };
+  return (
+    <AuthContext.Provider
+      value={{
+        ...state,
+        logout,
+        onLoginSuccess,
+        reloadAuthState,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = (): AuthContextValue => {
+  const context = useContext(AuthContext);
+
+  if (!context) {
+    throw new Error("useAuth must be used inside AuthProvider");
+  }
+
+  return context;
 };

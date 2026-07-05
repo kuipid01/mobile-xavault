@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { COLORS } from "../../themes/colors";
+import { clearRegistrationFlow } from "./authFlow";
 
 // Map layout configuration for floating background elements cleanly
 const PIG_BACKGROUNDS = [
@@ -44,7 +45,10 @@ const IndexScreen = () => {
             {/* Action CTA Buttons */}
             <View style={styles.bottomView}>
                 <TouchableOpacity
-                    onPress={() => router.replace("/(auth)/login")}
+                    onPress={async () => {
+                        await clearRegistrationFlow();
+                        router.replace("/(auth)/login");
+                    }}
                     style={styles.loginButton}
                     activeOpacity={0.8}
                 >
@@ -86,6 +90,7 @@ const styles = StyleSheet.create({
         color: "white",
         textAlign: "center",
         letterSpacing: -0.5,
+        marginTop: 10
     },
     centerTextView: {
         alignItems: "center",

@@ -6,6 +6,7 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import Toast from "react-native-toast-message";
+import { ErrorModal } from "../ui/ErrorModal";
 
 const getApiErrorMessage = (error: any) => {
   const data = error?.response?.data;
@@ -25,6 +26,7 @@ export default function ForgotPasswordScreen() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [viewPassword, setViewPassword] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const { mutateAsync: requestReset, isPending: isRequesting } =
     useForgetPassword();
   const { mutateAsync: resetPassword, isPending: isResetting } =
@@ -40,29 +42,18 @@ export default function ForgotPasswordScreen() {
       });
       setStep("reset");
     } catch (error: any) {
-      Toast.show({
-        type: "error",
-        text1: "Could not send OTP",
-        text2: getApiErrorMessage(error),
-      });
+      setErrorMessage(`Could not send OTP\n${getApiErrorMessage(error)}`);
     }
   };
 
   const handleResetPassword = async () => {
     if (otp.length !== 6) {
-      Toast.show({
-        type: "error",
-        text1: "Enter OTP",
-        text2: "The code must be 6 digits.",
-      });
+      setErrorMessage("Enter OTP\nThe code must be 6 digits.");
       return;
     }
 
     if (password !== confirmPassword) {
-      Toast.show({
-        type: "error",
-        text1: "Passwords do not match",
-      });
+      setErrorMessage("Passwords do not match.");
       return;
     }
 
@@ -79,11 +70,7 @@ export default function ForgotPasswordScreen() {
       });
       router.replace("/(auth)/login");
     } catch (error: any) {
-      Toast.show({
-        type: "error",
-        text1: "Could not reset password",
-        text2: getApiErrorMessage(error),
-      });
+      setErrorMessage(`Could not reset password\n${getApiErrorMessage(error)}`);
     }
   };
 
@@ -170,6 +157,11 @@ export default function ForgotPasswordScreen() {
           </>
         )}
       </View>
+      <ErrorModal
+        visible={!!errorMessage}
+        message={errorMessage}
+        onClose={() => setErrorMessage("")}
+      />
     </ScrollView>
   );
 }
@@ -199,14 +191,14 @@ const styles = {
 
   title: {
     color: COLORS.primary,
-    fontFamily: "PlayfairDisplay_700Bold",
+    fontFamily: "System",
     fontSize: 28,
     marginBottom: 8,
   },
 
   subtitle: {
     color: "#6B7280",
-    fontFamily: "PlayfairDisplay_400Regular",
+    fontFamily: "System",
     fontSize: 14,
     lineHeight: 21,
   },
@@ -238,7 +230,7 @@ const styles = {
 
   buttonText: {
     color: COLORS.white,
-    fontFamily: "PlayfairDisplay_700Bold",
+    fontFamily: "System",
     fontSize: 15,
   },
 };

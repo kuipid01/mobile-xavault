@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { router } from "expo-router";
 import { COLORS } from "@/themes/colors";
 import { Ionicons } from "@expo/vector-icons";
+import { clearRegistrationFlow } from "./auth/authFlow";
 
 export function WelcomeAuthScreen() {
   return (
@@ -34,7 +35,10 @@ export function WelcomeAuthScreen() {
 
         <TouchableOpacity
           activeOpacity={0.9}
-          onPress={() => router.push("/(auth)/login")}
+          onPress={async () => {
+            await clearRegistrationFlow();
+            router.push("/(auth)/login");
+          }}
           style={styles.secondaryButton}
         >
           <Text style={styles.secondaryButtonText}>Log In</Text>

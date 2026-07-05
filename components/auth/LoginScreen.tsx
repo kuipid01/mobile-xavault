@@ -6,14 +6,19 @@ import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import Toast from "react-native-toast-message";
+import { useAuth } from "../../api/auth";
 import { FlatInput } from "../flatinput";
+import { ErrorModal } from "../ui/ErrorModal";
+import { clearRegistrationFlow } from "./authFlow";
 
 const LoginScreen = () => {
   const [viewPassword, setViewPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [mailAvailable, setMailAvailable] = useState(false)
   const [password, setPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
   const { mutateAsync: login, isPending } = useLogin();
+  const { onLoginSuccess } = useAuth();
   useEffect(() => {
     const checkMail = async () => {
       const mailInStorage = await AsyncStorage.getItem("email");
@@ -26,25 +31,26 @@ const LoginScreen = () => {
   }, [])
   const handleLogin = async () => {
     try {
-      await login({
+      const response = await login({
         email: email.trim().toLowerCase(),
         password,
       });
-      await AsyncStorage.removeItem("pendingVerificationEmail");
-      await AsyncStorage.setItem("email", email.trim().toLowerCase())
+
+      onLoginSuccess(response.access_token);
+
+      await clearRegistrationFlow();
+      await AsyncStorage.setItem("email", email.trim().toLowerCase());
+
       Toast.show({
         type: "success",
         text1: "Login successful",
         text2: "Welcome back to XAVAULT.",
       });
+
       router.replace("/(app)/home");
     } catch (error) {
       console.error("Login failed:", error);
-      Toast.show({
-        type: "error",
-        text1: "Login failed",
-        text2: "Please check your credentials and try again.",
-      });
+      setErrorMessage("Incorrect email or password.");
     }
   };
 
@@ -121,6 +127,11 @@ const LoginScreen = () => {
 
 
       </View>
+      <ErrorModal
+        visible={!!errorMessage}
+        message={errorMessage}
+        onClose={() => setErrorMessage("")}
+      />
     </ScrollView>
   );
 };
@@ -137,7 +148,7 @@ const styles = {
 
   brand: {
     color: COLORS.primary,
-    fontFamily: "PlayfairDisplay_700Bold",
+    fontFamily: "System",
     fontSize: 22,
     letterSpacing: 2,
     marginBottom: 18,
@@ -175,13 +186,13 @@ const styles = {
 
   segmentText: {
     color: "#9AA5A1",
-    fontFamily: "PlayfairDisplay_600SemiBold",
+    fontFamily: "System",
     fontSize: 12,
   },
 
   segmentActiveText: {
     color: COLORS.primary,
-    fontFamily: "PlayfairDisplay_700Bold",
+    fontFamily: "System",
     fontSize: 12,
   },
 
@@ -193,14 +204,14 @@ const styles = {
 
   title: {
     color: COLORS.primary,
-    fontFamily: "PlayfairDisplay_700Bold",
+    fontFamily: "System",
     fontSize: 27,
     marginBottom: 6,
   },
 
   subtitle: {
     color: "#6B7280",
-    fontFamily: "PlayfairDisplay_400Regular",
+    fontFamily: "System",
     fontSize: 13,
   },
 
@@ -214,14 +225,14 @@ const styles = {
     alignItems: "center" as const,
     backgroundColor: COLORS.primary,
     borderRadius: Radius.medium,
-    height: 48,
+    height: 52,
     justifyContent: "center" as const,
     marginTop: 2,
   },
 
   buttonText: {
     color: "white",
-    fontFamily: "PlayfairDisplay_700Bold",
+    fontFamily: "System",
     fontSize: 13,
     letterSpacing: 1.2,
   },
@@ -232,7 +243,7 @@ const styles = {
 
   forgotText: {
     color: COLORS.primary,
-    fontFamily: "PlayfairDisplay_600SemiBold",
+    fontFamily: "System",
     fontSize: 14,
     marginBottom: 14,
     marginTop: -4,
@@ -241,7 +252,7 @@ const styles = {
 
   footerText: {
     color: "#6B7280",
-    fontFamily: "PlayfairDisplay_400Regular",
+    fontFamily: "System",
     fontSize: 12,
     marginTop: 14,
     textAlign: "center" as const,
@@ -249,7 +260,7 @@ const styles = {
 
   link: {
     color: COLORS.primary,
-    fontFamily: "PlayfairDisplay_600SemiBold",
+    fontFamily: "System",
   },
 
   brandMark: {
@@ -265,7 +276,7 @@ const styles = {
 
   brandMarkText: {
     color: COLORS.tertiary,
-    fontFamily: "PlayfairDisplay_700Bold",
+    fontFamily: "System",
     fontSize: 20,
   },
 };

@@ -1,68 +1,203 @@
-import { Input } from "@/components/Input";
-import { useRegister } from "@/hooks/auth/auth";
-import { COLORS, Padding } from "@/themes/colors";
+import { useRegister, useStartRegistration } from "@/hooks/auth/auth";
+import { COLORS } from "@/themes/colors";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Pressable,
+  BackHandler,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
-  Text,
   TouchableOpacity,
-  View,
 } from "react-native";
 import Toast from "react-native-toast-message";
-
-type SupportedCountry = "NG" | "GH";
-
-const countryMeta: Record<
-  SupportedCountry,
-  { label: string; maxLength: number; alternateLength: number; hint: string }
-> = {
-  NG: {
-    label: "Nigeria",
-    maxLength: 11,
-    alternateLength: 10,
-    hint: "Use 10 digits, or 11 digits starting with 0.",
-  },
-  GH: {
-    label: "Ghana",
-    maxLength: 10,
-    alternateLength: 9,
-    hint: "Use 9 digits, or 10 digits starting with 0.",
-  },
-};
+import { ErrorModal } from "../ui/ErrorModal";
+import {
+  clearRegistrationFlow,
+  createRegistrationFlow,
+  loadAuthFlow,
+  PENDING_EMAIL_KEY,
+  REGISTRATION_DRAFT_KEY,
+  saveAuthFlow,
+} from "./authFlow";
+import { countryMeta, initialDraft } from "./register/constants";
+import { DetailsStep } from "./register/DetailsStep";
+import { EmailStep } from "./register/EmailStep";
+import { PinStep } from "./register/PinStep";
+import { styles } from "./register/styles";
+import type { RegisterDraft, RegisterStep } from "./register/types";
+import { getApiErrorMessage, normalizeUsername } from "./register/utils";
 
 const RegisterScreen = () => {
-  const [viewPassword, setViewPassword] = useState(false);
-  const [email, setEmail] = useState("");
-  const [country, setCountry] = useState<SupportedCountry>("NG");
-  const [phone, setPhone] = useState("");
+  const params = useLocalSearchParams<{ verified?: string }>();
+  const [draft, setDraft] = useState<RegisterDraft>(initialDraft);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [pin, setPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [viewPassword, setViewPassword] = useState(false);
+  const [hasLoadedDraft, setHasLoadedDraft] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const { mutateAsync: register, isPending } = useRegister();
+  const { mutateAsync: startRegistration, isPending: isStartingRegistration } =
+    useStartRegistration();
 
-  const getApiErrorMessage = (error: any) => {
-    const data = error?.response?.data;
-
-    if (data?.error && typeof data.error === "object") {
-      const firstError = Object.values(data.error)[0];
-      if (typeof firstError === "string") return firstError;
-    }
-
-    if (typeof data?.message === "string") return data.message;
-    if (typeof error?.message === "string") return error.message;
-
-    return "Please try again.";
+  const updateDraft = (patch: Partial<RegisterDraft>) => {
+    setDraft((current) => ({ ...current, ...patch }));
   };
 
-  const handleRegister = async () => {
-    const cleanPhone = phone.replace(/\D/g, "");
-    const selectedCountry = countryMeta[country];
+  const loadDraft = useCallback(async () => {
+    try {
+      const [savedDraft, authFlow] = await Promise.all([
+        AsyncStorage.getItem(REGISTRATION_DRAFT_KEY),
+        loadAuthFlow(),
+      ]);
+      const forceDetails = params.verified === "1";
+
+      if (savedDraft) {
+        const parsed = JSON.parse(savedDraft) as Partial<RegisterDraft>;
+        const savedStep =
+          forceDetails ||
+            parsed.step === "pin" ||
+            authFlow?.step === "pin" ||
+            authFlow?.step === "email_verified" ||
+            authFlow?.step === "details"
+            ? "details"
+            : parsed.step || "email";
+        setDraft({
+          ...initialDraft,
+          ...parsed,
+          email: authFlow?.email || parsed.email || "",
+          step: savedStep,
+        });
+      } else if (authFlow) {
+        setDraft({
+          ...initialDraft,
+          email: authFlow.email,
+          username: authFlow.email.split("@")[0],
+          step:
+            forceDetails ||
+              authFlow.step === "email_verified" ||
+              authFlow.step === "details" ||
+              authFlow.step === "pin"
+              ? "details"
+              : "email",
+        });
+      }
+    } catch (error) {
+      console.log("Failed to load registration draft:", error);
+    } finally {
+      setHasLoadedDraft(true);
+    }
+  }, [params.verified]);
+
+  useEffect(() => {
+    loadDraft();
+  }, [loadDraft]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadDraft();
+    }, [loadDraft]),
+  );
+  const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    if (draft.step === "pin") {
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo({
+          y: 0,
+          animated: false,
+        });
+      });
+    }
+  }, [draft.step]);
+  useEffect(() => {
+    if (!hasLoadedDraft) return;
+
+    AsyncStorage.setItem(REGISTRATION_DRAFT_KEY, JSON.stringify(draft)).catch(
+      (error) => console.log("Failed to save registration draft:", error),
+    );
+  }, [draft, hasLoadedDraft]);
+
+  const normalizedEmail = useMemo(
+    () => draft.email.trim().toLowerCase(),
+    [draft.email],
+  );
+  const canContinueFromEmail = /\S+@\S+\.\S+/.test(normalizedEmail);
+
+  const goToDetails = async () => {
+    if (!canContinueFromEmail) {
+      Toast.show({ type: "error", text1: "Enter a valid email" });
+      return;
+    }
+
+    try {
+      const response = await startRegistration({ email: normalizedEmail });
+      const shouldResumeDetails =
+        response?.data?.resume === true ||
+        response?.data?.mail_verified === true;
+      const nextDraft = {
+        ...draft,
+        email: normalizedEmail,
+        step: shouldResumeDetails
+          ? ("details" as RegisterStep)
+          : ("email" as RegisterStep),
+        username: draft.username || normalizedEmail.split("@")[0],
+      };
+      updateDraft(nextDraft);
+      await AsyncStorage.setItem(
+        REGISTRATION_DRAFT_KEY,
+        JSON.stringify(nextDraft),
+      );
+
+      if (shouldResumeDetails) {
+        await AsyncStorage.removeItem(PENDING_EMAIL_KEY);
+        await saveAuthFlow(createRegistrationFlow(normalizedEmail, "details"));
+        Toast.show({
+          type: "success",
+          text1: "Email already verified",
+          text2: "Continue creating your account.",
+        });
+        return;
+      }
+
+      await AsyncStorage.setItem(PENDING_EMAIL_KEY, normalizedEmail);
+      await saveAuthFlow(
+        createRegistrationFlow(normalizedEmail, "email_otp_sent"),
+      );
+      Toast.show({
+        type: "success",
+        text1: "Verification code sent",
+        text2: `Check ${normalizedEmail}.`,
+      });
+      router.replace({
+        pathname: "/(auth)/verify-mail",
+        params: { email: normalizedEmail },
+      });
+    } catch (error: any) {
+      setErrorMessage(getApiErrorMessage(error));
+    }
+  };
+
+  const goToPin = async () => {
+    const cleanPhone = draft.phone.replace(/\D/g, "");
+    const selectedCountry = countryMeta[draft.country];
     const validLength =
       cleanPhone.length === selectedCountry.maxLength ||
       cleanPhone.length === selectedCountry.alternateLength;
+
+    if (!draft.firstName.trim() || !draft.lastName.trim()) {
+      Toast.show({ type: "error", text1: "Add your legal name" });
+      return;
+    }
+
+    if (!normalizeUsername(draft.username)) {
+      Toast.show({ type: "error", text1: "Choose a username" });
+      return;
+    }
 
     if (!validLength) {
       Toast.show({
@@ -73,37 +208,66 @@ const RegisterScreen = () => {
       return;
     }
 
-    if (password !== confirmPassword) {
+    if (password.length < 6) {
       Toast.show({
         type: "error",
-        text1: "Passwords do not match",
+        text1: "Password is too short",
+        text2: "Use at least 6 characters.",
       });
       return;
     }
 
-    try {
-      const normalizedEmail = email.trim().toLowerCase();
+    if (password !== confirmPassword) {
+      Toast.show({ type: "error", text1: "Passwords do not match" });
+      return;
+    }
 
+    const nextDraft = {
+      ...draft,
+      phone: cleanPhone,
+      username: normalizeUsername(draft.username),
+      step: "pin" as RegisterStep,
+    };
+    updateDraft(nextDraft);
+    await AsyncStorage.setItem(
+      REGISTRATION_DRAFT_KEY,
+      JSON.stringify(nextDraft),
+    );
+    await saveAuthFlow(createRegistrationFlow(normalizedEmail, "pin"));
+  };
+
+  const handleCreateAccount = async () => {
+    if (pin.length !== 4 || confirmPin.length !== 4) {
+      Toast.show({ type: "error", text1: "Enter a 4 digit PIN" });
+      return;
+    }
+
+    if (pin !== confirmPin) {
+      Toast.show({ type: "error", text1: "PINs do not match" });
+      return;
+    }
+
+    try {
       await register({
         email: normalizedEmail,
         password,
         confirm_password: confirmPassword,
-        country,
-        phone_number: cleanPhone,
+        first_name: draft.firstName.trim(),
+        last_name: draft.lastName.trim(),
+        country: draft.country,
+        phone_number: draft.phone,
+        nickname: normalizeUsername(draft.username),
       });
 
-      await AsyncStorage.setItem("pendingVerificationEmail", normalizedEmail);
+      await clearRegistrationFlow();
 
       Toast.show({
         type: "success",
         text1: "Account created",
-        text2: "Enter the OTP we sent to your email.",
+        text2: "You can now sign in.",
       });
 
-      router.replace({
-        pathname: "/(auth)/verify-mail",
-        params: { email: normalizedEmail },
-      });
+      router.replace("/(auth)/login");
     } catch (error: any) {
       Toast.show({
         type: "error",
@@ -113,243 +277,124 @@ const RegisterScreen = () => {
     }
   };
 
+  const goBackToDetails = async () => {
+    const nextDraft = { ...draft, step: "details" as RegisterStep };
+    updateDraft(nextDraft);
+    await AsyncStorage.setItem(
+      REGISTRATION_DRAFT_KEY,
+      JSON.stringify(nextDraft),
+    );
+    await saveAuthFlow(createRegistrationFlow(normalizedEmail, "details"));
+    setPin("");
+    setConfirmPin("");
+  };
+
+  const startOver = async () => {
+    await clearRegistrationFlow();
+    setDraft(initialDraft);
+    setPassword("");
+    setConfirmPassword("");
+    setPin("");
+    setConfirmPin("");
+  };
+
+  const closeFlow = async () => {
+    await clearRegistrationFlow();
+    router.replace("/(auth)/initial");
+  };
+
+  const goToLogin = async () => {
+    await clearRegistrationFlow();
+    router.replace("/(auth)/login");
+  };
+
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        if (draft.step === "pin") {
+          void goBackToDetails();
+          return true;
+        }
+
+        if (draft.step === "details") {
+          void startOver();
+          return true;
+        }
+
+        void closeFlow();
+        return true;
+      },
+    );
+
+    return () => subscription.remove();
+  }, [draft.step, normalizedEmail]);
+
   return (
-    <ScrollView
-      contentContainerStyle={styles.container}
-      keyboardShouldPersistTaps="handled"
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={styles.flex}
     >
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
+      <ScrollView
+        contentContainerStyle={styles.container}
+        ref={scrollRef}
+        keyboardShouldPersistTaps="handled"
+      >
+        {draft.step !== "pin" && <TouchableOpacity
+          onPress={closeFlow}
+          style={styles.closeButton}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <Ionicons name="chevron-back" size={22} color={COLORS.primary} />
-        </TouchableOpacity>
+          <Ionicons name="close" size={34} color={COLORS.primary} />
+        </TouchableOpacity>}
 
-        <View style={styles.titleContainer}>
-          <Text style={styles.title}>Create an account</Text>
-          <Text style={styles.subtitle}>
-            Start protecting your plans with email OTP verification.
-          </Text>
-        </View>
-      </View>
+        {draft.step === "email" && (
+          <EmailStep
+            email={draft.email}
+            canContinue={canContinueFromEmail}
+            isSubmitting={isStartingRegistration}
+            onEmailChange={(email) => updateDraft({ email })}
+            onContinue={goToDetails}
+            onSignIn={goToLogin}
+          />
+        )}
 
-      <View style={styles.form}>
-        <Input
-          placeholder="Enter email"
-          label="Email"
-          icon="mail-outline"
-          value={email}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          onChangeText={setEmail}
+        {draft.step === "details" && (
+          <DetailsStep
+            draft={draft}
+            password={password}
+            confirmPassword={confirmPassword}
+            viewPassword={viewPassword}
+            onDraftChange={updateDraft}
+            onPasswordChange={setPassword}
+            onConfirmPasswordChange={setConfirmPassword}
+            onTogglePassword={() => setViewPassword((value) => !value)}
+            onContinue={goToPin}
+            onStartOver={startOver}
+            normalizeUsername={normalizeUsername}
+          />
+        )}
+
+        {draft.step === "pin" && (
+          <PinStep
+            pin={pin}
+            confirmPin={confirmPin}
+            isCreating={isPending}
+            onPinChange={setPin}
+            onConfirmPinChange={setConfirmPin}
+            onCreateAccount={handleCreateAccount}
+            onEditDetails={goBackToDetails}
+          />
+        )}
+
+        <ErrorModal
+          visible={!!errorMessage}
+          message={errorMessage}
+          onClose={() => setErrorMessage("")}
         />
-
-        <Text style={styles.segmentLabel}>Country</Text>
-        <View style={styles.countryGroup}>
-          {(["NG", "GH"] as SupportedCountry[]).map((option) => (
-            <Pressable
-              key={option}
-              onPress={() => {
-                setCountry(option);
-                setPhone("");
-              }}
-              style={[
-                styles.countryOption,
-                country === option && styles.countryOptionActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.countryText,
-                  country === option && styles.countryTextActive,
-                ]}
-              >
-                {countryMeta[option].label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <Input
-          placeholder={country === "NG" ? "08012345678" : "0241234567"}
-          label="Phone Number"
-          icon="call-outline"
-          value={phone}
-          keyboardType="phone-pad"
-          maxLength={countryMeta[country].maxLength}
-          onChangeText={(value) => setPhone(value.replace(/\D/g, ""))}
-        />
-
-        <Input
-          placeholder="Enter password"
-          label="Password"
-          icon="lock-closed-outline"
-          secureTextEntry
-          viewPassword={viewPassword}
-          setViewPassword={setViewPassword}
-          value={password}
-          onChangeText={setPassword}
-        />
-        <Input
-          placeholder="Confirm password"
-          label="Confirm Password"
-          icon="lock-closed-outline"
-          secureTextEntry
-          viewPassword={viewPassword}
-          setViewPassword={setViewPassword}
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-        />
-
-        <TouchableOpacity
-          style={[styles.button, isPending && styles.buttonDisabled]}
-          disabled={isPending}
-          onPress={handleRegister}
-        >
-          <Text style={styles.buttonText}>
-            {isPending ? "Creating..." : "Create Account"}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <Pressable onPress={() => router.push("/(auth)/login")}>
-        <Text style={styles.footerText}>
-          Already have an account? <Text style={styles.link}>Log in</Text>
-        </Text>
-      </Pressable>
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
 export default RegisterScreen;
-
-const styles = {
-  container: {
-    flexGrow: 1,
-    backgroundColor: COLORS.hash,
-    paddingHorizontal: Padding.containerX,
-    paddingVertical: Padding.containerY,
-  },
-
-  header: {
-    marginTop: 20,
-  },
-
-  backButton: {
-    alignItems: "center" as const,
-    backgroundColor: COLORS.white,
-    borderRadius: 14,
-    height: 44,
-    justifyContent: "center" as const,
-    width: 44,
-  },
-
-  titleContainer: {
-    alignItems: "center" as const,
-    marginTop: 24,
-  },
-
-  title: {
-    color: COLORS.primary,
-    fontFamily: "PlayfairDisplay_700Bold",
-    fontSize: 27,
-    marginBottom: 6,
-  },
-
-  subtitle: {
-    color: "#6B7280",
-    fontFamily: "PlayfairDisplay_400Regular",
-    fontSize: 13,
-    paddingHorizontal: 10,
-    textAlign: "center" as const,
-  },
-
-  form: {
-    backgroundColor: COLORS.white,
-    borderColor: "#E7ECE9",
-    borderRadius: 18,
-    borderWidth: 1,
-    elevation: 3,
-    marginTop: 32,
-    padding: 18,
-    shadowColor: "#063B2E",
-    shadowOpacity: 0.05,
-    shadowRadius: 18,
-  },
-
-  segmentLabel: {
-    color: COLORS.text,
-    fontFamily: "PlayfairDisplay_700Bold",
-    fontSize: 11,
-    letterSpacing: 1,
-    marginBottom: 8,
-    textTransform: "uppercase" as const,
-  },
-
-  countryGroup: {
-    backgroundColor: "#F4F6F5",
-    borderRadius: 12,
-    flexDirection: "row" as const,
-    gap: 8,
-    marginBottom: 14,
-    padding: 5,
-  },
-
-  countryOption: {
-    alignItems: "center" as const,
-    borderRadius: 9,
-    flex: 1,
-    height: 42,
-    justifyContent: "center" as const,
-  },
-
-  countryOptionActive: {
-    backgroundColor: COLORS.white,
-    elevation: 2,
-    shadowColor: "#063B2E",
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-  },
-
-  countryText: {
-    color: "#72807A",
-    fontFamily: "PlayfairDisplay_600SemiBold",
-    fontSize: 13,
-  },
-
-  countryTextActive: {
-    color: COLORS.primary,
-  },
-
-  button: {
-    alignItems: "center" as const,
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    height: 52,
-    justifyContent: "center" as const,
-    marginTop: 20,
-  },
-
-  buttonDisabled: {
-    opacity: 0.65,
-  },
-
-  buttonText: {
-    color: "white",
-    fontFamily: "PlayfairDisplay_700Bold",
-    fontSize: 15,
-  },
-
-  footerText: {
-    color: COLORS.text,
-    fontFamily: "PlayfairDisplay_400Regular",
-    marginTop: 20,
-    textAlign: "center" as const,
-  },
-
-  link: {
-    color: COLORS.primary,
-    fontFamily: "PlayfairDisplay_700Bold",
-  },
-};

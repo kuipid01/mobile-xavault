@@ -1,22 +1,28 @@
 import { OnboardingProvider, useOnboarding } from "@/context/OnboardingContext";
-import {
-  PlayfairDisplay_400Regular,
-  PlayfairDisplay_500Medium,
-  PlayfairDisplay_600SemiBold,
-  PlayfairDisplay_700Bold,
-  useFonts,
-} from "@expo-google-fonts/playfair-display";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack, router } from "expo-router";
+import { router, Stack, usePathname, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Text, TextInput, View } from "react-native";
 import Toast from "react-native-toast-message";
-import { useAuth } from "../api/auth";
+import { AuthProvider, useAuth } from "../api/auth";
+import {
+  loadAuthFlow,
+  PENDING_EMAIL_KEY,
+  REGISTRATION_DRAFT_KEY,
+} from "../components/auth/authFlow";
 import "../global.css";
 
+const DEBUG_ROOT_LAYOUT = true;
+
+const debugLog = (...args: unknown[]) => {
+  if (!DEBUG_ROOT_LAYOUT) return;
+  console.log("[RootLayout]", ...args);
+};
+
 const queryClient = new QueryClient();
+
 type ComponentWithDefaultProps = {
   defaultProps?: {
     style?: unknown;
@@ -26,59 +32,210 @@ type ComponentWithDefaultProps = {
 function RootLayoutContent() {
   const { isLoading: authLoading, isAuthenticated } = useAuth();
   const { isFirstTime, isLoading: onboardingLoading } = useOnboarding();
-  const [fontsLoaded] = useFonts({
-    PlayfairDisplay_400Regular,
-    PlayfairDisplay_500Medium,
-    PlayfairDisplay_600SemiBold,
-    PlayfairDisplay_700Bold,
-  });
+  const pathname = usePathname();
+  const segments = useSegments();
+  const rootSegment = segments[0];
+  const fontsLoaded = true;
 
   const [isRedirectChecking, setIsRedirectChecking] = useState(true);
 
   useEffect(() => {
-    if (!fontsLoaded) return;
+    debugLog("font defaults effect", { fontsLoaded });
+
+    if (!fontsLoaded) {
+      debugLog("font defaults skipped, fonts not loaded");
+      return;
+    }
 
     const defaultText = Text as unknown as ComponentWithDefaultProps;
     defaultText.defaultProps = defaultText.defaultProps || {};
     defaultText.defaultProps.style = [
-      { fontFamily: "PlayfairDisplay_400Regular" },
+      { fontFamily: "System" },
       defaultText.defaultProps.style,
     ];
 
     const defaultTextInput = TextInput as unknown as ComponentWithDefaultProps;
     defaultTextInput.defaultProps = defaultTextInput.defaultProps || {};
     defaultTextInput.defaultProps.style = [
-      { fontFamily: "PlayfairDisplay_400Regular" },
+      { fontFamily: "System" },
       defaultTextInput.defaultProps.style,
     ];
+
+    debugLog("font defaults applied");
   }, [fontsLoaded]);
 
-  // Startup redirect: if they are in the middle of verifying mail, take them back there.
+  // Startup redirect: keep the route tree stable and move users to the right flow.
   useEffect(() => {
-    if (onboardingLoading || authLoading || !fontsLoaded) return;
+    debugLog("redirect effect fired", {
+      onboardingLoading,
+      authLoading,
+      fontsLoaded,
+      isFirstTime,
+      isAuthenticated,
+      pathname,
+      rootSegment,
+      segments,
+    });
+
+    if (onboardingLoading || authLoading || !fontsLoaded) {
+      debugLog("redirect skipped, still loading", {
+        onboardingLoading,
+        authLoading,
+        fontsLoaded,
+      });
+      return;
+    }
 
     const checkInitialRedirect = async () => {
+      debugLog("redirect check started");
+
       try {
-        if (!isFirstTime && !isAuthenticated) {
-          const email = await AsyncStorage.getItem("pendingVerificationEmail");
+        if (isFirstTime) {
+          debugLog("user is first time", { rootSegment });
+
+          if (rootSegment !== "(onboarding)") {
+            debugLog("redirecting to onboarding");
+            router.replace("/(onboarding)");
+          } else {
+            debugLog("already on onboarding");
+          }
+
+          return;
+        }
+
+        if (isAuthenticated) {
+          debugLog("user is authenticated", { rootSegment });
+
+          if (rootSegment !== "(app)") {
+            debugLog("redirecting to app home");
+            router.replace("/(app)/home");
+          } else {
+            debugLog("already in app group");
+          }
+
+          return;
+        }
+
+        if (!isAuthenticated) {
+          debugLog("user is not authenticated, checking saved auth flow");
+
+          const [authFlow, email, registrationDraft] = await Promise.all([
+            loadAuthFlow(),
+            AsyncStorage.getItem(PENDING_EMAIL_KEY),
+            AsyncStorage.getItem(REGISTRATION_DRAFT_KEY),
+          ]);
+
+          debugLog("saved auth state loaded", {
+            authFlow,
+            hasPendingEmail: Boolean(email),
+            pendingEmail: email,
+            hasRegistrationDraft: Boolean(registrationDraft),
+          });
+
+          if (authFlow?.kind === "register") {
+            debugLog("register auth flow found", {
+              step: authFlow.step,
+              email: authFlow.email,
+            });
+
+            if (authFlow.step === "email_otp_sent") {
+              if (!pathname.includes("/verify-mail")) {
+                debugLog("redirecting to verify mail from auth flow", {
+                  email: authFlow.email,
+                });
+
+                router.replace({
+                  pathname: "/(auth)/verify-mail",
+                  params: { email: authFlow.email },
+                });
+              } else {
+                debugLog("already on verify mail");
+              }
+
+              return;
+            }
+
+            if (!pathname.includes("/register")) {
+              debugLog("redirecting to register from auth flow");
+              router.replace("/(auth)/register");
+            } else {
+              debugLog("already on register");
+            }
+
+            return;
+          }
+
           if (email) {
-            router.replace({
-              pathname: "/(auth)/verify-mail",
-              params: { email },
+            debugLog("pending email found", { email });
+
+            if (!pathname.includes("/verify-mail")) {
+              debugLog("redirecting to verify mail from pending email", {
+                email,
+              });
+
+              router.replace({
+                pathname: "/(auth)/verify-mail",
+                params: { email },
+              });
+            } else {
+              debugLog("already on verify mail");
+            }
+          } else if (registrationDraft && !pathname.includes("/register")) {
+            debugLog("registration draft found, redirecting to register");
+            router.replace("/(auth)/register");
+          } else if (
+            rootSegment !== "(auth)" &&
+            ![
+              "/login",
+              "/register",
+              "/verify-mail",
+              "/forgot-password",
+              "/initial",
+              "/welcome",
+            ].includes(pathname)
+          ) {
+            debugLog("no saved auth flow, redirecting to auth initial", {
+              rootSegment,
+              pathname,
+            });
+
+            router.replace("/(auth)/initial");
+          } else {
+            debugLog("no redirect needed", {
+              rootSegment,
+              pathname,
             });
           }
         }
       } catch (error) {
-        console.log("Failed to check pending verification email:", error);
+        debugLog("failed to check pending auth flow", error);
+        console.log("Failed to check pending auth flow:", error);
       } finally {
+        debugLog("redirect check finished");
         setIsRedirectChecking(false);
       }
     };
 
     checkInitialRedirect();
-  }, [onboardingLoading, authLoading, fontsLoaded, isFirstTime, isAuthenticated]);
+  }, [
+    onboardingLoading,
+    authLoading,
+    fontsLoaded,
+    isFirstTime,
+    isAuthenticated,
+    pathname,
+    rootSegment,
+    segments,
+  ]);
 
   if (onboardingLoading || authLoading || !fontsLoaded || isRedirectChecking) {
+    debugLog("showing loading screen", {
+      onboardingLoading,
+      authLoading,
+      fontsLoaded,
+      isRedirectChecking,
+    });
+
     return (
       <View
         style={{
@@ -93,27 +250,34 @@ function RootLayoutContent() {
     );
   }
 
+  debugLog("rendering app stack", {
+    pathname,
+    rootSegment,
+    segments,
+  });
+
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      {isFirstTime ? (
-        <Stack.Screen name="(onboarding)" />
-      ) : !isAuthenticated ? (
-        <Stack.Screen name="(app)" />
-      ) : (
-        <Stack.Screen name="(auth)" />
-      )}
+      <Stack.Screen name="(onboarding)" />
+      <Stack.Screen name="(auth)" />
+      <Stack.Screen name="(app)" />
+      <Stack.Screen name="modal" />
     </Stack>
   );
 }
 
 export default function RootLayout() {
+  debugLog("rendering root layout");
+
   return (
     <QueryClientProvider client={queryClient}>
-      <OnboardingProvider>
-        <StatusBar style="light" />
-        <RootLayoutContent />
-        <Toast />
-      </OnboardingProvider>
+      <AuthProvider>
+        <OnboardingProvider>
+          <StatusBar style="light" />
+          <RootLayoutContent />
+          <Toast />
+        </OnboardingProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

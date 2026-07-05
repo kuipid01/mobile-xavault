@@ -3,8 +3,10 @@ import {
   forgetPassword,
   loginUser,
   registerUser,
+  startRegistration,
   resetPassword,
   validateMail,
+  verifyRegistrationMail,
   resendVerificationMail,
 } from "@/api/auth";
 
@@ -17,6 +19,18 @@ export const useLogin = () => {
 export const useRegister = () => {
   return useMutation({
     mutationFn: registerUser,
+  });
+};
+
+export const useStartRegistration = () => {
+  return useMutation({
+    mutationFn: startRegistration,
+  });
+};
+
+export const useVerifyRegistrationMail = () => {
+  return useMutation({
+    mutationFn: verifyRegistrationMail,
   });
 };
 

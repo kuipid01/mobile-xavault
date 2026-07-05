@@ -1,4 +1,4 @@
-import { getAccessToken, logoutUser } from "@/api/auth";
+import { getAccessToken, useAuth } from "@/api/auth";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { jwtDecode } from "jwt-decode";
@@ -19,7 +19,7 @@ const C = {
   dangerBg: "#FFF1F3",
 };
 
-type JwtWithEmail = { email?: string; sub?: string; [key: string]: unknown };
+type JwtWithEmail = { email?: string; sub?: string;[key: string]: unknown };
 
 function SettingRow({
   icon,
@@ -48,7 +48,7 @@ function SettingRow({
 
 export default function Profile() {
   const [email, setEmail] = useState<string | null>(null);
-
+  const { logout } = useAuth();
   useEffect(() => {
     getAccessToken().then((token) => {
       if (!token) return;
@@ -64,7 +64,7 @@ export default function Profile() {
   const avatarLetter = email ? email[0].toUpperCase() : "U";
 
   const handleLogout = async () => {
-    await logoutUser();
+    await logout();
     router.replace("/(auth)/welcome");
   };
 
