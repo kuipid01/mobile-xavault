@@ -5,8 +5,8 @@ import {
   useUploadProfileImage,
 } from "@/hooks/app/profile";
 import { useWallet } from "@/hooks/app/wallet";
-import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
@@ -118,7 +118,7 @@ export default function MyProfileScreen() {
 
   const handleBack = () => {
     if (router.canGoBack()) router.back();
-    else router.replace("/(app)/profile");
+    else router.replace("/(app)/(tabs)/profile");
   };
 
   const handlePickImage = async () => {
@@ -282,7 +282,7 @@ function Header({ title, subtitle, onBack }: { title: string; subtitle: string; 
   return (
     <View style={styles.header}>
       <TouchableOpacity style={styles.backButton} onPress={onBack}>
-        <Ionicons name="chevron-back" size={22} color={C.forest} />
+        <Ionicons name="arrow-back" size={22} color={C.forest} />
       </TouchableOpacity>
       <Text style={styles.title}>{title}</Text>
       <Text style={styles.subtitle}>{subtitle}</Text>

@@ -23,11 +23,14 @@ import {
   useWithdrawalPinStatus,
 } from "@/hooks/app/withdrawal-pin";
 import { useRequestWithdrawal } from "@/hooks/app/withdrawals";
+import { trackEvent } from "@/lib/analytics";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
+import * as Haptics from "expo-haptics";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   KeyboardAvoidingView,
   Modal,
@@ -65,7 +68,11 @@ const COLOR = {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Props = { visible: boolean; onClose: () => void };
+type Props = {
+  visible: boolean;
+  onClose: () => void;
+  onCompleted?: () => void | Promise<void>;
+};
 
 type WithdrawalTarget =
   | { type: "plan"; id: string; label: string; balance: number; reason: string }
@@ -78,8 +85,7 @@ type WithdrawalTarget =
     envelope: Envelope;
   };
 
-// Merged PIN + Confirm into one step; removed redundant confirm step
-type Step = "plan" | "source" | "amount" | "destination" | "pin";
+type Step = "plan" | "source" | "amount" | "destination" | "review" | "pin";
 
 type DestinationSelection = {
   type: "account" | "beneficiary";
@@ -87,6 +93,13 @@ type DestinationSelection = {
   label: string;
   bank: string;
   accountNumber: string;
+};
+
+type WithdrawalReceipt = {
+  reference: string;
+  amount: number;
+  status: string;
+  destination: string;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -163,22 +176,15 @@ const showBottomToast = (options: Parameters<typeof Toast.show>[0]) =>
 
 // ─── Step config ──────────────────────────────────────────────────────────────
 
-const STEPS: Step[] = ["plan", "source", "amount", "destination", "pin"];
+const STEPS: Step[] = ["plan", "source", "amount", "destination", "review", "pin"];
 const STEP_LABELS: Record<Step, string> = {
   plan: "Plan",
   source: "Source",
   amount: "Amount",
   destination: "To",
-  pin: "Confirm",
+  review: "Review",
+  pin: "PIN",
 };
-const STEP_ICONS: Record<Step, keyof typeof Ionicons.glyphMap> = {
-  plan: "layers-outline",
-  source: "wallet-outline",
-  amount: "cash-outline",
-  destination: "paper-plane-outline",
-  pin: "shield-checkmark-outline",
-};
-
 // ─── Progress bar ─────────────────────────────────────────────────────────────
 
 const ProgressBar = ({ current }: { current: Step }) => {
@@ -192,7 +198,7 @@ const ProgressBar = ({ current }: { current: Step }) => {
       tension: 60,
       friction: 10,
     }).start();
-  }, [currentIdx]);
+  }, [currentIdx, progress]);
 
   const barWidth = progress.interpolate({
     inputRange: [0, 1],
@@ -655,7 +661,7 @@ const summaryStyles = StyleSheet.create({
 
 // ─── Main modal ───────────────────────────────────────────────────────────────
 
-const WithdrawalModal = ({ visible, onClose }: Props) => {
+const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
   const [step, setStep] = useState<Step>("plan");
   const [selectedPlanId, setSelectedPlanId] = useState<string>();
   const [selectedTargetId, setSelectedTargetId] = useState<string>();
@@ -672,6 +678,8 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
   const [processingState, setProcessingState] = useState<
     "processing" | "success" | undefined
   >();
+  const [withdrawalReceipt, setWithdrawalReceipt] =
+    useState<WithdrawalReceipt | null>(null);
 
   const { data: plansData, isLoading: isPlansLoading } = usePlans();
   const plans = useMemo(() => plansData?.items || [], [plansData?.items]);
@@ -764,13 +772,51 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
     setPinMode("enter");
     setWithdrawalAttemptKey(createWithdrawalAttemptKey());
     setProcessingState(undefined);
+    setWithdrawalReceipt(null);
     onClose();
+  };
+
+  const hasDismissibleProgress =
+    step !== "plan" ||
+    amount.length > 0 ||
+    !!selectedDestinationKey ||
+    withdrawalPin.length > 0 ||
+    newWithdrawalPin.length > 0 ||
+    resetOtp.length > 0;
+
+  const requestClose = () => {
+    if (processingState === "processing" || isWithdrawing || isSettingPin) {
+      showBottomToast({
+        type: "info",
+        text1: "Withdrawal in progress",
+        text2: "Please wait while we finish this request.",
+      });
+      return;
+    }
+
+    if (!hasDismissibleProgress) {
+      resetAndClose();
+      return;
+    }
+
+    trackEvent("withdrawal_abandoned", {
+      amount: amountInKobo,
+      step,
+    });
+    Alert.alert(
+      "Discard withdrawal?",
+      "You have started a withdrawal. Closing now will clear this request.",
+      [
+        { text: "Keep editing", style: "cancel" },
+        { text: "Discard", style: "destructive", onPress: resetAndClose },
+      ]
+    );
   };
 
   const goBack = () => {
     const idx = STEPS.indexOf(step);
     if (idx > 0) setStep(STEPS[idx - 1]);
-    else resetAndClose();
+    else requestClose();
   };
 
   const handleContinue = () => {
@@ -785,6 +831,10 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
         showBottomToast({ type: "error", text1: "Select a withdrawal source." });
         return;
       }
+      trackEvent("withdrawal_source_selected", {
+        source_type: selectedTarget?.type || null,
+        source_id: selectedTargetId,
+      });
       setStep("amount");
     } else if (step === "amount") {
       if (!amountIsValid) {
@@ -801,6 +851,15 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
         showBottomToast({ type: "error", text1: "Select a destination account." });
         return;
       }
+      trackEvent("withdrawal_destination_selected", {
+        destination_type: selectedDestination.type,
+      });
+      setStep("review");
+    } else if (step === "review") {
+      trackEvent("withdrawal_reviewed", {
+        amount: amountInKobo,
+        source_type: selectedTarget?.type || null,
+      });
       setStep("pin");
     } else if (step === "pin") {
       void handleConfirm();
@@ -845,11 +904,43 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
 
     try {
       setProcessingState("processing");
-      await requestWithdrawal({ planId: selectedPlan.id, payload });
+      trackEvent("withdrawal_pin_entered", {
+        amount: amountInKobo,
+        source_type: selectedTarget.type,
+      });
+      const response = await requestWithdrawal({ planId: selectedPlan.id, payload });
+      const reference =
+        response?.withdrawal?.reference ||
+        response?.paystack?.reference ||
+        withdrawalAttemptKey;
+
+      setWithdrawalReceipt({
+        reference,
+        amount: response?.withdrawal?.amount || amountInKobo,
+        status: response?.withdrawal?.status || "processing",
+        destination: `${selectedDestination.bank} ${maskAccountNumber(
+          selectedDestination.accountNumber
+        )}`,
+      });
+      trackEvent("withdrawal_completed", {
+        amount: response?.withdrawal?.amount || amountInKobo,
+        reference,
+        status: response?.withdrawal?.status || "processing",
+      });
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await onCompleted?.();
       setProcessingState("success");
     } catch (error: any) {
       setProcessingState(undefined);
       setWithdrawalAttemptKey(createWithdrawalAttemptKey());
+      trackEvent("withdrawal_failed", {
+        amount: amountInKobo,
+        error:
+          error?.response?.data?.message ||
+          error?.message ||
+          "unknown",
+      });
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       showBottomToast({
         type: "error",
         text1: "Withdrawal failed",
@@ -866,18 +957,19 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
     (step === "source" && !selectedTargetId) ||
     (step === "amount" && !amountIsValid) ||
     (step === "destination" && !selectedDestination) ||
+    (step === "review" && (!selectedDestination || !amountIsValid)) ||
     (step === "pin" && (!canConfirm || isWithdrawing || isSettingPin));
 
   const isLastStep = step === "pin";
 
   return (
-    <Modal visible={visible} transparent animationType="slide">
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={requestClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.overlay}
       >
         <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
-        <Pressable style={StyleSheet.absoluteFill} onPress={resetAndClose} />
+        <Pressable style={StyleSheet.absoluteFill} onPress={requestClose} />
 
         <View style={styles.sheet}>
           <View style={styles.handle} />
@@ -889,13 +981,13 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
               style={styles.navButton}
               activeOpacity={0.75}
             >
-              <Ionicons name="chevron-back" size={18} color={COLOR.forestDeep} />
+              <Ionicons name="arrow-back" size={18} color={COLOR.forestDeep} />
             </TouchableOpacity>
 
             <Text style={styles.sheetTitle}>Withdraw</Text>
 
             <TouchableOpacity
-              onPress={resetAndClose}
+              onPress={requestClose}
               style={styles.navButton}
               activeOpacity={0.75}
             >
@@ -974,6 +1066,16 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
                     setSelectedDestinationKey(`beneficiary:${account.id}`);
                   }
                 }}
+              />
+            )}
+
+            {step === "review" && (
+              <StepReview
+                selectedPlan={selectedPlan}
+                selectedTarget={selectedTarget}
+                selectedDestination={selectedDestination}
+                amountInKobo={amountInKobo}
+                withdrawAll={withdrawAll}
               />
             )}
 
@@ -1062,7 +1164,11 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
             ) : (
               <>
                 <Text style={styles.ctaText}>
-                  {isLastStep ? "Confirm withdrawal" : "Continue"}
+                  {step === "review"
+                    ? "Approve with PIN"
+                    : isLastStep
+                      ? "Submit withdrawal"
+                      : "Continue"}
                 </Text>
                 <Ionicons
                   name={isLastStep ? "checkmark" : "arrow-forward"}
@@ -1079,6 +1185,7 @@ const WithdrawalModal = ({ visible, onClose }: Props) => {
           <ProcessingOverlay
             state={processingState}
             amount={formatMoney(amountInKobo, selectedPlan?.currency)}
+            receipt={withdrawalReceipt}
             onDone={resetAndClose}
           />
         )}
@@ -1576,6 +1683,141 @@ const StepDestination = ({
 
 // ─── Step 5: PIN + confirm (merged) ──────────────────────────────────────────
 
+const StepReview = ({
+  selectedPlan,
+  selectedTarget,
+  selectedDestination,
+  amountInKobo,
+  withdrawAll,
+}: {
+  selectedPlan?: Plan;
+  selectedTarget?: WithdrawalTarget;
+  selectedDestination?: DestinationSelection;
+  amountInKobo: number;
+  withdrawAll: boolean;
+}) => (
+  <View style={stepStyles.wrap}>
+    <StepHeading
+      title="Review withdrawal"
+      sub="Check every detail before you approve this transfer."
+    />
+
+    <SummaryCard
+      plan={selectedPlan}
+      target={selectedTarget}
+      destination={selectedDestination}
+      amountInKobo={amountInKobo}
+      withdrawAll={withdrawAll}
+    />
+
+    <View style={reviewStyles.card}>
+      <ReviewRow
+        label="From"
+        value={selectedTarget?.label || "Selected source"}
+        sub={
+          selectedTarget?.type === "envelope"
+            ? "Envelope unboxed balance"
+            : "Plan unboxed balance"
+        }
+      />
+      <ReviewRow
+        label="To"
+        value={selectedDestination?.label || "Selected destination"}
+        sub={
+          selectedDestination
+            ? `${selectedDestination.bank} | ${maskAccountNumber(
+              selectedDestination.accountNumber
+            )}`
+            : undefined
+        }
+      />
+      <ReviewRow
+        label="Timing"
+        value="Processing starts immediately"
+        sub="Final status is confirmed by Paystack."
+      />
+      <ReviewRow
+        label="Reference"
+        value="Generated after submission"
+        sub="Use the reference for support if needed."
+        last
+      />
+    </View>
+
+    <View style={stepStyles.notice}>
+      <Ionicons name="alert-circle-outline" size={14} color={COLOR.amber} />
+      <Text style={stepStyles.noticeText}>
+        Once submitted, this withdrawal cannot be reversed from the app.
+      </Text>
+    </View>
+  </View>
+);
+
+const ReviewRow = ({
+  label,
+  value,
+  sub,
+  last,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  last?: boolean;
+}) => (
+  <View style={[reviewStyles.row, last && reviewStyles.rowLast]}>
+    <Text style={reviewStyles.label}>{label}</Text>
+    <View style={reviewStyles.copy}>
+      <Text style={reviewStyles.value}>{value}</Text>
+      {sub ? <Text style={reviewStyles.sub}>{sub}</Text> : null}
+    </View>
+  </View>
+);
+
+const reviewStyles = StyleSheet.create({
+  card: {
+    backgroundColor: COLOR.surface,
+    borderColor: COLOR.border,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    marginBottom: 14,
+    overflow: "hidden",
+  },
+  row: {
+    borderBottomColor: "#F0F4F2",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+  },
+  rowLast: {
+    borderBottomWidth: 0,
+  },
+  label: {
+    color: COLOR.textFaint,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    width: 76,
+  },
+  copy: {
+    flex: 1,
+    gap: 2,
+  },
+  value: {
+    color: COLOR.textBody,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  sub: {
+    color: COLOR.textMuted,
+    fontSize: 11,
+    fontWeight: "600",
+    lineHeight: 16,
+  },
+});
+
 const StepPin = ({
   selectedPlan,
   selectedTarget,
@@ -1807,10 +2049,12 @@ const PinKeypad = ({
 const ProcessingOverlay = ({
   state,
   amount,
+  receipt,
   onDone,
 }: {
   state: "processing" | "success";
   amount: string;
+  receipt: WithdrawalReceipt | null;
   onDone: () => void;
 }) => (
   <View style={overlayStyles.wrap}>
@@ -1832,6 +2076,28 @@ const ProcessingOverlay = ({
           ? `${amount} is now being processed by Paystack.`
           : "Keep this screen open while we process your request."}
       </Text>
+      {state === "success" && receipt ? (
+        <View style={overlayStyles.receiptBox}>
+          <View style={overlayStyles.receiptRow}>
+            <Text style={overlayStyles.receiptLabel}>Reference</Text>
+            <Text style={overlayStyles.receiptValue} numberOfLines={1}>
+              {receipt.reference}
+            </Text>
+          </View>
+          <View style={overlayStyles.receiptRow}>
+            <Text style={overlayStyles.receiptLabel}>Status</Text>
+            <Text style={overlayStyles.receiptValue}>
+              {receipt.status}
+            </Text>
+          </View>
+          <View style={overlayStyles.receiptRow}>
+            <Text style={overlayStyles.receiptLabel}>To</Text>
+            <Text style={overlayStyles.receiptValue} numberOfLines={1}>
+              {receipt.destination}
+            </Text>
+          </View>
+        </View>
+      ) : null}
       {state === "success" && (
         <TouchableOpacity
           activeOpacity={0.85}
@@ -2405,6 +2671,33 @@ const overlayStyles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 20,
     textAlign: "center",
+  },
+  receiptBox: {
+    alignSelf: "stretch",
+    backgroundColor: COLOR.bgSubtle,
+    borderColor: COLOR.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  receiptRow: {
+    borderBottomColor: COLOR.border,
+    borderBottomWidth: 1,
+    gap: 3,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  receiptLabel: {
+    color: COLOR.textFaint,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  receiptValue: {
+    color: COLOR.textBody,
+    fontSize: 12,
+    fontWeight: "900",
   },
   doneBtn: {
     alignSelf: "stretch",

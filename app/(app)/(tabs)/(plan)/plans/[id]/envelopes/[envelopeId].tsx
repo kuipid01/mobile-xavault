@@ -89,7 +89,7 @@ export default function EnvelopeDetailScreen() {
             onPress={() => router.back()}
             activeOpacity={0.75}
           >
-            <Ionicons name="chevron-back" size={20} color="#063B2E" />
+            <Ionicons name="arrow-back" size={20} color="#063B2E" />
           </TouchableOpacity>
 
           <View style={styles.headerBadge}>

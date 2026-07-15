@@ -9,6 +9,18 @@ import {
   View,
 } from "react-native";
 
+const COLORS = {
+  primary: "#063B2E",
+  secondary: "#0F6B4F",
+  tertiary: "#D6A84F",
+  text: "#404945",
+  border: "#717975",
+  hash: "#F6F7FB",
+  white: "#FFFFFF",
+  error: "#D64545",
+  errorSoft: "rgba(214, 69, 69, 0.12)",
+};
+
 type ErrorModalProps = {
   visible: boolean;
   message: string;
@@ -33,7 +45,7 @@ export function ErrorModal({
       statusBarTranslucent
     >
       <View style={styles.overlay}>
-        <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+        <BlurView intensity={40} tint="light" style={StyleSheet.absoluteFill} />
         <Pressable style={styles.backdrop} onPress={onClose} />
 
         <View style={styles.dialog}>
@@ -69,20 +81,20 @@ const styles = StyleSheet.create({
 
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.35)",
+    backgroundColor: "rgba(6, 59, 46, 0.12)",
   },
 
   dialog: {
     alignItems: "center",
-    backgroundColor: "#1A1F29",
+    backgroundColor: COLORS.white,
     borderRadius: 20,
     elevation: 12,
     paddingBottom: 20,
     paddingHorizontal: 28,
     paddingTop: 28,
-    shadowColor: "#000000",
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.16,
     shadowRadius: 24,
     width: "100%",
     maxWidth: 340,
@@ -90,7 +102,7 @@ const styles = StyleSheet.create({
 
   iconCircle: {
     alignItems: "center",
-    backgroundColor: "rgba(255, 82, 82, 0.15)",
+    backgroundColor: COLORS.errorSoft,
     borderRadius: 22,
     height: 44,
     justifyContent: "center",
@@ -99,22 +111,22 @@ const styles = StyleSheet.create({
   },
 
   iconGlyph: {
-    color: "#FF5252",
+    color: COLORS.error,
     fontSize: 22,
     fontWeight: "700",
   },
 
   title: {
-    color: "#FFFFFF",
+    color: COLORS.primary,
     fontFamily: "System",
     fontSize: 18,
-    fontWeight: "600",
+    fontWeight: "700",
     marginBottom: 8,
     textAlign: "center",
   },
 
   message: {
-    color: "rgba(255, 255, 255, 0.72)",
+    color: COLORS.text,
     fontFamily: "System",
     fontSize: 15,
     lineHeight: 22,
@@ -122,7 +134,7 @@ const styles = StyleSheet.create({
   },
 
   action: {
-    backgroundColor: "#5B9BFF",
+    backgroundColor: COLORS.secondary,
     borderRadius: 12,
     marginTop: 24,
     paddingVertical: 12,
@@ -130,7 +142,7 @@ const styles = StyleSheet.create({
   },
 
   actionText: {
-    color: "#FFFFFF",
+    color: COLORS.white,
     fontFamily: "System",
     fontSize: 16,
     fontWeight: "600",

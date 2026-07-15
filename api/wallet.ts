@@ -1,5 +1,12 @@
 import { api } from "./client";
-import { ApiResponse, DepositInitResponse, Wallet, WalletDeposit, WalletLedger } from "./types";
+import {
+  ApiResponse,
+  DepositInitResponse,
+  DepositVerificationResponse,
+  Wallet,
+  WalletDeposit,
+  WalletLedger,
+} from "./types";
 
 export const getWallet = async () => {
   const res = await api.get<ApiResponse<Wallet>>("/wallet");
@@ -30,6 +37,8 @@ export const getWalletLedger = async () => {
 };
 
 export const verifyDeposit = async (reference: string) => {
-  const res = await api.post<ApiResponse<unknown>>(`/wallet/deposit/${reference}/verify`);
+  const res = await api.post<ApiResponse<DepositVerificationResponse>>(
+    `/wallet/deposit/${reference}/verify`
+  );
   return res.data;
 };

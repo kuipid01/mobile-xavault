@@ -5,6 +5,7 @@ import { jwtDecode } from "jwt-decode";
 import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useSubscriptionPrompt } from "../../../hooks/use-subscription-prompt";
 
 const C = {
   forest: "#063B2E",
@@ -49,6 +50,7 @@ function SettingRow({
 export default function Profile() {
   const [email, setEmail] = useState<string | null>(null);
   const { logout } = useAuth();
+  const { maybeShowSubscriptionPrompt } = useSubscriptionPrompt();
   useEffect(() => {
     getAccessToken().then((token) => {
       if (!token) return;
@@ -92,7 +94,7 @@ export default function Profile() {
         </View>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionLabel}>Account</Text>
+          <Text style={styles.sectionLabel}>General</Text>
         </View>
 
         <View style={styles.card}>
@@ -122,6 +124,16 @@ export default function Profile() {
             label="Security Questions"
             sublabel="Add extra checks for account recovery"
             onPress={() => router.push("/(app)/security-questions")}
+          />
+          <View style={styles.divider} />
+          <SettingRow
+            icon="help-buoy-outline"
+            label="Upgrade Plan"
+            sublabel=""
+            onPress={async () => {
+              const shown = await maybeShowSubscriptionPrompt("manual_upgrade_button");
+              if (!shown) router.push("/(app)/upgrade-plan");
+            }}
           />
         </View>
 

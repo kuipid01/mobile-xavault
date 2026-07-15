@@ -1,4 +1,5 @@
 import { getAccessToken } from "@/api/auth";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { jwtDecode } from "jwt-decode";
 import { useEffect, useState } from "react";
@@ -16,6 +17,7 @@ type JwtWithEmail = { email?: string; sub?: string;[key: string]: unknown };
 
 const ProfileHeader = () => {
     const [email, setEmail] = useState<string | null>(null);
+    const [name, setName] = useState<string | null>(null);
 
     useEffect(() => {
         getAccessToken().then((token) => {
@@ -27,8 +29,9 @@ const ProfileHeader = () => {
                 // leave email null
             }
         });
+        AsyncStorage.getItem("name").then(setName);
     }, []);
-
+    
     return (
         <View style={styles.container}>
             <View style={styles.profileRow}>
@@ -43,9 +46,9 @@ const ProfileHeader = () => {
 
                 <View style={styles.userText}>
                     <Text style={styles.greeting}>{getGreeting()}</Text>
-                    {email && (
+                    {(name || email) && (
                         <Text style={styles.name} numberOfLines={1}>
-                            {email}
+                            {name || email}
                         </Text>
                     )}
                 </View>

@@ -12,6 +12,14 @@ import {
   PENDING_EMAIL_KEY,
   REGISTRATION_DRAFT_KEY,
 } from "../components/auth/authFlow";
+import { DepositVerificationBanner } from "../components/general/deposit-verification-banner";
+import { ModalProvider } from "../context/special-modal-context";
+import { useSubscriptionPrompt } from "../hooks/use-subscription-prompt";
+import {
+  DepositVerificationProvider,
+  DepositVerificationWatcher,
+} from "../hooks/verify-deposit";
+import { SubscriptionVerificationProvider } from "../hooks/verify-sub";
 import "../global.css";
 
 const DEBUG_ROOT_LAYOUT = true;
@@ -34,6 +42,7 @@ function RootLayoutContent() {
   const { isFirstTime, isLoading: onboardingLoading } = useOnboarding();
   const pathname = usePathname();
   const segments = useSegments();
+  const { maybeShowSubscriptionPrompt } = useSubscriptionPrompt();
   const rootSegment = segments[0];
   const fontsLoaded = true;
 
@@ -108,7 +117,7 @@ function RootLayoutContent() {
 
           if (rootSegment !== "(app)") {
             debugLog("redirecting to app home");
-            router.replace("/(app)/home");
+            router.replace("/(app)/(tabs)/home");
           } else {
             debugLog("already in app group");
           }
@@ -228,6 +237,29 @@ function RootLayoutContent() {
     segments,
   ]);
 
+  useEffect(() => {
+    if (
+      onboardingLoading ||
+      authLoading ||
+      !fontsLoaded ||
+      isRedirectChecking ||
+      !isAuthenticated ||
+      rootSegment !== "(app)"
+    ) {
+      return;
+    }
+
+    void maybeShowSubscriptionPrompt("app_open");
+  }, [
+    authLoading,
+    fontsLoaded,
+    isAuthenticated,
+    isRedirectChecking,
+    maybeShowSubscriptionPrompt,
+    onboardingLoading,
+    rootSegment,
+  ]);
+
   if (onboardingLoading || authLoading || !fontsLoaded || isRedirectChecking) {
     debugLog("showing loading screen", {
       onboardingLoading,
@@ -272,11 +304,19 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <OnboardingProvider>
-          <StatusBar style="light" />
-          <RootLayoutContent />
-          <Toast />
-        </OnboardingProvider>
+        <DepositVerificationProvider>
+          <SubscriptionVerificationProvider>
+            <ModalProvider>
+              <OnboardingProvider>
+                <StatusBar style="light" />
+                <RootLayoutContent />
+                <DepositVerificationWatcher />
+                <DepositVerificationBanner />
+                <Toast />
+              </OnboardingProvider>
+            </ModalProvider>
+          </SubscriptionVerificationProvider>
+        </DepositVerificationProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

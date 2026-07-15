@@ -7,7 +7,7 @@ import { jwtDecode } from "jwt-decode";
 
 // const BACKEND_URL = "http://localhost:8080/api/v1/";
 // const BACKEND_URL = "https://apixavault.kuipid.com/api/v1/";
-const BACKEND_URL = "http://10.106.5.66:8080/api/v1/";
+const BACKEND_URL = "http://192.168.1.118.66:8080/api/v1/";
 // const BACKEND_URL = "http://192.168.1.118:8080/api/v1/";
 
 export const ACCESS_TOKEN_KEY = "access_token";

@@ -44,9 +44,9 @@ const RegisterScreen = () => {
   const { mutateAsync: startRegistration, isPending: isStartingRegistration } =
     useStartRegistration();
 
-  const updateDraft = (patch: Partial<RegisterDraft>) => {
+  const updateDraft = useCallback((patch: Partial<RegisterDraft>) => {
     setDraft((current) => ({ ...current, ...patch }));
-  };
+  }, []);
 
   const loadDraft = useCallback(async () => {
     try {
@@ -277,7 +277,7 @@ const RegisterScreen = () => {
     }
   };
 
-  const goBackToDetails = async () => {
+  const goBackToDetails = useCallback(async () => {
     const nextDraft = { ...draft, step: "details" as RegisterStep };
     updateDraft(nextDraft);
     await AsyncStorage.setItem(
@@ -287,21 +287,21 @@ const RegisterScreen = () => {
     await saveAuthFlow(createRegistrationFlow(normalizedEmail, "details"));
     setPin("");
     setConfirmPin("");
-  };
+  }, [draft, normalizedEmail, updateDraft]);
 
-  const startOver = async () => {
+  const startOver = useCallback(async () => {
     await clearRegistrationFlow();
     setDraft(initialDraft);
     setPassword("");
     setConfirmPassword("");
     setPin("");
     setConfirmPin("");
-  };
+  }, []);
 
-  const closeFlow = async () => {
+  const closeFlow = useCallback(async () => {
     await clearRegistrationFlow();
     router.replace("/(auth)/initial");
-  };
+  }, []);
 
   const goToLogin = async () => {
     await clearRegistrationFlow();
@@ -328,7 +328,7 @@ const RegisterScreen = () => {
     );
 
     return () => subscription.remove();
-  }, [draft.step, normalizedEmail]);
+  }, [closeFlow, draft.step, goBackToDetails, startOver]);
 
   return (
     <KeyboardAvoidingView

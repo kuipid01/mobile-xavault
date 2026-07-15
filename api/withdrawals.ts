@@ -12,9 +12,30 @@ export type WithdrawPayload = {
 };
 
 export type WithdrawResponse = {
-  reference?: string;
-  amount?: number;
-  status?: string;
+  message?: string;
+  note?: string;
+  withdrawal?: {
+    id: string;
+    reference: string;
+    amount: number;
+    status: string;
+    currency: string;
+    source_type: string;
+    description?: string;
+    created_at?: string;
+  };
+  wallet?: {
+    wallet_id: string;
+    available_balance: number;
+    locked_balance: number;
+    ledger_balance: number;
+    currency: string;
+  };
+  paystack?: {
+    reference?: string;
+    transfer_code?: string;
+    status?: string;
+  };
 };
 
 export const requestWithdrawal = async (planId: string, payload: WithdrawPayload) => {

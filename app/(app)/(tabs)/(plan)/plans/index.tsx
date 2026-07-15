@@ -64,17 +64,20 @@ export default function PlansScreen() {
             plan={plan}
             onPress={() =>
               router.push({
-                pathname: "/plans/[id]",
+                pathname: "/(app)/(tabs)/(plan)/plans/[id]",
                 params: { id: plan.id },
               })
             }
           />
         ))}
 
-        <EmptyPlanCard onPress={() => router.push("/plans/create")} />
+        <EmptyPlanCard onPress={() => router.push("/(app)/(tabs)/(plan)/plans/create")} />
       </ScrollView>
 
-      <TouchableOpacity style={styles.fab} onPress={() => router.push("/plans/create")}>
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => router.push("/(app)/(tabs)/(plan)/plans/create")}
+      >
         <Ionicons name="add" size={28} color="#FFFFFF" />
       </TouchableOpacity>
     </View>

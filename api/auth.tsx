@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 import React, {
   createContext,
@@ -110,8 +111,12 @@ export const loginUser = async (data: LoginPayload) => {
   const response = res.data.data;
 
   await saveTokens(response.access_token, response.refresh_token);
-
-  log.info("Login successful, tokens saved");
+  if (response.user.name) {
+    await AsyncStorage.setItem("name", response.user.name);
+  } else {
+    await AsyncStorage.removeItem("name");
+  }
+  log.info("Login successful, tokens saved", response);
 
   return response;
 };

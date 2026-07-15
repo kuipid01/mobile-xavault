@@ -105,7 +105,7 @@ export default function PaymentSettingsScreen() {
 
   const handleBack = () => {
     if (router.canGoBack()) router.back();
-    else router.replace("/(app)/profile");
+    else router.replace("/(app)/(tabs)/profile");
   };
 
   useEffect(() => {
@@ -332,7 +332,7 @@ export default function PaymentSettingsScreen() {
         >
           <View style={styles.header}>
             <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-              <Ionicons name="chevron-back" size={22} color={C.forest} />
+              <Ionicons name="arrow-back" size={22} color={C.forest} />
             </TouchableOpacity>
             <View style={styles.headerIcon}>
               <Ionicons name="card-outline" size={26} color={C.forest} />

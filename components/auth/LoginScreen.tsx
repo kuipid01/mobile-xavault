@@ -14,6 +14,7 @@ import { clearRegistrationFlow } from "./authFlow";
 const LoginScreen = () => {
   const [viewPassword, setViewPassword] = useState(false);
   const [email, setEmail] = useState("");
+  const [title, setTitle] = useState("Welcome back");
   const [mailAvailable, setMailAvailable] = useState(false)
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -22,9 +23,13 @@ const LoginScreen = () => {
   useEffect(() => {
     const checkMail = async () => {
       const mailInStorage = await AsyncStorage.getItem("email");
+      const nameInStorage = await AsyncStorage.getItem("name");
       if (mailInStorage) {
         setEmail(mailInStorage)
         setMailAvailable(true)
+        if (nameInStorage) {
+          setTitle(`Welcome back, ${nameInStorage}`)
+        }
       }
     }
     checkMail();
@@ -47,7 +52,7 @@ const LoginScreen = () => {
         text2: "Welcome back to XAVAULT.",
       });
 
-      router.replace("/(app)/home");
+      router.replace("/(app)/(tabs)/home");
     } catch (error) {
       console.error("Login failed:", error);
       setErrorMessage("Incorrect email or password.");
@@ -69,7 +74,7 @@ const LoginScreen = () => {
         />
       </View>
       <View style={styles.header}>
-        <Text style={styles.title}>Welcome back, Stephen</Text>
+        <Text style={styles.title}>{title}</Text>
       </View>
 
       <View style={styles.card}>

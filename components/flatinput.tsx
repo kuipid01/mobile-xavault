@@ -12,6 +12,8 @@ import {
 type Props = TextInputProps & {
     label: string;
     icon?: any;
+    iconColor?: string;
+    iconPosition?: "left" | "right";
     viewPassword?: boolean;
     setViewPassword?: (value: boolean) => void;
 };
@@ -19,6 +21,8 @@ type Props = TextInputProps & {
 export const FlatInput = ({
     label,
     icon,
+    iconColor,
+    iconPosition = "left",
     placeholder,
     value,
     onChangeText,
@@ -35,14 +39,6 @@ export const FlatInput = ({
 
             <View style={styles.inputContainer}>
                 {/* Left icon */}
-                {icon && (
-                    <Ionicons
-                        name={icon}
-                        size={18}
-                        color={COLORS.primary}
-                        style={styles.leftIcon}
-                    />
-                )}
 
                 <TextInput
                     placeholder={placeholder}
@@ -53,11 +49,19 @@ export const FlatInput = ({
                     {...inputProps}
                     style={[
                         styles.input,
-                        icon && { paddingLeft: 40 },
+                        icon && iconPosition === "left" ? { paddingLeft: 40 } : { paddingRight: 40 },
                         isPassword && { paddingRight: 45 },
                         style,
                     ]}
                 />
+                {icon && (
+                    <Ionicons
+                        name={icon}
+                        size={18}
+                        color={iconColor || COLORS.primary}
+                        style={iconPosition === "left" ? styles.leftIcon : styles.rightIcon}
+                    />
+                )}
 
                 {/* Password toggle icon */}
                 {isPassword && setViewPassword && (
@@ -104,7 +108,7 @@ const styles = StyleSheet.create({
         height: "100%",
         paddingHorizontal: 2,
         fontSize: 15,
-        color: COLORS.text,
+        color: COLORS.white,
         fontWeight: "600",
         fontFamily: "PlayfairDisplay_600SemiBold",
     },

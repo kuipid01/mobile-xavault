@@ -1,10 +1,9 @@
-import { koboToNaira, nairaToKobo } from "@/api/money";
-import { useCreateEnvelope } from "@/hooks/app/envelopes";
-import { usePlan } from "@/hooks/app/plans";
+import { nairaToKobo } from "@/api/money";
+import { useCreatePlan } from "@/hooks/app/plans";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { router } from "expo-router";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -28,22 +27,6 @@ const normalizeDate = (date: Date) => {
 
 const today = normalizeDate(new Date());
 
-const parseApiDate = (value?: string | null) => {
-  if (!value) return null;
-
-  const [year, month, day] = value.split("-").map(Number);
-
-  if (!year || !month || !day) return null;
-
-  return normalizeDate(new Date(year, month - 1, day));
-};
-
-
-
-const formatNumber = (value: number) =>
-  new Intl.NumberFormat("en-NG").format(value);
-
-
 const formatDateForApi = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -60,57 +43,33 @@ const formatDateForDisplay = (date: Date) =>
     year: "numeric",
   });
 
-export default function CreateEnvelopeScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const planId = typeof id === "string" ? id : "";
-
-  const { data: plan, isLoading: isPlanLoading } = usePlan(planId);
-  const { mutateAsync: createEnvelope, isPending } = useCreateEnvelope(planId);
-
-  const planStartDate = useMemo(() => parseApiDate(plan?.start_date), [plan?.start_date]);
-  const planEndDate = useMemo(() => parseApiDate(plan?.end_date), [plan?.end_date]);
-  const planAmountNaira = koboToNaira(plan?.amount);
-  const allocatedNaira = koboToNaira(plan?.top_level_allocated);
-  const remainingPlanBalance = Math.max(planAmountNaira - allocatedNaira, 0);
-
-
-  const minimumStartDate = useMemo(() => {
-    if (planStartDate && planStartDate > today) return planStartDate;
-    return today;
-  }, [planStartDate]);
-
-  const maximumEndDate = planEndDate || undefined;
-
+export default function CreatePlanScreen() {
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
-  const [startDate, setStartDate] = useState<Date>(minimumStartDate);
-  const [endDate, setEndDate] = useState<Date | null>(planEndDate || null);
-  const [activePicker, setActivePicker] = useState<"start" | "end" | null>(null);
 
-  const amountNumber = Number(amount || 0);
-  const amountIsAbovePlanBalance = amountNumber > remainingPlanBalance;
-  const [policy, setPolicy] = useState<"flexible" | "locked_until_parent_ends">(
+  const [startDate, setStartDate] = useState<Date>(today);
+  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [activePicker, setActivePicker] = useState<"start" | "end" | null>(
+    null
+  );
+
+  const [policy, setPolicy] = useState<"flexible" | "locked_until_plan_ends">(
     "flexible"
   );
 
-  useEffect(() => {
-    setStartDate((current) => {
-      if (current < minimumStartDate) return minimumStartDate;
-      return current;
-    });
-
-    setEndDate((current) => {
-      if (!current) return planEndDate || null;
-      if (current < minimumStartDate) return minimumStartDate;
-      if (planEndDate && current > planEndDate) return planEndDate;
-      return current;
-    });
-  }, [minimumStartDate, planEndDate]);
+  const { mutateAsync: create, isPending } = useCreatePlan();
 
   const minimumEndDate = useMemo(() => {
-    if (startDate > minimumStartDate) return startDate;
-    return minimumStartDate;
-  }, [startDate, minimumStartDate]);
+    return normalizeDate(startDate);
+  }, [startDate]);
+
+  const pickerValue =
+    activePicker === "start" ? startDate : endDate || minimumEndDate;
+
+  const pickerMinimumDate = activePicker === "start" ? today : minimumEndDate;
+
+  const disabled =
+    !name.trim() || !amount.trim() || !endDate || Number(amount) <= 0 || isPending;
 
   const handleDateChange = (selectedDate?: Date) => {
     if (!selectedDate || !activePicker) return;
@@ -133,19 +92,31 @@ export default function CreateEnvelopeScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!endDate) {
+    const amountNumber = Number(amount || 0);
+
+    if (!name.trim()) {
       Toast.show({
         type: "error",
-        text1: "End date required",
-        text2: "Please choose when this envelope should end.",
+        text1: "Plan name required",
+        text2: "Please enter a name for this plan.",
       });
       return;
     }
-    if (startDate < minimumStartDate) {
+
+    if (!amount.trim() || amountNumber <= 0) {
+      Toast.show({
+        type: "error",
+        text1: "Invalid amount",
+        text2: "Please enter an amount greater than zero.",
+      });
+      return;
+    }
+
+    if (startDate < today) {
       Toast.show({
         type: "error",
         text1: "Invalid start date",
-        text2: "Envelope start date cannot be before the plan start date.",
+        text2: "Start date cannot be in the past.",
       });
       return;
     }
@@ -154,7 +125,7 @@ export default function CreateEnvelopeScreen() {
       Toast.show({
         type: "error",
         text1: "End date required",
-        text2: "Please choose when this envelope should end.",
+        text2: "Please choose when this plan should end.",
       });
       return;
     }
@@ -168,50 +139,29 @@ export default function CreateEnvelopeScreen() {
       return;
     }
 
-    if (planEndDate && endDate > planEndDate) {
-      Toast.show({
-        type: "error",
-        text1: "Invalid end date",
-        text2: "Envelope end date cannot be after the plan end date.",
-      });
-      return;
-    }
-
-    if (amountNumber > remainingPlanBalance) {
-      Toast.show({
-        type: "error",
-        text1: "Amount too high",
-        text2: `You cannot save more than ₦${formatNumber(
-          remainingPlanBalance
-        )} in this plan.`,
-      });
-      return;
-    }
-
-    if (amountNumber <= 0) {
-      Toast.show({
-        type: "error",
-        text1: "Invalid amount",
-        text2: "Please enter an amount greater than zero.",
-      });
-      return;
-    }
-
     try {
-      await createEnvelope({
-        name,
+      const plan = await create({
+        name: name.trim(),
         amount: nairaToKobo(amount),
         start_date: formatDateForApi(startDate),
         end_date: formatDateForApi(endDate),
         unboxed_balance_policy: policy,
       });
 
-      Toast.show({ type: "success", text1: "Envelope created" });
-      router.back();
+      Toast.show({ type: "success", text1: "Draft plan created" });
+
+      if (plan?.id) {
+        router.replace({
+          pathname: "/(app)/(tabs)/(plan)/plans/[id]",
+          params: { id: plan.id },
+        });
+      } else {
+        router.back();
+      }
     } catch (error: any) {
       Toast.show({
         type: "error",
-        text1: "Could not create envelope",
+        text1: "Could not create plan",
         text2:
           error?.response?.data?.message ||
           error?.message ||
@@ -220,29 +170,14 @@ export default function CreateEnvelopeScreen() {
     }
   };
 
-  const disabled =
-    !name.trim() ||
-    !amount.trim() ||
-    !endDate ||
-    isPending ||
-    isPlanLoading;
-
-  const pickerValue =
-    activePicker === "start" ? startDate : endDate || minimumEndDate;
-
-  const pickerMinimumDate =
-    activePicker === "start" ? minimumStartDate : minimumEndDate;
-
-  const pickerMaximumDate = planEndDate || undefined;
-
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
-        contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.content}
       >
         <View style={styles.header}>
           <TouchableOpacity
@@ -250,39 +185,39 @@ export default function CreateEnvelopeScreen() {
             activeOpacity={0.75}
             style={styles.backButton}
           >
-            <Ionicons name="chevron-back" size={22} color="#063B2E" />
+            <Ionicons name="arrow-back" size={22} color="#063B2E" />
           </TouchableOpacity>
 
           <View style={styles.headerTextWrap}>
-            <Text style={styles.title}>Add Envelope</Text>
+            <Text style={styles.title}>Create Plan</Text>
             <Text style={styles.subtitle}>
-              Partition {plan?.name || "this plan"} into a specific spending bucket.
+              Build a draft plan, add envelopes, then confirm when ready.
             </Text>
           </View>
         </View>
 
         <View style={styles.summaryCard}>
           <View style={styles.summaryIcon}>
-            <Ionicons name="albums-outline" size={22} color="#FFFFFF" />
+            <Ionicons name="wallet-outline" size={22} color="#FFFFFF" />
           </View>
 
           <View style={styles.summaryTextWrap}>
-            <Text style={styles.summaryTitle}>Create a spending bucket</Text>
+            <Text style={styles.summaryTitle}>Plan your vault</Text>
             <Text style={styles.summaryText}>
-              Use envelopes for things like rent, food, savings, bills, or transport.
+              Split your money into clear goals before spending starts.
             </Text>
           </View>
         </View>
 
         <View style={styles.formCard}>
-          <Text style={styles.sectionTitle}>Envelope details</Text>
+          <Text style={styles.sectionTitle}>Plan details</Text>
 
           <Field
-            label="Envelope name"
+            label="Plan name"
             value={name}
             onChangeText={setName}
-            placeholder="Rent"
-            icon="file-tray-full-outline"
+            placeholder="July savings plan"
+            icon="document-text-outline"
           />
 
           <Field
@@ -291,22 +226,15 @@ export default function CreateEnvelopeScreen() {
             onChangeText={(value) => {
               const cleanValue = value.replace(/[^0-9.]/g, "");
 
-              const numericValue = Number(cleanValue || 0);
+              const parts = cleanValue.split(".");
+              const formattedValue =
+                parts.length > 2
+                  ? `${parts[0]}.${parts.slice(1).join("")}`
+                  : cleanValue;
 
-              if (numericValue > remainingPlanBalance) {
-                Toast.show({
-                  type: "error",
-                  text1: "Amount too high",
-                  text2: `You only have ₦${formatNumber(remainingPlanBalance)} left in this plan.`,
-                });
-
-                setAmount(String(remainingPlanBalance));
-                return;
-              }
-
-              setAmount(cleanValue);
+              setAmount(formattedValue);
             }}
-            placeholder="100000"
+            placeholder="250000"
             keyboardType="decimal-pad"
             icon="cash-outline"
             prefix="₦"
@@ -330,17 +258,14 @@ export default function CreateEnvelopeScreen() {
           </View>
 
           <View style={styles.dateInfoBox}>
-            <Ionicons name="information-circle-outline" size={16} color="#106B4F" />
+            <Ionicons
+              name="information-circle-outline"
+              size={16}
+              color="#106B4F"
+            />
             <Text style={styles.dateInfoText}>
-              Envelope dates must stay within the plan period. End date cannot be before start date.
-            </Text>
-          </View>
-
-          <View style={styles.planPeriodCard}>
-            <Text style={styles.planPeriodLabel}>Plan period</Text>
-            <Text style={styles.planPeriodText}>
-              {planStartDate ? formatDateForDisplay(planStartDate) : "Today"} to{" "}
-              {planEndDate ? formatDateForDisplay(planEndDate) : "No end date"}
+              Start date cannot be in the past. End date must be the same day or
+              after the start date.
             </Text>
           </View>
 
@@ -348,7 +273,7 @@ export default function CreateEnvelopeScreen() {
 
           <Text style={styles.sectionTitle}>Unboxed balance policy</Text>
           <Text style={styles.sectionHint}>
-            Choose how leftover money inside this envelope should behave.
+            Choose what happens to money that is not assigned to an envelope.
           </Text>
 
           <View style={styles.policyRow}>
@@ -364,8 +289,8 @@ export default function CreateEnvelopeScreen() {
               title="Locked"
               description="Hold till plan ends"
               icon="lock-closed-outline"
-              active={policy === "locked_until_parent_ends"}
-              onPress={() => setPolicy("locked_until_parent_ends")}
+              active={policy === "locked_until_plan_ends"}
+              onPress={() => setPolicy("locked_until_plan_ends")}
             />
           </View>
 
@@ -379,7 +304,7 @@ export default function CreateEnvelopeScreen() {
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <>
-                <Text style={styles.buttonText}>Create Envelope</Text>
+                <Text style={styles.buttonText}>Create Draft Plan</Text>
                 <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
               </>
             )}
@@ -393,7 +318,6 @@ export default function CreateEnvelopeScreen() {
           mode="date"
           display="calendar"
           minimumDate={pickerMinimumDate}
-          maximumDate={pickerMaximumDate}
           onChange={(event, selectedDate) => {
             setActivePicker(null);
 
@@ -426,8 +350,8 @@ export default function CreateEnvelopeScreen() {
 
                   <Text style={styles.datePickerSubtitle}>
                     {activePicker === "start"
-                      ? "Envelope cannot start before the plan starts"
-                      : "Envelope cannot end before it starts"}
+                      ? "Plans cannot start in the past"
+                      : "End date cannot be before start date"}
                   </Text>
                 </View>
 
@@ -446,7 +370,6 @@ export default function CreateEnvelopeScreen() {
                   mode="date"
                   display="spinner"
                   minimumDate={pickerMinimumDate}
-                  maximumDate={pickerMaximumDate}
                   onChange={(_, selectedDate) => {
                     handleDateChange(selectedDate);
                   }}
@@ -493,6 +416,7 @@ const Field = ({
 
     <View style={styles.inputWrap}>
       <Ionicons name={icon} size={18} color="#7A8580" />
+
       {prefix ? <Text style={styles.prefix}>{prefix}</Text> : null}
 
       <TextInput
@@ -795,31 +719,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     fontWeight: "700",
-  },
-
-  planPeriodCard: {
-    marginTop: 10,
-    borderRadius: 16,
-    padding: 12,
-    backgroundColor: "#FFF8E7",
-    borderWidth: 1,
-    borderColor: "#F6E5B3",
-  },
-
-  planPeriodLabel: {
-    color: "#946500",
-    fontSize: 10,
-    fontWeight: "900",
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-    marginBottom: 4,
-  },
-
-  planPeriodText: {
-    color: "#6B4E00",
-    fontSize: 12,
-    fontWeight: "800",
-    lineHeight: 17,
   },
 
   divider: {

@@ -109,7 +109,7 @@ export default function PlanDetailScreen() {
             onPress={() => router.back()}
             activeOpacity={0.75}
           >
-            <Ionicons name="chevron-back" size={20} color="#063B2E" />
+            <Ionicons name="arrow-back" size={20} color="#063B2E" />
           </TouchableOpacity>
 
           <StatusBadge status={plan.status} />
@@ -353,7 +353,7 @@ export default function PlanDetailScreen() {
               envelope={envelope}
               onPress={() =>
                 router.push({
-                  pathname: "/plans/[id]/envelopes/[envelopeId]",
+                  pathname: "/(app)/(tabs)/(plan)/plans/[id]/envelopes/[envelopeId]",
                   params: { id: plan.id, envelopeId: envelope.id },
                 })
               }
@@ -364,7 +364,7 @@ export default function PlanDetailScreen() {
         <AddEnvelopeCard
           onPress={() =>
             router.push({
-              pathname: "/plans/[id]/envelopes/create",
+              pathname: "/(app)/(tabs)/(plan)/plans/[id]/envelopes/create",
               params: { id: plan.id },
             })
           }

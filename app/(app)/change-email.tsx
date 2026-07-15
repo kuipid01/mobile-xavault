@@ -64,7 +64,7 @@ export default function ChangeEmailScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <Ionicons name="chevron-back" size={22} color={C.forest} />
+            <Ionicons name="arrow-back" size={22} color={C.forest} />
           </TouchableOpacity>
           <View style={styles.headerIcon}>
             <Ionicons name="mail-outline" size={25} color={C.forest} />

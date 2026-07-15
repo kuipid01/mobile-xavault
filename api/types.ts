@@ -67,11 +67,18 @@ export type DepositInitResponse = {
   authorization_url?: string;
   access_code?: string;
   reference?: string;
+  provider_response?: unknown;
   data?: {
     authorization_url?: string;
     access_code?: string;
     reference?: string;
   };
+};
+
+export type DepositVerificationResponse = {
+  status: "success" | "pending" | "failed";
+  reference: string;
+  deposit?: WalletDeposit;
 };
 
 export type PlanStatus = "draft" | "active" | "completed" | "cancelled" | "expired";

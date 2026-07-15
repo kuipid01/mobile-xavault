@@ -1,8 +1,10 @@
 import { formatMoney } from "@/api/money";
 import { Plan } from "@/api/types";
+import { trackEvent } from "@/lib/analytics";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import type { ComponentProps } from "react";
+import { useEffect } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
@@ -15,6 +17,7 @@ type SpendingPlan = {
   savedPercent: number;
   icon: IconName;
   isActive: boolean;
+  milestone: number | null;
 };
 
 type Props = {
@@ -42,7 +45,16 @@ const toSpendingPlan = (plan: Plan): SpendingPlan => {
         ? "shield-checkmark-outline"
         : "albums-outline",
     isActive: plan.status === "active",
+    milestone: getMilestone(savedPercent),
   };
+};
+
+const getMilestone = (percent: number) => {
+  if (percent >= 100) return 100;
+  if (percent >= 75) return 75;
+  if (percent >= 50) return 50;
+  if (percent >= 25) return 25;
+  return null;
 };
 
 const SpendingPlans = ({ plans = [], isLoading }: Props) => {
@@ -57,7 +69,7 @@ const SpendingPlans = ({ plans = [], isLoading }: Props) => {
             Your budgets at a glance.
           </Text>
         </View>
-        <TouchableOpacity onPress={() => router.replace("/(app)/(plan)/plans")}>
+        <TouchableOpacity onPress={() => router.replace("/(app)/(tabs)/(plan)/plans")}>
           <Text style={[styles.viewAll, isLoading && styles.viewAllLoading]}>
             {isLoading ? "Loading…" : "View All"}
           </Text>
@@ -103,6 +115,15 @@ const SpendingPlans = ({ plans = [], isLoading }: Props) => {
 export default SpendingPlans;
 
 const SpendingPlanCard = ({ plan }: { plan: SpendingPlan }) => {
+  useEffect(() => {
+    if (!plan.milestone) return;
+
+    trackEvent("plan_milestone_seen", {
+      milestone: plan.milestone,
+      plan_id: plan.id,
+    });
+  }, [plan.id, plan.milestone]);
+
   return (
     <View style={styles.card}>
       {/* Top row */}
@@ -145,6 +166,12 @@ const SpendingPlanCard = ({ plan }: { plan: SpendingPlan }) => {
             {plan.isActive ? "Active" : "Draft"}
           </Text>
         </View>
+        {plan.milestone ? (
+          <View style={styles.milestonePill}>
+            <Ionicons name="flag-outline" size={11} color="#106B4F" />
+            <Text style={styles.milestoneText}>{plan.milestone}%</Text>
+          </View>
+        ) : null}
       </View>
 
       {/* Body */}
@@ -297,6 +324,22 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 11,
     fontWeight: "800",
+  },
+  milestonePill: {
+    alignItems: "center",
+    backgroundColor: "#EAF7F1",
+    borderColor: "#CDEDE0",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  milestoneText: {
+    color: "#106B4F",
+    fontSize: 10,
+    fontWeight: "900",
   },
 
   statusTextActive: {

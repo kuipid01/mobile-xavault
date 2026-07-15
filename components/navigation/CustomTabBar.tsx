@@ -17,6 +17,16 @@ const TAB_LABELS: Record<string, string> = {
     "(plan)": "Plans",
     profile: "Settings",
 };
+const HIDE_TAB_BAR_ROUTES = new Set([
+    "upgrade-plan",
+    "my-profile",
+    "change-email",
+    "payment-settings",
+    "login-settings",
+    "security-questions",
+    "upgrade-suggestions",
+]);
+
 
 const VISIBLE_TABS = new Set(["home", "(plan)", "profile"]);
 
@@ -24,7 +34,12 @@ export default function CustomTabBar({
     state,
     descriptors,
     navigation,
-}: BottomTabBarProps) {
+}: Readonly<BottomTabBarProps>) {
+    const currentRoute = state.routes[state.index];
+    if (HIDE_TAB_BAR_ROUTES.has(currentRoute.name)) {
+        return null;
+    }
+
     return (
         <View style={styles.wrapper}>
             <View style={styles.tabBar}>

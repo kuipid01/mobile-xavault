@@ -32,7 +32,7 @@ const C = {
 };
 
 const BIOMETRIC_KEY = "biometric_enabled";
-type JwtWithEmail = { email?: string; sub?: string; [key: string]: unknown };
+type JwtWithEmail = { email?: string; sub?: string;[key: string]: unknown };
 type PasswordMode = "menu" | "forgot";
 
 export default function LoginSettingsScreen() {
@@ -49,7 +49,7 @@ export default function LoginSettingsScreen() {
 
   const handleBack = () => {
     if (router.canGoBack()) router.back();
-    else router.replace("/(app)/profile");
+    else router.replace("/(app)/(tabs)/profile");
   };
 
   useEffect(() => {
@@ -222,7 +222,7 @@ function Header({ title, subtitle, onBack }: { title: string; subtitle: string; 
   return (
     <View style={styles.header}>
       <TouchableOpacity style={styles.backButton} onPress={onBack}>
-        <Ionicons name="chevron-back" size={22} color={C.forest} />
+        <Ionicons name="arrow-back" size={22} color={C.forest} />
       </TouchableOpacity>
       <Text style={styles.title}>{title}</Text>
       <Text style={styles.subtitle}>{subtitle}</Text>

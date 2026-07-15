@@ -4,8 +4,9 @@ import { COLORS, Padding } from "@/themes/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useState } from "react";
-import { ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Toast from "react-native-toast-message";
+import { FlatInput } from "../flatinput";
 import { ErrorModal } from "../ui/ErrorModal";
 
 const getApiErrorMessage = (error: any) => {
@@ -81,29 +82,27 @@ export default function ForgotPasswordScreen() {
       contentContainerStyle={styles.container}
       keyboardShouldPersistTaps="handled"
     >
-      <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-        <Ionicons name="chevron-back" size={22} color={COLORS.primary} />
-      </TouchableOpacity>
+      <Ionicons style={{ marginBottom: 40, }} name="arrow-back" size={22} color={COLORS.white} />
+
 
       <View style={styles.header}>
-        <Text style={styles.title}>Forgot password?</Text>
-        <Text style={styles.subtitle}>
-          {step === "email"
-            ? "Enter your email and we will send a reset OTP."
-            : "Enter the OTP from your email and choose a new password."}
-        </Text>
+        <Text style={styles.title}>Reset password?</Text>
+
       </View>
 
-      <View style={styles.card}>
+      <View >
         {step === "email" ? (
           <>
-            <Input
+            <FlatInput
               label="Email"
               placeholder="Enter your email"
               value={email}
               autoCapitalize="none"
               keyboardType="email-address"
               onChangeText={setEmail}
+              icon="mail"
+              iconPosition="right"
+              iconColor={COLORS.white}
             />
             <TouchableOpacity
               style={[styles.button, isPending && styles.buttonDisabled]}
@@ -117,7 +116,7 @@ export default function ForgotPasswordScreen() {
           </>
         ) : (
           <>
-            <Input
+            <FlatInput
               label="OTP"
               placeholder="Enter 6-digit OTP"
               value={otp}
@@ -166,11 +165,10 @@ export default function ForgotPasswordScreen() {
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   container: {
-    backgroundColor: COLORS.hash,
+    backgroundColor: COLORS.primary,
     flexGrow: 1,
-    justifyContent: "center" as const,
     paddingHorizontal: Padding.containerX,
     paddingVertical: Padding.containerY,
   },
@@ -190,7 +188,7 @@ const styles = {
   },
 
   title: {
-    color: COLORS.primary,
+    color: COLORS.white,
     fontFamily: "System",
     fontSize: 28,
     marginBottom: 8,
@@ -217,7 +215,7 @@ const styles = {
 
   button: {
     alignItems: "center" as const,
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.white,
     borderRadius: 12,
     height: 52,
     justifyContent: "center" as const,
@@ -229,8 +227,9 @@ const styles = {
   },
 
   buttonText: {
-    color: COLORS.white,
+    color: COLORS.primary,
     fontFamily: "System",
     fontSize: 15,
+    fontWeight: "bold",
   },
-};
+});

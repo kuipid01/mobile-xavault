@@ -19,7 +19,7 @@ export default function FeedbackSuggestionsScreen() {
   const [message, setMessage] = useState("");
   const handleBack = () => {
     if (router.canGoBack()) router.back();
-    else router.replace("/(app)/profile");
+    else router.replace("/(app)/(tabs)/profile");
   };
 
   return (
@@ -27,7 +27,7 @@ export default function FeedbackSuggestionsScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <Ionicons name="chevron-back" size={22} color={C.forest} />
+            <Ionicons name="arrow-back" size={22} color={C.forest} />
           </TouchableOpacity>
           <View style={styles.headerIcon}>
             <Ionicons name="chatbubble-ellipses-outline" size={25} color={C.forest} />

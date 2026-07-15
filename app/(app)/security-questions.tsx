@@ -39,7 +39,7 @@ export default function SecurityQuestionsScreen() {
 
   const handleBack = () => {
     if (router.canGoBack()) router.back();
-    else router.replace("/(app)/profile");
+    else router.replace("/(app)/(tabs)/profile");
   };
 
   const handleSave = async () => {
@@ -101,7 +101,7 @@ function Header({ title, subtitle, onBack }: { title: string; subtitle: string; 
   return (
     <View style={styles.header}>
       <TouchableOpacity style={styles.backButton} onPress={onBack}>
-        <Ionicons name="chevron-back" size={22} color={C.forest} />
+        <Ionicons name="arrow-back" size={22} color={C.forest} />
       </TouchableOpacity>
       <View style={styles.headerIcon}>
         <Ionicons name="help-buoy-outline" size={25} color={C.forest} />

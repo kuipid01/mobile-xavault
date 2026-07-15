@@ -1,15 +1,18 @@
 import { formatMoney } from "@/api/money";
 import { WalletLedger } from "@/api/types";
 import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet, Text, View } from "react-native";
+import * as Clipboard from "expo-clipboard";
+import { router } from "expo-router";
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import Toast from "react-native-toast-message";
 
 type Props = {
   items?: WalletLedger[];
   isLoading?: boolean;
+  onDeposit?: () => void;
 };
 
-const getLedgerAmount = (item: WalletLedger) =>
-  item.amount ?? item.Amount ?? 0;
+const getLedgerAmount = (item: WalletLedger) => item.amount ?? item.Amount ?? 0;
 const getLedgerType = (item: WalletLedger) =>
   String(item.type ?? item.Type ?? "").toLowerCase();
 const getLedgerDescription = (item: WalletLedger) =>
@@ -34,7 +37,7 @@ const formatDate = (raw: string): string => {
   }
 };
 
-const RecentMovements = ({ items = [], isLoading }: Props) => {
+const RecentMovements = ({ items = [], isLoading, onDeposit }: Props) => {
   const displayItems = items.slice(0, 5);
 
   return (
@@ -44,6 +47,12 @@ const RecentMovements = ({ items = [], isLoading }: Props) => {
           <Text style={styles.sectionTitle}>Recent Movements</Text>
           <Text style={styles.sectionSubtitle}>Latest wallet activity.</Text>
         </View>
+        <TouchableOpacity
+          activeOpacity={0.75}
+          onPress={() => router.push("/(app)/transactions" as never)}
+        >
+          <Text style={styles.viewAll}>View all</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.card}>
@@ -69,14 +78,21 @@ const RecentMovements = ({ items = [], isLoading }: Props) => {
             <Text style={styles.emptyText}>
               Deposit to your vault to see transactions here.
             </Text>
+            {onDeposit ? (
+              <TouchableOpacity
+                activeOpacity={0.82}
+                onPress={onDeposit}
+                style={styles.emptyButton}
+              >
+                <Text style={styles.emptyButtonText}>Deposit money</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         ) : (
           displayItems.map((item, index) => (
             <View key={item.id || item.reference}>
               <MovementItem item={item} />
-              {index < displayItems.length - 1 && (
-                <View style={styles.divider} />
-              )}
+              {index < displayItems.length - 1 && <View style={styles.divider} />}
             </View>
           ))
         )}
@@ -94,8 +110,42 @@ const MovementItem = ({ item }: { item: WalletLedger }) => {
   const dateStr = formatDate(getLedgerDate(item));
   const ref = item.reference;
 
+  const showDetails = () => {
+    Alert.alert(
+      isCredit ? "Credit received" : "Debit sent",
+      [
+        getLedgerDescription(item),
+        dateStr ? `Date: ${dateStr}` : null,
+        `Amount: ${isCredit ? "+" : "-"}${formatMoney(Math.abs(amount))}`,
+        ref ? `Reference: ${ref}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      ref
+        ? [
+            { text: "Close", style: "cancel" },
+            {
+              text: "Copy ref",
+              onPress: async () => {
+                await Clipboard.setStringAsync(ref);
+                Toast.show({
+                  type: "success",
+                  text1: "Reference copied",
+                  text2: ref,
+                });
+              },
+            },
+          ]
+        : [{ text: "Close", style: "cancel" }]
+    );
+  };
+
   return (
-    <View style={styles.item}>
+    <TouchableOpacity
+      activeOpacity={0.78}
+      onPress={showDetails}
+      style={styles.item}
+    >
       <View
         style={[
           styles.iconBox,
@@ -103,11 +153,7 @@ const MovementItem = ({ item }: { item: WalletLedger }) => {
         ]}
       >
         <Ionicons
-          name={
-            isCredit
-              ? "arrow-down-outline"
-              : "arrow-up-outline"
-          }
+          name={isCredit ? "arrow-down-outline" : "arrow-up-outline"}
           size={16}
           color={isCredit ? "#106B4F" : "#7A8580"}
         />
@@ -124,12 +170,12 @@ const MovementItem = ({ item }: { item: WalletLedger }) => {
 
       <View style={styles.amountCol}>
         <Text style={[styles.amount, isCredit && styles.amountCredit]}>
-          {isCredit ? "+" : "−"}
+          {isCredit ? "+" : "-"}
           {formatMoney(Math.abs(amount))}
         </Text>
         <Text style={styles.typeLabel}>{isCredit ? "Credit" : "Debit"}</Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 };
 
@@ -137,192 +183,177 @@ const styles = StyleSheet.create({
   section: {
     marginTop: 30,
   },
-
   sectionHeader: {
-    flexDirection: "row",
     alignItems: "flex-start",
+    flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 14,
   },
-
   sectionTitle: {
+    color: "#063B2E",
     fontSize: 20,
     fontWeight: "900",
-    color: "#063B2E",
     letterSpacing: -0.3,
   },
-
   sectionSubtitle: {
+    color: "#9EAAA5",
     fontSize: 12,
     fontWeight: "600",
-    color: "#9EAAA5",
     marginTop: 2,
   },
-
-  // ── Card wrapper ──
-
+  viewAll: {
+    color: "#106B4F",
+    fontSize: 12,
+    fontWeight: "900",
+    paddingTop: 4,
+  },
   card: {
     backgroundColor: "#FFFFFF",
+    borderColor: "#DDE6E1",
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: "#DDE6E1",
+    elevation: 2,
     overflow: "hidden",
     shadowColor: "#063B2E",
     shadowOpacity: 0.04,
     shadowRadius: 12,
-    elevation: 2,
   },
-
   divider: {
-    height: 1,
     backgroundColor: "#F0F4F2",
+    height: 1,
     marginHorizontal: 16,
   },
-
-  // ── Movement item ──
-
   item: {
+    alignItems: "center",
     flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
     gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
-
   iconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 13,
     alignItems: "center",
+    borderRadius: 13,
+    height: 38,
     justifyContent: "center",
+    width: 38,
   },
-
   iconBoxCredit: {
     backgroundColor: "#EAF7F1",
   },
-
   iconBoxDebit: {
     backgroundColor: "#F0F4F2",
   },
-
   details: {
     flex: 1,
     gap: 3,
   },
-
   name: {
+    color: "#063B2E",
     fontSize: 14,
     fontWeight: "700",
-    color: "#063B2E",
     letterSpacing: -0.1,
   },
-
   meta: {
+    color: "#9EAAA5",
     fontSize: 11,
     fontWeight: "600",
-    color: "#9EAAA5",
   },
-
   amountCol: {
     alignItems: "flex-end",
     gap: 2,
   },
-
   amount: {
+    color: "#063B2E",
     fontSize: 14,
     fontWeight: "900",
-    color: "#063B2E",
     letterSpacing: -0.3,
   },
-
   amountCredit: {
     color: "#106B4F",
   },
-
   typeLabel: {
+    color: "#9EAAA5",
     fontSize: 10,
     fontWeight: "700",
-    color: "#9EAAA5",
-    textTransform: "uppercase",
     letterSpacing: 0.4,
+    textTransform: "uppercase",
   },
-
-  // ── Skeleton ──
-
   stateWrap: {
-    padding: 16,
     gap: 14,
+    padding: 16,
   },
-
   skeletonRow: {
-    flexDirection: "row",
     alignItems: "center",
+    flexDirection: "row",
     gap: 12,
   },
-
   skeletonIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 13,
     backgroundColor: "#EDF1EE",
+    borderRadius: 13,
+    height: 38,
+    width: 38,
   },
-
   skeletonLines: {
     flex: 1,
     gap: 7,
   },
-
   skeletonLine: {
-    height: 12,
-    borderRadius: 6,
     backgroundColor: "#EDF1EE",
+    borderRadius: 6,
+    height: 12,
     width: "65%",
   },
-
   skeletonLineSm: {
-    height: 9,
-    borderRadius: 5,
     backgroundColor: "#EDF1EE",
+    borderRadius: 5,
+    height: 9,
     width: "40%",
   },
-
   skeletonAmount: {
-    width: 64,
-    height: 14,
-    borderRadius: 6,
     backgroundColor: "#EDF1EE",
+    borderRadius: 6,
+    height: 14,
+    width: 64,
   },
-
-  // ── Empty ──
-
   emptyIconWrap: {
-    width: 50,
-    height: 50,
-    borderRadius: 17,
-    backgroundColor: "#EAF3EF",
     alignItems: "center",
+    alignSelf: "center",
+    backgroundColor: "#EAF3EF",
+    borderColor: "#DDE6E1",
+    borderRadius: 17,
+    borderWidth: 1,
+    height: 50,
     justifyContent: "center",
     marginBottom: 10,
-    borderWidth: 1,
-    borderColor: "#DDE6E1",
-    alignSelf: "center",
+    width: 50,
   },
-
   emptyTitle: {
     color: "#063B2E",
     fontSize: 15,
     fontWeight: "900",
     textAlign: "center",
   },
-
   emptyText: {
+    alignSelf: "center",
     color: "#9EAAA5",
     fontSize: 12,
     fontWeight: "600",
-    textAlign: "center",
     lineHeight: 18,
     marginTop: 4,
     maxWidth: 220,
+    textAlign: "center",
+  },
+  emptyButton: {
     alignSelf: "center",
+    backgroundColor: "#063B2E",
+    borderRadius: 13,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  emptyButtonText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "900",
   },
 });
