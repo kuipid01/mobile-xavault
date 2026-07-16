@@ -16,6 +16,7 @@ type Props = TextInputProps & {
     iconPosition?: "left" | "right";
     viewPassword?: boolean;
     setViewPassword?: (value: boolean) => void;
+    textColor?: string;
 };
 
 export const FlatInput = ({
@@ -29,6 +30,7 @@ export const FlatInput = ({
     secureTextEntry,
     viewPassword,
     setViewPassword,
+    textColor = COLORS.primary, // <-- Default to white
     style,
     ...inputProps
 }: Props) => {
@@ -36,10 +38,7 @@ export const FlatInput = ({
 
     return (
         <View style={styles.wrapper}>
-
             <View style={styles.inputContainer}>
-                {/* Left icon */}
-
                 <TextInput
                     placeholder={placeholder}
                     placeholderTextColor="#9AA5A1"
@@ -49,11 +48,14 @@ export const FlatInput = ({
                     {...inputProps}
                     style={[
                         styles.input,
+                        { color: textColor || COLORS.primary },
                         icon && iconPosition === "left" ? { paddingLeft: 40 } : { paddingRight: 40 },
                         isPassword && { paddingRight: 45 },
                         style,
                     ]}
                 />
+
+                {/* Left/Right Custom Icon */}
                 {icon && (
                     <Ionicons
                         name={icon}
@@ -72,7 +74,7 @@ export const FlatInput = ({
                         <Ionicons
                             name={viewPassword ? "eye-outline" : "eye-off-outline"}
                             size={18}
-                            color={COLORS.primary}
+                            color={iconColor || COLORS.primary}
                         />
                     </TouchableOpacity>
                 )}
@@ -108,7 +110,6 @@ const styles = StyleSheet.create({
         height: "100%",
         paddingHorizontal: 2,
         fontSize: 15,
-        color: COLORS.white,
         fontWeight: "600",
         fontFamily: "PlayfairDisplay_600SemiBold",
     },

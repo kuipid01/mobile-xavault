@@ -4,9 +4,11 @@ import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { PlanStatus } from "@/api/types";
+import AppHeaderActions from "@/components/home/AppHeaderActions";
 import { EmptyPlanCard } from "@/components/plan/EmptyPlanCard";
 import { PlanCard } from "@/components/plan/PlanCard";
 import { usePlans } from "@/hooks/app/plans";
+import { useWalletActions } from "@/hooks/app/use-wallet-actions";
 
 const tabs: { label: string; value: PlanStatus }[] = [
   { label: "Active", value: "active" },
@@ -18,10 +20,12 @@ const tabs: { label: string; value: PlanStatus }[] = [
 export default function PlansScreen() {
   const [activeTab, setActiveTab] = useState<PlanStatus>("active");
   const { data, isLoading } = usePlans(activeTab);
+  const { openDeposit, openWithdrawal, walletActionModals } = useWalletActions();
   const visiblePlans = data?.items || [];
 
   return (
     <View style={styles.container}>
+      <AppHeaderActions onDeposit={openDeposit} onWithdraw={openWithdrawal} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.headerCard}>
           <Text style={styles.eyebrow}>Planning</Text>
@@ -80,6 +84,7 @@ export default function PlansScreen() {
       >
         <Ionicons name="add" size={28} color="#FFFFFF" />
       </TouchableOpacity>
+      {walletActionModals}
     </View>
   );
 }

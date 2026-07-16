@@ -1,3 +1,6 @@
+import "react-native-gesture-handler";
+
+import GlobalDrawerHost from "@/components/GlobalDrawerHost";
 import { OnboardingProvider, useOnboarding } from "@/context/OnboardingContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -309,7 +312,9 @@ export default function RootLayout() {
             <ModalProvider>
               <OnboardingProvider>
                 <StatusBar style="light" />
-                <RootLayoutContent />
+                <GlobalDrawerHost>
+                  <RootLayoutContent />
+                </GlobalDrawerHost>
                 <DepositVerificationWatcher />
                 <DepositVerificationBanner />
                 <Toast />

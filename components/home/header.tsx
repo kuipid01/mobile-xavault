@@ -5,7 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import ActionButton from "../general/button";
-import ProfileHeader from "./ProfileHeader";
+import AppHeaderActions from "./AppHeaderActions";
 
 interface Props {
   onDeposit: () => void;
@@ -29,86 +29,98 @@ const HomeScreenHeader = ({
   const ledgerBalance = formatMoney(wallet?.ledger_balance || 0, wallet?.currency);
 
   return (
-    <LinearGradient
-      colors={["#052B20", "#063B2E", "#0B4D3A"]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.hero}
-    >
-      <View style={styles.dotGrid} pointerEvents="none">
-        {Array.from({ length: 80 }).map((_, i) => (
-          <View key={i} style={styles.dot} />
-        ))}
-      </View>
+    <View>
+      <AppHeaderActions onDeposit={onDeposit} onWithdraw={onWithdraw} />
 
-      <View style={styles.arcGlow} pointerEvents="none" />
+      <LinearGradient
+        colors={["#052B20", "#063B2E", "#0B4D3A"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.hero}
+      >
+        <View style={styles.dotGrid} pointerEvents="none">
+          {Array.from({ length: 80 }).map((_, i) => (
+            <View key={i} style={styles.dot} />
+          ))}
+        </View>
 
-      <ProfileHeader />
+        <View style={styles.arcGlow} pointerEvents="none" />
 
-      <View style={styles.balanceSection}>
-        <View style={styles.balanceLabelRow}>
-          <View style={styles.labelPill}>
-            <View style={styles.labelDot} />
-            <Text style={styles.heroLabel}>Vault Balance</Text>
+
+
+        <View style={styles.balanceSection}>
+          <View style={styles.balanceLabelRow}>
+            <View style={styles.labelPill}>
+              <View style={styles.labelDot} />
+              <Text style={styles.heroLabel}>Vault Balance</Text>
+            </View>
+
+            <View style={styles.balanceActions}>
+              <TouchableOpacity
+                onPress={refreshWallet}
+                activeOpacity={0.7}
+                style={styles.iconButton}
+              >
+                <Ionicons name="refresh" size={15} color="rgba(255,255,255,0.65)" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setShowBalance((prev) => !prev)}
+                activeOpacity={0.7}
+                style={styles.iconButton}
+              >
+                <Ionicons
+                  name={showBalance ? "eye-outline" : "eye-off-outline"}
+                  size={15}
+                  color="rgba(255,255,255,0.65)"
+                />
+              </TouchableOpacity>
+            </View>
           </View>
 
-          <View style={styles.balanceActions}>
-            <TouchableOpacity
-              onPress={refreshWallet}
-              activeOpacity={0.7}
-              style={styles.iconButton}
-            >
-              <Ionicons name="refresh" size={15} color="rgba(255,255,255,0.65)" />
-            </TouchableOpacity>
+          {isLoading ? (
+            <View style={styles.skeletonWrap}>
+              <View style={styles.balanceSkeleton} />
+              <View style={styles.balanceSkeletonSm} />
+            </View>
+          ) : (
+            <View style={styles.balanceFigureWrap}>
+              <Text style={styles.balance} numberOfLines={1} adjustsFontSizeToFit>
+                {showBalance ? balance : "NGN ********"}
+              </Text>
+              <Text style={styles.balanceHint}>
+                Available for deposits, transfers and bills
+              </Text>
+            </View>
+          )}
 
-            <TouchableOpacity
-              onPress={() => setShowBalance((prev) => !prev)}
-              activeOpacity={0.7}
-              style={styles.iconButton}
-            >
-              <Ionicons
-                name={showBalance ? "eye-outline" : "eye-off-outline"}
-                size={15}
-                color="rgba(255,255,255,0.65)"
-              />
-            </TouchableOpacity>
+          <View style={styles.balanceDivider} />
+
+          <View style={styles.statsRow}>
+            <StatItem label="Available" value={showBalance ? balance : "Hidden"} />
+            <View style={styles.statSep} />
+            <StatItem label="Locked" value={showBalance ? lockedBalance : "Hidden"} />
+            <View style={styles.statSep} />
+            <StatItem label="Total" value={showBalance ? ledgerBalance : "Hidden"} />
           </View>
         </View>
 
-        {isLoading ? (
-          <View style={styles.skeletonWrap}>
-            <View style={styles.balanceSkeleton} />
-            <View style={styles.balanceSkeletonSm} />
-          </View>
-        ) : (
-          <View style={styles.balanceFigureWrap}>
-            <Text style={styles.balance} numberOfLines={1} adjustsFontSizeToFit>
-              {showBalance ? balance : "NGN ********"}
-            </Text>
-            <Text style={styles.balanceHint}>
-              Available for deposits, transfers and bills
-            </Text>
-          </View>
-        )}
 
-        <View style={styles.balanceDivider} />
+      </LinearGradient>
+      <LinearGradient
+        colors={["#052B20", "#063B2E", "#0B4D3A"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{ ...styles.hero, ...{ marginVertical: 20, borderRadius: 22, } }}
+      ><View style={{ ...styles.actionsWrap }}>
+          <ActionButton text="Deposit" icon="add" onPress={onDeposit} />
+          <ActionButton text="Withdraw" icon="paper-plane-outline" onPress={onWithdraw} />
+          <ActionButton text="Pay Bills" icon="receipt-outline" />
+          <ActionButton text="Lock" icon="lock-closed-outline" />
+        </View></LinearGradient>
 
-        <View style={styles.statsRow}>
-          <StatItem label="Available" value={showBalance ? balance : "Hidden"} />
-          <View style={styles.statSep} />
-          <StatItem label="Locked" value={showBalance ? lockedBalance : "Hidden"} />
-          <View style={styles.statSep} />
-          <StatItem label="Total" value={showBalance ? ledgerBalance : "Hidden"} />
-        </View>
-      </View>
+    </View>
 
-      <View style={styles.actionsWrap}>
-        <ActionButton text="Deposit" icon="add" onPress={onDeposit} />
-        <ActionButton text="Withdraw" icon="paper-plane-outline" onPress={onWithdraw} />
-        <ActionButton text="Pay Bills" icon="receipt-outline" />
-        <ActionButton text="Lock" icon="lock-closed-outline" />
-      </View>
-    </LinearGradient>
   );
 };
 

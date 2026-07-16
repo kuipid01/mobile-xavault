@@ -1,9 +1,10 @@
 import { getAccessToken } from "@/api/auth";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useDrawerStore } from "@/store/drawerStore";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { jwtDecode } from "jwt-decode";
 import { useEffect, useState } from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { COLORS } from "../../themes/colors";
 
 const getGreeting = (): string => {
@@ -16,6 +17,7 @@ const getGreeting = (): string => {
 type JwtWithEmail = { email?: string; sub?: string;[key: string]: unknown };
 
 const ProfileHeader = () => {
+    const openDrawer = useDrawerStore((state) => state.openDrawer);
     const [email, setEmail] = useState<string | null>(null);
     const [name, setName] = useState<string | null>(null);
 
@@ -31,18 +33,23 @@ const ProfileHeader = () => {
         });
         AsyncStorage.getItem("name").then(setName);
     }, []);
-    
+
     return (
         <View style={styles.container}>
             <View style={styles.profileRow}>
-                <View style={styles.avatarWrap}>
+                <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Open profile drawer"
+                    onPress={() => openDrawer("profile")}
+                    style={styles.avatarWrap}
+                >
                     <Image
                         source={{
                             uri: "https://i.pinimg.com/1200x/31/02/62/3102629a406ed439592d5833f0faa979.jpg",
                         }}
                         style={styles.avatar}
                     />
-                </View>
+                </Pressable>
 
                 <View style={styles.userText}>
                     <Text style={styles.greeting}>{getGreeting()}</Text>
@@ -64,7 +71,7 @@ const ProfileHeader = () => {
                     <Ionicons
                         name="notifications-outline"
                         size={18}
-                        color={COLORS.white}
+                        color={COLORS.primary}
                     />
                 </TouchableOpacity>
             </View>
@@ -81,6 +88,7 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
+        marginBottom: 10,
     },
 
     profileRow: {
@@ -92,21 +100,21 @@ const styles = StyleSheet.create({
     },
 
     avatarWrap: {
-        width: 50,
-        height: 50,
+        width: 40,
+        height: 40,
         borderRadius: 25,
         backgroundColor: "rgba(255,255,255,0.16)",
         alignItems: "center",
         justifyContent: "center",
-        borderWidth: 1,
-        borderColor: "rgba(255,255,255,0.18)",
+        borderWidth: 2,
     },
 
     avatar: {
         width: 44,
         height: 44,
         borderRadius: 22,
-        backgroundColor: COLORS.white,
+        backgroundColor: COLORS.primary,
+        borderColor: COLORS.primary,
     },
 
     userText: {
@@ -114,14 +122,14 @@ const styles = StyleSheet.create({
     },
 
     greeting: {
-        color: COLORS.white,
+        color: COLORS.primary,
         fontSize: 20,
         fontWeight: "900",
         letterSpacing: -0.4,
     },
 
     name: {
-        color: "rgba(255,255,255,0.68)",
+        color: COLORS.primary,
         fontSize: 13,
         fontWeight: "700",
         marginTop: 3,

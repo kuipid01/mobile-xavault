@@ -1,4 +1,3 @@
-import { Input } from "@/components/Input";
 import { useForgetPassword, useResetPassword } from "@/hooks/auth/auth";
 import { COLORS, Padding } from "@/themes/colors";
 import { Ionicons } from "@expo/vector-icons";
@@ -82,15 +81,15 @@ export default function ForgotPasswordScreen() {
       contentContainerStyle={styles.container}
       keyboardShouldPersistTaps="handled"
     >
-      <Ionicons style={{ marginBottom: 40, }} name="arrow-back" size={22} color={COLORS.white} />
-
+      <TouchableOpacity onPress={() => router.back()}>
+        <Ionicons style={{ marginBottom: 40 }} name="arrow-back" size={22} color={COLORS.white} />
+      </TouchableOpacity>
 
       <View style={styles.header}>
         <Text style={styles.title}>Reset password?</Text>
-
       </View>
 
-      <View >
+      <View>
         {step === "email" ? (
           <>
             <FlatInput
@@ -103,6 +102,7 @@ export default function ForgotPasswordScreen() {
               icon="mail"
               iconPosition="right"
               iconColor={COLORS.white}
+              textColor={COLORS.white} // Custom text color
             />
             <TouchableOpacity
               style={[styles.button, isPending && styles.buttonDisabled]}
@@ -125,8 +125,9 @@ export default function ForgotPasswordScreen() {
               onChangeText={(value) =>
                 setOtp(value.replace(/\D/g, "").slice(0, 6))
               }
+              textColor={COLORS.white}
             />
-            <Input
+            <FlatInput
               label="New Password"
               placeholder="Enter new password"
               value={password}
@@ -134,8 +135,10 @@ export default function ForgotPasswordScreen() {
               viewPassword={viewPassword}
               setViewPassword={setViewPassword}
               onChangeText={setPassword}
+              iconColor={COLORS.white}
+              textColor={COLORS.white}
             />
-            <Input
+            <FlatInput
               label="Confirm Password"
               placeholder="Confirm new password"
               value={confirmPassword}
@@ -143,6 +146,8 @@ export default function ForgotPasswordScreen() {
               viewPassword={viewPassword}
               setViewPassword={setViewPassword}
               onChangeText={setConfirmPassword}
+              iconColor={COLORS.white}
+              textColor={COLORS.white}
             />
             <TouchableOpacity
               style={[styles.button, isPending && styles.buttonDisabled]}
