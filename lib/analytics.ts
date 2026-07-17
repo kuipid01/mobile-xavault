@@ -14,6 +14,7 @@ type AnalyticsEventName =
   | "deposit_still_processing"
   | "deposit_failed"
   | "deposit_abandoned"
+  | "deposit_payment_restarted"
   | "deposit_transfer_refresh"
   | "withdrawal_opened"
   | "withdrawal_source_selected"
@@ -26,6 +27,7 @@ type AnalyticsEventName =
   | "subscription_prompt_shown"
   | "subscription_prompt_skipped"
   | "subscription_payment_started"
+  | "subscription_payment_restarted"
   | "subscription_verified"
   | "subscription_verification_timeout"
   | "subscription_prompt_suppressed";

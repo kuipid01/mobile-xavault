@@ -6,18 +6,18 @@ import { useSubscriptionVerificationContext } from "@/hooks/verify-sub";
 import { trackEvent } from "@/lib/analytics";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import { RefreshControl, ScrollView, StyleSheet } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import AppHeaderActions from "../../../components/home/AppHeaderActions";
 import HomeScreenHeader from "../../../components/home/header";
 import NextActionCard from "../../../components/home/next-action-card";
 import RecentMovements from "../../../components/home/recent-movements";
-import SpendingPlans from "../../../components/home/spending-plans";
 import VaultHealthCard from "../../../components/home/vault-health-card";
 
 export default function Home() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const { data: plans, isLoading: isPlansLoading, refetch: refetchPlans } = usePlans();
+  const { data: plans, refetch: refetchPlans } = usePlans();
   const { data: ledger, isLoading: isLedgerLoading, refetch: refetchLedger } =
     useWalletLedger();
   const {
@@ -58,6 +58,10 @@ export default function Home() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <View style={styles.fixedHeader}>
+        <AppHeaderActions onDeposit={openDeposit} onWithdraw={openWithdrawal} />
+      </View>
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
@@ -94,16 +98,14 @@ export default function Home() {
           ledger={ledger}
         />
 
-        <SpendingPlans plans={plans?.items} isLoading={isPlansLoading} />
-
         <RecentMovements
           items={ledger}
           isLoading={isLedgerLoading}
           onDeposit={openDeposit}
         />
-
-        {walletActionModals}
       </ScrollView>
+
+      {walletActionModals}
     </SafeAreaView>
   );
 }
@@ -114,9 +116,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#F0F4F2",
   },
 
+  fixedHeader: {
+    paddingHorizontal: 18,
+    paddingTop: 8,
+  },
+
   scrollContent: {
     paddingHorizontal: 18,
     paddingBottom: 120,
-    paddingTop: 8,
   },
 });

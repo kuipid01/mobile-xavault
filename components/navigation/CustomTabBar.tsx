@@ -1,22 +1,67 @@
 import { Ionicons } from "@expo/vector-icons";
+import EvilIcons from "@expo/vector-icons/EvilIcons";
+import FontAwesome from "@expo/vector-icons/FontAwesome";
+import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import type { ReactNode } from "react";
+import {
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { COLORS, Radius } from "../../themes/colors";
 
-// Paired outline/filled icons for inactive/active states
-const TAB_ICONS: Record<
-    string,
-    { inactive: keyof typeof Ionicons.glyphMap; active: keyof typeof Ionicons.glyphMap }
-> = {
-    home: { inactive: "home-outline", active: "home" },
-    "(plan)": { inactive: "swap-horizontal-outline", active: "swap-horizontal" },
-    profile: { inactive: "person-outline", active: "person" },
+type TabIcon = {
+    inactive: (color: string) => ReactNode;
+    active: (color: string) => ReactNode;
+};
+
+const TAB_ICONS: Record<string, TabIcon> = {
+    home: {
+        inactive: (color) => (
+            <Ionicons name="home-outline" size={22} color={color} />
+        ),
+        active: (color) => (
+            <Ionicons name="home" size={22} color={color} />
+        ),
+    },
+
+    "(plan)": {
+        inactive: (color) => (
+            <FontAwesome5 name="box" size={22} color={color} />
+        ),
+        active: (color) => (
+            <FontAwesome5 name="box-open" size={22} color={color} />
+        ),
+    },
+
+    profile: {
+        inactive: (color) => (
+            <EvilIcons name="user" size={27} color={color} />
+        ),
+        active: (color) => (
+            <FontAwesome name="user" size={22} color={color} />
+        ),
+    },
+};
+
+const DEFAULT_TAB_ICON: TabIcon = {
+    inactive: (color) => (
+        <Ionicons name="ellipse-outline" size={22} color={color} />
+    ),
+    active: (color) => (
+        <Ionicons name="ellipse" size={22} color={color} />
+    ),
 };
 
 const TAB_LABELS: Record<string, string> = {
     home: "Home",
     "(plan)": "Plans",
-    profile: "Settings",
+    profile: "Profile",
 };
+
 const HIDE_TAB_BAR_ROUTES = new Set([
     "upgrade-plan",
     "my-profile",
@@ -27,7 +72,6 @@ const HIDE_TAB_BAR_ROUTES = new Set([
     "upgrade-suggestions",
 ]);
 
-
 const VISIBLE_TABS = new Set(["home", "(plan)", "profile"]);
 
 export default function CustomTabBar({
@@ -35,32 +79,47 @@ export default function CustomTabBar({
     descriptors,
     navigation,
 }: Readonly<BottomTabBarProps>) {
+    const insets = useSafeAreaInsets();
     const currentRoute = state.routes[state.index];
+
     if (HIDE_TAB_BAR_ROUTES.has(currentRoute.name)) {
         return null;
     }
 
     return (
-        <View style={styles.wrapper}>
+        <View
+            style={[
+                styles.wrapper,
+                { paddingBottom: Math.max(insets.bottom, 12) },
+            ]}
+        >
             <View style={styles.tabBar}>
-                {state.routes.map((route) => {
-                    if (!VISIBLE_TABS.has(route.name)) return null;
+                {state.routes.map((route, routeIndex) => {
+                    if (!VISIBLE_TABS.has(route.name)) {
+                        return null;
+                    }
 
-                    const routeIndex = state.routes.findIndex((item) => item.key === route.key);
                     const isFocused = state.index === routeIndex;
                     const { options } = descriptors[route.key];
-                    const routeOptions = options as typeof options & { href?: string | null };
-                    if (routeOptions.href === null) return null;
+
+                    const routeOptions = options as typeof options & {
+                        href?: string | null;
+                    };
+
+                    if (routeOptions.href === null) {
+                        return null;
+                    }
 
                     const label =
                         options.title ??
                         TAB_LABELS[route.name] ??
                         route.name;
 
-                    const icons = TAB_ICONS[route.name] ?? {
-                        inactive: "ellipse-outline",
-                        active: "ellipse",
-                    };
+                    const icons = TAB_ICONS[route.name] ?? DEFAULT_TAB_ICON;
+
+                    const iconColor = isFocused
+                        ? COLORS.primary
+                        : COLORS.border;
 
                     const onPress = () => {
                         const event = navigation.emit({
@@ -68,6 +127,7 @@ export default function CustomTabBar({
                             target: route.key,
                             canPreventDefault: true,
                         });
+
                         if (!isFocused && !event.defaultPrevented) {
                             navigation.navigate(route.name);
                         }
@@ -82,18 +142,16 @@ export default function CustomTabBar({
                         >
                             <View
                                 style={[
-                                    styles.iconWrap,
-                                    isFocused && styles.iconWrapActive,
+                                    styles.indicator,
+                                    isFocused && styles.indicatorActive,
                                 ]}
-                            >
-                                <Ionicons
-                                    name={isFocused ? icons.active : icons.inactive}
-                                    size={isFocused ? 20 : 19}
-                                    color={
-                                        isFocused ? "#FFFFFF" : "#9EAAA5"
-                                    }
-                                />
-                            </View>
+                            />
+
+                            {isFocused ? (
+                                icons.active(iconColor)
+                            ) : (
+                                icons.inactive(iconColor)
+                            )}
 
                             <Text
                                 style={[
@@ -116,64 +174,50 @@ const styles = StyleSheet.create({
         position: "absolute",
         left: 0,
         right: 0,
-        bottom: 24,
-        alignItems: "center",
+        bottom: 0,
+        backgroundColor: "rgba(255,255,255,0.96)",
+        borderTopColor: "rgba(6, 59, 46, 0.08)",
+        borderTopWidth: 1,
         zIndex: 999,
-        pointerEvents: "box-none",
     },
 
     tabBar: {
-        height: 68,
-        paddingHorizontal: 10,
-        borderRadius: 999,
-        backgroundColor: "#FFFFFF",
         flexDirection: "row",
         alignItems: "center",
-        justifyContent: "center",
-        borderWidth: 1,
-        borderColor: "#DDE6E1",
-        shadowColor: "#063B2E",
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.10,
-        shadowRadius: 24,
-        elevation: 12,
+        justifyContent: "space-around",
+        paddingTop: 10,
+        width: "100%",
     },
 
     tabItem: {
-        width: 70,
         alignItems: "center",
-        justifyContent: "center",
-
+        flex: 1,
         gap: 5,
-    },
-
-    iconWrap: {
-        width: 40,
-        height: 40,
-        borderRadius: 14,
-        alignItems: "center",
         justifyContent: "center",
+        paddingVertical: 4,
     },
 
-    iconWrapActive: {
-        backgroundColor: "#063B2E",
-        shadowColor: "#063B2E",
-        shadowOffset: { width: 0, height: 4 },
-        borderRadius: 9999,
-        shadowOpacity: 0.28,
-        shadowRadius: 10,
-        elevation: 6,
+    indicator: {
+        backgroundColor: "transparent",
+        borderRadius: Radius.small,
+        height: 3,
+        marginBottom: 2,
+        width: 22,
+    },
+
+    indicatorActive: {
+        backgroundColor: COLORS.primary,
     },
 
     label: {
+        color: COLORS.border,
         fontSize: 10,
         fontWeight: "700",
-        color: "#9EAAA5",
         letterSpacing: 0.2,
     },
 
     labelActive: {
-        color: "#063B2E",
+        color: COLORS.primary,
         fontWeight: "900",
     },
 });

@@ -1,11 +1,11 @@
 import { formatMoney } from "@/api/money";
 import { EnvelopeCard } from "@/components/plan/EnvelopeCard";
+import { EnvelopeDetailSkeleton } from "@/components/plan/PlanSkeletons";
 import { useEnvelope } from "@/hooks/app/envelopes";
 import { usePlan } from "@/hooks/app/plans";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import {
-  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -28,13 +28,7 @@ export default function EnvelopeDetailScreen() {
   if (isLoading) {
     return (
       <View style={styles.container}>
-        <View style={styles.emptyState}>
-          <ActivityIndicator size="large" color="#063B2E" />
-          <Text style={styles.loadingTitle}>Loading envelope…</Text>
-          <Text style={styles.loadingSubtitle}>
-            Getting the latest allocation details.
-          </Text>
-        </View>
+        <EnvelopeDetailSkeleton />
       </View>
     );
   }

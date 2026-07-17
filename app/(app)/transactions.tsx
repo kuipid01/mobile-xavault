@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -18,6 +19,11 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
+import { COLORS, Padding, Radius } from "../../themes/colors";
+
+
+
+const monoFont = Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" });
 
 type Filter = "all" | "credit" | "debit";
 
@@ -81,7 +87,7 @@ export default function TransactionsScreen() {
           }}
           style={styles.backButton}
         >
-          <Ionicons name="arrow-back" size={18} color="#063B2E" />
+          <Ionicons name="arrow-back" size={18} color={COLORS.primary} />
         </TouchableOpacity>
         <View style={styles.headerCopy}>
           <Text style={styles.title}>Transactions</Text>
@@ -93,7 +99,11 @@ export default function TransactionsScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
         refreshControl={
-          <RefreshControl refreshing={isRefetching} onRefresh={refetch} />
+          <RefreshControl
+            refreshing={isRefetching}
+            onRefresh={refetch}
+            tintColor={COLORS.primary}
+          />
         }
       >
         <View style={styles.summaryGrid}>
@@ -120,14 +130,22 @@ export default function TransactionsScreen() {
         </View>
 
         <View style={styles.listCard}>
+          <View style={styles.listCardHeader}>
+            <Text style={styles.listCardHeaderText}>Statement</Text>
+            <View style={styles.dot} />
+            <Text style={styles.listCardHeaderCount}>
+              {filtered.length} {filtered.length === 1 ? "entry" : "entries"}
+            </Text>
+          </View>
+
           {isLoading ? (
             <View style={styles.loading}>
-              <ActivityIndicator color="#106B4F" />
+              <ActivityIndicator color={COLORS.secondary} />
               <Text style={styles.loadingText}>Loading transactions...</Text>
             </View>
           ) : filtered.length === 0 ? (
             <View style={styles.empty}>
-              <Ionicons name="receipt-outline" size={28} color="#9EAAA5" />
+              <Ionicons name="receipt-outline" size={28} color={COLORS.border} />
               <Text style={styles.emptyTitle}>No transactions found</Text>
               <Text style={styles.emptyText}>
                 Wallet activity will appear here once money moves in or out.
@@ -144,10 +162,7 @@ export default function TransactionsScreen() {
         </View>
       </ScrollView>
 
-      <TransactionDetailModal
-        item={selected}
-        onClose={() => setSelected(null)}
-      />
+      <TransactionDetailModal item={selected} onClose={() => setSelected(null)} />
     </SafeAreaView>
   );
 }
@@ -161,16 +176,19 @@ function SummaryCard({
   value: string;
   tone: "credit" | "debit";
 }) {
+  const isCredit = tone === "credit";
   return (
-    <View style={styles.summaryCard}>
-      <View style={[styles.summaryIcon, tone === "credit" ? styles.creditBg : styles.debitBg]}>
-        <Ionicons
-          name={tone === "credit" ? "arrow-down-outline" : "arrow-up-outline"}
-          size={16}
-          color={tone === "credit" ? "#106B4F" : "#946500"}
-        />
+    <View style={[styles.summaryCard, isCredit ? styles.summaryCardCredit : styles.summaryCardDebit]}>
+      <View style={styles.summaryTopRow}>
+        <View style={[styles.summaryIcon, isCredit ? styles.creditBg : styles.debitBg]}>
+          <Ionicons
+            name={isCredit ? "arrow-down-outline" : "arrow-up-outline"}
+            size={15}
+            color={isCredit ? COLORS.secondary : COLORS.tertiary}
+          />
+        </View>
+        <Text style={styles.summaryLabel}>{label}</Text>
       </View>
-      <Text style={styles.summaryLabel}>{label}</Text>
       <Text style={styles.summaryValue} numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
@@ -194,7 +212,7 @@ function TransactionRow({
         <Ionicons
           name={isCredit ? "arrow-down-outline" : "arrow-up-outline"}
           size={16}
-          color={isCredit ? "#106B4F" : "#946500"}
+          color={isCredit ? COLORS.secondary : COLORS.tertiary}
         />
       </View>
       <View style={styles.rowCopy}>
@@ -202,15 +220,17 @@ function TransactionRow({
           {getDescription(item)}
         </Text>
         <Text style={styles.rowMeta} numberOfLines={1}>
-          {formatTimestamp(getTimestamp(item))} | {getSource(item)}
+          {formatTimestamp(getTimestamp(item))} · {getSource(item)}
         </Text>
       </View>
       <View style={styles.rowAmountWrap}>
         <Text style={[styles.rowAmount, isCredit && styles.creditText]}>
-          {isCredit ? "+" : "-"}
+          {isCredit ? "+" : "−"}
           {formatMoney(Math.abs(getAmount(item)), getCurrency(item))}
         </Text>
-        <Text style={styles.rowType}>{direction}</Text>
+        <Text style={[styles.rowType, isCredit ? styles.rowTypeCredit : styles.rowTypeDebit]}>
+          {direction}
+        </Text>
       </View>
     </TouchableOpacity>
   );
@@ -227,6 +247,7 @@ function TransactionDetailModal({
 
   const reference = getReference(item);
   const direction = getDirection(item);
+  const isCredit = direction === "credit";
   const amount = Math.abs(getAmount(item));
 
   const copyReference = async () => {
@@ -243,51 +264,68 @@ function TransactionDetailModal({
   return (
     <Modal transparent visible animationType="fade" onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
-        <View style={styles.detailCard}>
-          <View style={styles.detailHeader}>
-            <View>
-              <Text style={styles.detailEyebrow}>Transaction audit</Text>
-              <Text style={styles.detailTitle}>{getDescription(item)}</Text>
-            </View>
+        <View style={styles.receiptWrap}>
+          <View style={styles.detailCard}>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={16} color="#063B2E" />
+              <Ionicons name="close" size={16} color={COLORS.primary} />
             </TouchableOpacity>
+
+            <View style={styles.receiptBrandRow}>
+              <View style={styles.receiptBadge}>
+                <Ionicons name="receipt-outline" size={16} color={COLORS.white} />
+              </View>
+              <Text style={styles.detailEyebrow}>Transaction receipt</Text>
+            </View>
+
+            <Text style={styles.detailTitle}>{getDescription(item)}</Text>
+
+            <View style={styles.amountBlock}>
+              <Text style={[styles.amountLabel, isCredit ? styles.creditText : styles.debitText]}>
+                {isCredit ? "Money in" : "Money out"}
+              </Text>
+              <Text style={styles.amountValue}>
+                {isCredit ? "+" : "−"}
+                {formatMoney(amount, getCurrency(item))}
+              </Text>
+            </View>
+
+            <View style={styles.perforationRow}>
+              {Array.from({ length: 16 }).map((_, i) => (
+                <View key={i} style={styles.perforationDot} />
+              ))}
+            </View>
+
+            <View style={styles.auditList}>
+              <AuditRow label="Timestamp" value={formatTimestamp(getTimestamp(item), true)} />
+              <AuditRow label="Reference" value={reference || "Unavailable"} mono />
+              <AuditRow label="Source" value={getSource(item)} />
+              <AuditRow label="Ledger type" value={getType(item) || direction} />
+              <AuditRow
+                label="Balance before"
+                value={formatMoney(getBalanceBefore(item), getCurrency(item))}
+                mono
+              />
+              <AuditRow
+                label="Balance after"
+                value={formatMoney(getBalanceAfter(item), getCurrency(item))}
+                mono
+                last
+              />
+            </View>
+
+            {reference ? (
+              <TouchableOpacity activeOpacity={0.82} onPress={copyReference} style={styles.copyButton}>
+                <Ionicons name="copy-outline" size={15} color={COLORS.white} />
+                <Text style={styles.copyButtonText}>Copy reference</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <Text style={styles.receiptFooter}>Keep this for your records</Text>
           </View>
 
-          <View style={styles.amountBlock}>
-            <Text style={styles.amountLabel}>{direction}</Text>
-            <Text style={styles.amountValue}>
-              {direction === "credit" ? "+" : "-"}
-              {formatMoney(amount, getCurrency(item))}
-            </Text>
-          </View>
-
-          <View style={styles.auditList}>
-            <AuditRow label="Timestamp" value={formatTimestamp(getTimestamp(item), true)} />
-            <AuditRow label="Reference" value={reference || "Unavailable"} />
-            <AuditRow label="Source" value={getSource(item)} />
-            <AuditRow label="Ledger type" value={getType(item) || direction} />
-            <AuditRow
-              label="Balance before"
-              value={formatMoney(getBalanceBefore(item), getCurrency(item))}
-            />
-            <AuditRow
-              label="Balance after"
-              value={formatMoney(getBalanceAfter(item), getCurrency(item))}
-              last
-            />
-          </View>
-
-          {reference ? (
-            <TouchableOpacity
-              activeOpacity={0.82}
-              onPress={copyReference}
-              style={styles.copyButton}
-            >
-              <Ionicons name="copy-outline" size={15} color="#FFFFFF" />
-              <Text style={styles.copyButtonText}>Copy reference</Text>
-            </TouchableOpacity>
-          ) : null}
+          {/* notches to fake a torn ticket-stub edge */}
+          <View style={[styles.notch, styles.notchLeft]} />
+          <View style={[styles.notch, styles.notchRight]} />
         </View>
       </View>
     </Modal>
@@ -298,15 +336,17 @@ function AuditRow({
   label,
   value,
   last,
+  mono,
 }: {
   label: string;
   value: string;
   last?: boolean;
+  mono?: boolean;
 }) {
   return (
     <View style={[styles.auditRow, last && styles.auditRowLast]}>
       <Text style={styles.auditLabel}>{label}</Text>
-      <Text style={styles.auditValue} numberOfLines={2}>
+      <Text style={[styles.auditValue, mono && styles.auditValueMono]} numberOfLines={2}>
         {value}
       </Text>
     </View>
@@ -329,11 +369,24 @@ function getType(item: WalletLedger) {
 }
 
 function getSource(item: WalletLedger) {
-  return String(item.source ?? item.Source ?? "Wallet");
+  const source = String(item.source ?? item.Source ?? "").trim();
+  return source || "Wallet";
 }
 
 function getDescription(item: WalletLedger) {
-  return item.description ?? item.Description ?? getSource(item) ?? "Wallet movement";
+  const description = String(item.description ?? item.Description ?? "").trim();
+  if (description) return description;
+
+  const source = getSource(item);
+  const sourceLower = source.toLowerCase();
+  const direction = getDirection(item);
+
+  if (sourceLower.includes("deposit")) return "Wallet deposit";
+  if (sourceLower.includes("withdraw")) return "Wallet withdrawal";
+  if (direction === "credit") return "Wallet deposit";
+  if (direction === "debit") return "Wallet withdrawal";
+
+  return source || "Wallet movement";
 }
 
 function getTimestamp(item: WalletLedger) {
@@ -374,23 +427,25 @@ function formatTimestamp(value: string, withTime = false) {
   });
 }
 
+const NOTCH_SIZE = 20;
+
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: "#F0F4F2",
+    backgroundColor: COLORS.hash,
     flex: 1,
   },
   header: {
     alignItems: "center",
     flexDirection: "row",
     gap: 12,
-    paddingHorizontal: 18,
+    paddingHorizontal: Padding.containerX,
     paddingTop: 8,
   },
   backButton: {
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderColor: "#DDE6E1",
-    borderRadius: 14,
+    backgroundColor: COLORS.white,
+    borderColor: `${COLORS.border}33`,
+    borderRadius: Radius.large,
     borderWidth: 1,
     height: 42,
     justifyContent: "center",
@@ -400,19 +455,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    color: "#063B2E",
+    color: COLORS.primary,
     fontSize: 24,
     fontWeight: "900",
   },
   subtitle: {
-    color: "#7A8580",
+    color: COLORS.text,
     fontSize: 12,
     fontWeight: "600",
     lineHeight: 18,
+    opacity: 0.75,
   },
   content: {
     paddingBottom: 120,
-    paddingHorizontal: 18,
+    paddingHorizontal: Padding.containerX,
     paddingTop: 18,
   },
   summaryGrid: {
@@ -420,38 +476,48 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   summaryCard: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#DDE6E1",
-    borderRadius: 18,
+    backgroundColor: COLORS.white,
+    borderRadius: Radius.large + 6,
     borderWidth: 1,
     flex: 1,
-    padding: 14,
+    padding: 16,
+  },
+  summaryCardCredit: {
+    borderColor: `${COLORS.secondary}33`,
+  },
+  summaryCardDebit: {
+    borderColor: `${COLORS.tertiary}40`,
+  },
+  summaryTopRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
   },
   summaryIcon: {
     alignItems: "center",
-    borderRadius: 12,
-    height: 34,
+    borderRadius: Radius.medium + 4,
+    height: 30,
     justifyContent: "center",
-    marginBottom: 12,
-    width: 34,
+    width: 30,
   },
   creditBg: {
-    backgroundColor: "#EAF7F1",
+    backgroundColor: `${COLORS.secondary}1A`,
   },
   debitBg: {
-    backgroundColor: "#FFFBEE",
+    backgroundColor: `${COLORS.tertiary}26`,
   },
   summaryLabel: {
-    color: "#7A8580",
+    color: COLORS.text,
     fontSize: 11,
     fontWeight: "800",
+    opacity: 0.6,
     textTransform: "uppercase",
   },
   summaryValue: {
-    color: "#063B2E",
-    fontSize: 18,
+    color: COLORS.primary,
+    fontSize: 19,
     fontWeight: "900",
-    marginTop: 4,
   },
   filterRow: {
     flexDirection: "row",
@@ -459,76 +525,110 @@ const styles = StyleSheet.create({
     marginTop: 18,
   },
   filterChip: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#DDE6E1",
-    borderRadius: 999,
+    backgroundColor: COLORS.white,
+    borderColor: `${COLORS.border}33`,
+    borderRadius: Radius.large + 8,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 9,
   },
   filterChipActive: {
-    backgroundColor: "#063B2E",
-    borderColor: "#063B2E",
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
   filterText: {
-    color: "#7A8580",
+    color: COLORS.text,
     fontSize: 12,
-    fontWeight: "900",
+    fontWeight: "800",
+    opacity: 0.7,
   },
   filterTextActive: {
-    color: "#FFFFFF",
+    color: COLORS.white,
+    opacity: 1,
   },
   listCard: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#DDE6E1",
-    borderRadius: 22,
+    backgroundColor: COLORS.white,
+    borderColor: `${COLORS.border}26`,
+    borderRadius: Radius.large + 10,
     borderWidth: 1,
-    marginTop: 14,
+    marginTop: 16,
     overflow: "hidden",
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    elevation: 2,
+  },
+  listCardHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 4,
+  },
+  listCardHeaderText: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  dot: {
+    backgroundColor: `${COLORS.border}55`,
+    borderRadius: 2,
+    height: 3,
+    width: 3,
+  },
+  listCardHeaderCount: {
+    color: COLORS.text,
+    fontSize: 11,
+    fontWeight: "700",
+    opacity: 0.55,
   },
   loading: {
     alignItems: "center",
     gap: 10,
-    padding: 28,
+    padding: 32,
   },
   loadingText: {
-    color: "#7A8580",
+    color: COLORS.text,
     fontSize: 12,
     fontWeight: "700",
+    opacity: 0.7,
   },
   empty: {
     alignItems: "center",
-    padding: 30,
+    padding: 34,
   },
   emptyTitle: {
-    color: "#063B2E",
+    color: COLORS.primary,
     fontSize: 15,
     fontWeight: "900",
     marginTop: 10,
   },
   emptyText: {
-    color: "#7A8580",
+    color: COLORS.text,
     fontSize: 12,
     fontWeight: "600",
     lineHeight: 18,
     marginTop: 4,
+    opacity: 0.65,
     textAlign: "center",
   },
   divider: {
-    backgroundColor: "#F0F4F2",
+    backgroundColor: COLORS.hash,
     height: 1,
-    marginHorizontal: 16,
+    marginHorizontal: 18,
   },
   row: {
     alignItems: "center",
     flexDirection: "row",
     gap: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     paddingVertical: 14,
   },
   rowIcon: {
     alignItems: "center",
-    borderRadius: 13,
+    borderRadius: Radius.medium + 6,
     height: 38,
     justifyContent: "center",
     width: 38,
@@ -538,134 +638,200 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   rowTitle: {
-    color: "#063B2E",
+    color: COLORS.primary,
     fontSize: 14,
     fontWeight: "800",
   },
   rowMeta: {
-    color: "#9EAAA5",
+    color: COLORS.text,
     fontSize: 11,
     fontWeight: "600",
+    opacity: 0.55,
   },
   rowAmountWrap: {
     alignItems: "flex-end",
     gap: 2,
   },
   rowAmount: {
-    color: "#063B2E",
+    color: COLORS.primary,
+    fontFamily: monoFont,
     fontSize: 13,
-    fontWeight: "900",
+    fontWeight: "800",
   },
   creditText: {
-    color: "#106B4F",
+    color: COLORS.secondary,
+  },
+  debitText: {
+    color: COLORS.tertiary,
   },
   rowType: {
-    color: "#9EAAA5",
     fontSize: 10,
     fontWeight: "800",
     textTransform: "uppercase",
   },
+  rowTypeCredit: {
+    color: COLORS.secondary,
+    opacity: 0.7,
+  },
+  rowTypeDebit: {
+    color: COLORS.tertiary,
+    opacity: 0.85,
+  },
   modalOverlay: {
     alignItems: "center",
-    backgroundColor: "rgba(6, 20, 16, 0.55)",
+    backgroundColor: "rgba(6, 20, 16, 0.6)",
     flex: 1,
     justifyContent: "center",
     padding: 20,
   },
-  detailCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 18,
+  receiptWrap: {
+    maxWidth: 420,
+    position: "relative",
     width: "100%",
   },
-  detailHeader: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: 12,
-    justifyContent: "space-between",
+  notch: {
+    backgroundColor: "rgba(6, 20, 16, 0.6)",
+    borderRadius: NOTCH_SIZE / 2,
+    height: NOTCH_SIZE,
+    position: "absolute",
+    top: "38%",
+    width: NOTCH_SIZE,
   },
-  detailEyebrow: {
-    color: "#7A8580",
-    fontSize: 10,
-    fontWeight: "900",
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
+  notchLeft: {
+    left: -NOTCH_SIZE / 2,
   },
-  detailTitle: {
-    color: "#063B2E",
-    fontSize: 18,
-    fontWeight: "900",
-    marginTop: 2,
+  notchRight: {
+    right: -NOTCH_SIZE / 2,
+  },
+  detailCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: Radius.large + 12,
+    padding: Padding.containerX,
+    width: "100%",
   },
   closeButton: {
     alignItems: "center",
-    backgroundColor: "#F0F4F2",
-    borderRadius: 13,
-    height: 34,
+    alignSelf: "flex-end",
+    backgroundColor: COLORS.hash,
+    borderRadius: Radius.medium + 6,
+    height: 32,
     justifyContent: "center",
-    width: 34,
+    width: 32,
   },
-  amountBlock: {
-    backgroundColor: "#EAF7F1",
-    borderRadius: 18,
-    marginTop: 16,
-    padding: 16,
-  },
-  amountLabel: {
-    color: "#106B4F",
-    fontSize: 10,
-    fontWeight: "900",
-    textTransform: "uppercase",
-  },
-  amountValue: {
-    color: "#063B2E",
-    fontSize: 28,
-    fontWeight: "900",
+  receiptBrandRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
     marginTop: 4,
   },
-  auditList: {
-    borderColor: "#DDE6E1",
-    borderRadius: 18,
-    borderWidth: 1,
-    marginTop: 14,
-    overflow: "hidden",
+  receiptBadge: {
+    alignItems: "center",
+    backgroundColor: COLORS.primary,
+    borderRadius: Radius.medium + 4,
+    height: 26,
+    justifyContent: "center",
+    width: 26,
   },
-  auditRow: {
-    borderBottomColor: "#F0F4F2",
-    borderBottomWidth: 1,
-    gap: 4,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+  detailEyebrow: {
+    color: COLORS.text,
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+    opacity: 0.55,
+    textTransform: "uppercase",
   },
-  auditRowLast: {
-    borderBottomWidth: 0,
+  detailTitle: {
+    color: COLORS.primary,
+    fontSize: 19,
+    fontWeight: "900",
+    marginTop: 10,
   },
-  auditLabel: {
-    color: "#9EAAA5",
+  amountBlock: {
+    marginTop: 18,
+  },
+  amountLabel: {
     fontSize: 10,
     fontWeight: "900",
     letterSpacing: 0.5,
     textTransform: "uppercase",
   },
+  amountValue: {
+    color: COLORS.primary,
+    fontFamily: monoFont,
+    fontSize: 32,
+    fontWeight: "900",
+    marginTop: 6,
+  },
+  perforationRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 5,
+    justifyContent: "space-between",
+    marginTop: 18,
+  },
+  perforationDot: {
+    backgroundColor: COLORS.hash,
+    borderRadius: 3,
+    height: 6,
+    width: 6,
+  },
+  auditList: {
+    marginTop: 6,
+  },
+  auditRow: {
+    alignItems: "flex-start",
+    borderBottomColor: COLORS.hash,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+    paddingVertical: 12,
+  },
+  auditRowLast: {
+    borderBottomWidth: 0,
+  },
+  auditLabel: {
+    color: COLORS.text,
+    fontSize: 11,
+    fontWeight: "700",
+    opacity: 0.55,
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+  },
   auditValue: {
-    color: "#063B2E",
+    color: COLORS.primary,
+    flexShrink: 1,
     fontSize: 13,
     fontWeight: "800",
     lineHeight: 18,
+    textAlign: "right",
+  },
+  auditValueMono: {
+    fontFamily: monoFont,
   },
   copyButton: {
     alignItems: "center",
-    backgroundColor: "#063B2E",
-    borderRadius: 16,
+    backgroundColor: COLORS.primary,
+    borderRadius: Radius.large + 4,
     flexDirection: "row",
     gap: 8,
     height: 52,
     justifyContent: "center",
-    marginTop: 16,
+    marginTop: 20,
   },
   copyButtonText: {
-    color: "#FFFFFF",
+    color: COLORS.white,
     fontSize: 14,
     fontWeight: "900",
+  },
+  receiptFooter: {
+    color: COLORS.text,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    marginTop: 14,
+    opacity: 0.4,
+    textAlign: "center",
+    textTransform: "uppercase",
   },
 });

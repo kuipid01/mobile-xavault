@@ -1,4 +1,4 @@
-import { ensureDedicatedAccount, getDeposits, getWallet, getWalletLedger, initiateDeposit, verifyDeposit } from "@/api/wallet";
+import { dismissDeposit, ensureDedicatedAccount, getDeposits, getWallet, getWalletLedger, initiateDeposit, verifyDeposit } from "@/api/wallet";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const walletKeys = {
@@ -60,6 +60,17 @@ export const useVerifyDeposit = () => {
       queryClient.invalidateQueries({ queryKey: walletKeys.deposits });
       queryClient.invalidateQueries({ queryKey: walletKeys.ledger });
       queryClient.invalidateQueries({ queryKey: walletKeys.wallet });
+    },
+  });
+};
+
+export const useDismissDeposit = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: dismissDeposit,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: walletKeys.deposits });
     },
   });
 };

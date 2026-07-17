@@ -11,6 +11,7 @@ export default function AppLayout() {
       <Stack.Screen name="login-settings" />
       <Stack.Screen name="security-questions" />
       <Stack.Screen name="feedback-suggestions" />
+      <Stack.Screen name="subscription-debug" />
     </Stack>
   );
 }

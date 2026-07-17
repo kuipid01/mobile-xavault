@@ -7,13 +7,20 @@ import {
 import { useWallet } from "@/hooks/app/wallet";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   Image,
+  Modal,
   Platform,
+  Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,34 +30,56 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
+import { COLORS } from "../../themes/colors";
 
 const C = {
   forest: "#063B2E",
+  forestDeep: "#04261D",
   forestLight: "#E6F7EF",
   gold: "#D6A84F",
+  goldSoft: "#F2DEB2",
   surface: "#FFFFFF",
   bg: "#F4F7F5",
   muted: "#6B7280",
   faint: "#9EAAA5",
-  border: "#E4ECE8",
+  border: "#E7EEEA",
   danger: "#B42318",
+  dangerSoft: "#FDECEC",
+  info: "#2563EB",
+  infoSoft: "#EAF1FE",
+  primary: COLORS.primary,
 };
 
 type NicknameState = "idle" | "checking" | "available" | "taken";
 
 export default function MyProfileScreen() {
-  const { data: wallet, isLoading: walletLoading } = useWallet();
-  const { data: profile, isLoading: profileLoading } = useProfile();
+  const {
+    data: wallet,
+    isLoading: walletLoading,
+    refetch: refetchWallet,
+  } = useWallet();
+  const {
+    data: profile,
+    isLoading: profileLoading,
+    refetch: refetchProfile,
+  } = useProfile();
   const { mutateAsync: updateProfile, isPending: isSaving } = useUpdateProfile();
   const { mutateAsync: checkNickname } = useCheckNickname();
   const { mutateAsync: uploadProfileImage, isPending: isUploadingImage } =
     useUploadProfileImage();
+
   const [email, setEmail] = useState("");
   const [nickname, setNickname] = useState("");
   const [nicknameState, setNicknameState] = useState<NicknameState>("idle");
   const [dob, setDob] = useState("");
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [tempDate, setTempDate] = useState<Date | null>(null);
   const [address, setAddress] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
+
+  const fullName = profile ? `${profile.first_name} ${profile.last_name}` : "";
 
   useEffect(() => {
     if (!profile) return;
@@ -66,7 +95,6 @@ export default function MyProfileScreen() {
       setNicknameState("idle");
       return;
     }
-
     setNicknameState("checking");
     const timer = setTimeout(async () => {
       try {
@@ -76,26 +104,44 @@ export default function MyProfileScreen() {
         setNicknameState("taken");
       }
     }, 500);
-
     return () => clearTimeout(timer);
   }, [checkNickname, nickname, profile?.nickname]);
+
+  // Track whether the user has changed anything, to enable/disable Save intelligently
+  useEffect(() => {
+    if (!profile) return;
+    const changed =
+      nickname !== (profile.nickname || "") ||
+      dob !== (profile.date_of_birth ? String(profile.date_of_birth).slice(0, 10) : "") ||
+      address !== (profile.address || "");
+    setIsDirty(changed);
+  }, [nickname, dob, address, profile]);
 
   const accountNumber = wallet?.dedicated_account_number;
   const accountTitle = wallet?.dedicated_account_name || "Dedicated account";
   const bankName = wallet?.dedicated_bank_name || "Bank pending";
 
   const nicknameHint = useMemo(() => {
-    if (nicknameState === "checking") return "Checking availability...";
+    if (nicknameState === "checking") return "Checking availability…";
     if (nicknameState === "available") return `@${nickname.trim()} is available`;
-    if (nicknameState === "taken") return "That nickname is not available";
+    if (nicknameState === "taken") return "That nickname is already taken";
     return "Choose a public @nickname";
   }, [nickname, nicknameState]);
+
   const dateValue = dob ? new Date(`${dob}T00:00:00`) : new Date(2000, 0, 1);
+
   const saveDisabled =
     isSaving ||
     profileLoading ||
+    !isDirty ||
     nicknameState === "checking" ||
     nicknameState === "taken";
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([refetchProfile?.(), refetchWallet?.()]);
+    setRefreshing(false);
+  };
 
   const handleCopyAccount = async () => {
     if (!accountNumber) return;
@@ -105,11 +151,15 @@ export default function MyProfileScreen() {
 
     if (clipboard?.writeText) {
       await clipboard.writeText(accountNumber);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => { });
       Toast.show({ type: "success", text1: "Account number copied" });
       return;
     }
-
-    Toast.show({ type: "info", text1: accountNumber, text2: "Copy support is coming soon on this device." });
+    Toast.show({
+      type: "info",
+      text1: accountNumber,
+      text2: "Copy support is coming soon on this device.",
+    });
   };
 
   const comingSoon = (label: string) => {
@@ -139,6 +189,7 @@ export default function MyProfileScreen() {
 
     try {
       await uploadProfileImage(result.assets[0]);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => { });
       Toast.show({ type: "success", text1: "Profile image updated" });
     } catch {
       Toast.show({ type: "error", text1: "Could not upload image" });
@@ -154,75 +205,122 @@ export default function MyProfileScreen() {
       Toast.show({ type: "error", text1: "Choose an available nickname" });
       return;
     }
-
     try {
-      await updateProfile({
-        nickname,
-        date_of_birth: dob,
-        address,
-      });
+      await updateProfile({ nickname, date_of_birth: dob, address });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => { });
       Toast.show({ type: "success", text1: "Profile updated" });
+      setIsDirty(false);
     } catch {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => { });
       Toast.show({ type: "error", text1: "Could not update profile" });
     }
   };
 
-  const handleDateChange = (_event: DateTimePickerEvent, selected?: Date) => {
-    if (Platform.OS !== "ios") setShowDatePicker(false);
-    if (!selected) return;
+  const openDatePicker = () => {
+    setTempDate(dateValue);
+    setShowDatePicker(true);
+  };
 
-    const year = selected.getFullYear();
-    const month = String(selected.getMonth() + 1).padStart(2, "0");
-    const day = String(selected.getDate()).padStart(2, "0");
+  const handleDateChange = (_event: DateTimePickerEvent, selected?: Date) => {
+    if (Platform.OS === "android") {
+      setShowDatePicker(false);
+      if (!selected) return;
+      applyDate(selected);
+      return;
+    }
+    if (selected) setTempDate(selected);
+  };
+
+  const applyDate = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
     setDob(`${year}-${month}-${day}`);
   };
 
+  const confirmIosDate = () => {
+    if (tempDate) applyDate(tempDate);
+    setShowDatePicker(false);
+  };
+
+  if (profileLoading && !profile) {
+    return <ProfileSkeleton onBack={handleBack} />;
+  }
+
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Header title="My Profile" subtitle="Your identity and deposit details." onBack={handleBack} />
+    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.forest} />
+        }
+      >
+        <Header title="My Profile" onBack={handleBack} />
 
         <View style={styles.avatarBlock}>
-          <TouchableOpacity style={styles.avatar} onPress={handlePickImage} disabled={isUploadingImage}>
-            {profile?.profile_image_url ? (
-              <Image source={{ uri: profile.profile_image_url }} style={styles.avatarImage} />
-            ) : (
-              <Text style={styles.avatarText}>{email ? email[0].toUpperCase() : "U"}</Text>
-            )}
+          <TouchableOpacity
+            style={styles.avatarRing}
+            onPress={handlePickImage}
+            disabled={isUploadingImage}
+            activeOpacity={0.85}
+          >
+            <LinearGradient
+              colors={[C.gold, C.forest]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.avatarGradientRing}
+            >
+              <View style={styles.avatar}>
+                {profile?.profile_image_url ? (
+                  <Image source={{ uri: profile.profile_image_url }} style={styles.avatarImage} />
+                ) : (
+                  <Text style={styles.avatarText}>
+                    {email ? email[0].toUpperCase() : "U"}
+                  </Text>
+                )}
+                {isUploadingImage ? (
+                  <View style={styles.avatarOverlay}>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  </View>
+                ) : null}
+              </View>
+            </LinearGradient>
             <View style={styles.cameraBadge}>
-              {isUploadingImage ? (
-                <ActivityIndicator size="small" color={C.forest} />
-              ) : (
-                <Ionicons name="camera-outline" size={14} color={C.forest} />
-              )}
+              <Ionicons name="camera" size={13} color={C.forest} />
             </View>
           </TouchableOpacity>
-          <Text style={styles.upcomingText}>Tap to change profile image</Text>
+          <Text style={styles.nameText}>{fullName || "Your name"}</Text>
+          {nickname ? <Text style={styles.handleText}>@{nickname}</Text> : null}
         </View>
 
+        <SectionLabel icon="wallet-outline" text="Dedicated Account" />
         <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Dedicated Account</Text>
-            {accountNumber ? (
-              <TouchableOpacity onPress={handleCopyAccount} style={styles.copyButton}>
-                <Ionicons name="copy-outline" size={15} color={C.forest} />
+          {walletLoading ? (
+            <View style={styles.cardLoading}>
+              <ActivityIndicator color={C.forest} />
+            </View>
+          ) : accountNumber ? (
+            <View style={styles.accountRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.accountNumber}>{formatAccountNumber(accountNumber)}</Text>
+                <Text style={styles.accountMeta}>{accountTitle}</Text>
+                <Text style={styles.accountMeta}>{bankName}</Text>
+              </View>
+              <TouchableOpacity onPress={handleCopyAccount} style={styles.copyButton} activeOpacity={0.7}>
+                <Ionicons name="copy-outline" size={16} color={C.forest} />
                 <Text style={styles.copyText}>Copy</Text>
               </TouchableOpacity>
-            ) : null}
-          </View>
-          {walletLoading ? (
-            <ActivityIndicator color={C.forest} />
-          ) : accountNumber ? (
-            <>
-              <Text style={styles.accountNumber}>{accountNumber}</Text>
-              <Text style={styles.accountMeta}>{accountTitle}</Text>
-              <Text style={styles.accountMeta}>{bankName}</Text>
-            </>
+            </View>
           ) : (
-            <Text style={styles.emptyText}>Dedicated account is not integrated here yet.</Text>
+            <View style={styles.emptyRow}>
+              <Ionicons name="information-circle-outline" size={18} color={C.faint} />
+              <Text style={styles.emptyText}>Dedicated account is not integrated here yet.</Text>
+            </View>
           )}
         </View>
 
+        <SectionLabel icon="person-outline" text="Personal Details" />
         <View style={styles.card}>
           <Field
             label="Nickname"
@@ -232,60 +330,137 @@ export default function MyProfileScreen() {
             prefix="@"
             hint={nicknameHint}
             state={nicknameState}
+            focused={focusedField === "nickname"}
+            onFocus={() => setFocusedField("nickname")}
+            onBlur={() => setFocusedField(null)}
           />
-          <DateField value={dob} onPress={() => setShowDatePicker(true)} />
-          {showDatePicker ? (
-            <DateTimePicker
-              value={dateValue}
-              mode="date"
-              display={Platform.OS === "ios" ? "spinner" : "default"}
-              maximumDate={new Date()}
-              onChange={handleDateChange}
-            />
-          ) : null}
-          {Platform.OS === "ios" && showDatePicker ? (
-            <TouchableOpacity style={styles.doneDateButton} onPress={() => setShowDatePicker(false)}>
-              <Text style={styles.doneDateText}>Done</Text>
-            </TouchableOpacity>
-          ) : null}
+
+          <View style={styles.divider} />
+
+          <DateField value={dob} onPress={openDatePicker} focused={focusedField === "dob"} />
+
+          <View style={styles.divider} />
+
           <ReadonlyRow
             label="Email"
             value={email}
             hint="Email changes require verification."
+            verified
             onPress={() => router.push("/(app)/change-email")}
           />
+
+          <View style={styles.divider} />
+
           <Field
             label="Address"
             value={address}
             onChangeText={setAddress}
             placeholder="Add your address"
             multiline
+            focused={focusedField === "address"}
+            onFocus={() => setFocusedField("address")}
+            onBlur={() => setFocusedField(null)}
           />
-          <TouchableOpacity
-            style={[styles.primaryButton, saveDisabled && styles.primaryButtonDisabled]}
-            onPress={handleSave}
-            disabled={saveDisabled}
-          >
-            {isSaving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryText}>Save Profile</Text>}
-          </TouchableOpacity>
         </View>
 
+        <SectionLabel icon="call-outline" text="Contact" />
         <View style={styles.card}>
-          <LockedRow label="Mobile Number" value="Change coming soon" onPress={() => comingSoon("Mobile number")} />
+          <LockedRow
+            label="Mobile Number"
+            value="Change coming soon"
+            onPress={() => comingSoon("Mobile number")}
+          />
         </View>
+
+        <View style={{ height: 8 }} />
       </ScrollView>
+
+      {/* Sticky save bar */}
+      <View style={styles.saveBar} pointerEvents="box-none">
+        <TouchableOpacity
+          style={[styles.primaryButton, saveDisabled && styles.primaryButtonDisabled]}
+          onPress={handleSave}
+          disabled={saveDisabled}
+          activeOpacity={0.85}
+        >
+          {isSaving ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <>
+              <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.primaryText}>{isDirty ? "Save Changes" : "Saved"}</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {/* Date picker */}
+      {Platform.OS === "ios" ? (
+        <Modal
+          visible={showDatePicker}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowDatePicker(false)}
+        >
+          <Pressable style={styles.modalBackdrop} onPress={() => setShowDatePicker(false)}>
+            <Pressable style={styles.sheet} onPress={() => { }}>
+              <View style={styles.sheetHandle} />
+              <View style={styles.sheetHeader}>
+                <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                  <Text style={styles.sheetCancel}>Cancel</Text>
+                </TouchableOpacity>
+                <Text style={styles.sheetTitle}>Date of Birth</Text>
+                <TouchableOpacity onPress={confirmIosDate}>
+                  <Text style={styles.sheetDone}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={tempDate || dateValue}
+                mode="date"
+                display="spinner"
+                maximumDate={new Date()}
+                onChange={handleDateChange}
+                style={{ alignSelf: "center" }}
+              />
+            </Pressable>
+          </Pressable>
+        </Modal>
+      ) : (
+        showDatePicker && (
+          <DateTimePicker
+            value={dateValue}
+            mode="date"
+            display="default"
+            maximumDate={new Date()}
+            onChange={handleDateChange}
+          />
+        )
+      )}
     </SafeAreaView>
   );
 }
 
-function Header({ title, subtitle, onBack }: { title: string; subtitle: string; onBack: () => void }) {
+function formatAccountNumber(value: string) {
+  return value.replace(/(\d{4})(?=\d)/g, "$1 ");
+}
+
+function Header({ title, onBack }: { title: string; onBack: () => void }) {
   return (
     <View style={styles.header}>
-      <TouchableOpacity style={styles.backButton} onPress={onBack}>
-        <Ionicons name="arrow-back" size={22} color={C.forest} />
+      <TouchableOpacity style={styles.backButton} onPress={onBack} activeOpacity={0.7}>
+        <Ionicons name="arrow-back" size={20} color={C.forest} />
       </TouchableOpacity>
       <Text style={styles.title}>{title}</Text>
-      <Text style={styles.subtitle}>{subtitle}</Text>
+      <View style={styles.backButton} />
+    </View>
+  );
+}
+
+function SectionLabel({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: string }) {
+  return (
+    <View style={styles.sectionLabelRow}>
+      <Ionicons name={icon} size={14} color={C.muted} />
+      <Text style={styles.sectionLabelText}>{text}</Text>
     </View>
   );
 }
@@ -298,8 +473,10 @@ function Field({
   hint,
   prefix,
   state,
-  keyboardType,
   multiline,
+  focused,
+  onFocus,
+  onBlur,
 }: {
   label: string;
   value: string;
@@ -308,23 +485,29 @@ function Field({
   hint?: string;
   prefix?: string;
   state?: NicknameState;
-  keyboardType?: "default" | "email-address";
   multiline?: boolean;
+  focused?: boolean;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }) {
-  const hintColor = state === "available" ? C.forest : state === "taken" ? C.danger : C.muted;
-  const inputStateStyle =
+  const hintColor =
+    state === "available" ? C.forest : state === "taken" ? C.danger : C.muted;
+
+  const borderStyle =
     state === "checking"
       ? styles.inputWrapChecking
       : state === "available"
         ? styles.inputWrapAvailable
         : state === "taken"
           ? styles.inputWrapTaken
-          : null;
+          : focused
+            ? styles.inputWrapFocused
+            : null;
 
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
-      <View style={[styles.inputWrap, inputStateStyle]}>
+      <View style={[styles.inputWrap, borderStyle, multiline && styles.inputWrapMultiline]}>
         {prefix ? <Text style={styles.prefix}>{prefix}</Text> : null}
         <TextInput
           value={value}
@@ -332,17 +515,20 @@ function Field({
           placeholder={placeholder}
           placeholderTextColor={C.faint}
           style={[styles.input, multiline && styles.multilineInput]}
-          keyboardType={keyboardType}
           multiline={multiline}
+          onFocus={onFocus}
+          onBlur={onBlur}
         />
         {state === "checking" ? (
-          <View style={styles.verifySpinner}>
-            <ActivityIndicator size="small" color="#2563EB" />
-          </View>
+          <ActivityIndicator size="small" color={C.info} />
         ) : state === "available" ? (
-          <Ionicons name="checkmark-circle" size={20} color={C.forest} />
+          <View style={[styles.statusChip, { backgroundColor: C.forestLight }]}>
+            <Ionicons name="checkmark" size={13} color={C.forest} />
+          </View>
         ) : state === "taken" ? (
-          <Ionicons name="close-circle" size={20} color={C.danger} />
+          <View style={[styles.statusChip, { backgroundColor: C.dangerSoft }]}>
+            <Ionicons name="close" size={13} color={C.danger} />
+          </View>
         ) : null}
       </View>
       {hint ? <Text style={[styles.hint, { color: hintColor }]}>{hint}</Text> : null}
@@ -350,35 +536,64 @@ function Field({
   );
 }
 
-function DateField({ value, onPress }: { value: string; onPress: () => void }) {
+function DateField({
+  value,
+  onPress,
+  focused,
+}: {
+  value: string;
+  onPress: () => void;
+  focused?: boolean;
+}) {
   return (
     <View style={styles.field}>
       <Text style={styles.label}>Date of Birth</Text>
-      <TouchableOpacity style={styles.inputWrap} onPress={onPress} activeOpacity={0.75}>
+      <TouchableOpacity
+        style={[styles.inputWrap, focused && styles.inputWrapFocused]}
+        onPress={onPress}
+        activeOpacity={0.75}
+      >
+        <Ionicons name="calendar-outline" size={18} color={C.forest} style={{ marginRight: 10 }} />
         <Text style={[styles.readonlyValue, !value && styles.placeholderText]}>
-          {value || "Select date of birth"}
+          {value ? formatDisplayDate(value) : "Select date of birth"}
         </Text>
-        <Ionicons name="calendar-outline" size={20} color={C.forest} />
+        <Ionicons name="chevron-forward" size={18} color={C.faint} />
       </TouchableOpacity>
     </View>
   );
+}
+
+function formatDisplayDate(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  return date.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
 }
 
 function ReadonlyRow({
   label,
   value,
   hint,
+  verified,
   onPress,
 }: {
   label: string;
   value: string;
   hint?: string;
+  verified?: boolean;
   onPress: () => void;
 }) {
   return (
     <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
+      <View style={styles.labelRow}>
+        <Text style={styles.label}>{label}</Text>
+        {verified && value ? (
+          <View style={styles.verifiedPill}>
+            <Ionicons name="shield-checkmark" size={11} color={C.forest} />
+            <Text style={styles.verifiedText}>Verified</Text>
+          </View>
+        ) : null}
+      </View>
       <TouchableOpacity style={styles.inputWrap} onPress={onPress} activeOpacity={0.75}>
+        <Ionicons name="mail-outline" size={18} color={C.forest} style={{ marginRight: 10 }} />
         <Text style={[styles.readonlyValue, !value && styles.placeholderText]}>
           {value || "Add email"}
         </Text>
@@ -391,8 +606,11 @@ function ReadonlyRow({
 
 function LockedRow({ label, value, onPress }: { label: string; value: string; onPress: () => void }) {
   return (
-    <TouchableOpacity style={styles.lockedRow} onPress={onPress}>
-      <View>
+    <TouchableOpacity style={styles.lockedRow} onPress={onPress} activeOpacity={0.7}>
+      <View style={styles.lockedIconWrap}>
+        <Ionicons name="phone-portrait-outline" size={18} color={C.forest} />
+      </View>
+      <View style={{ flex: 1, marginLeft: 12 }}>
         <Text style={styles.rowLabel}>{label}</Text>
         <Text style={styles.rowSub}>{value}</Text>
       </View>
@@ -403,111 +621,248 @@ function LockedRow({ label, value, onPress }: { label: string; value: string; on
   );
 }
 
+function ProfileSkeleton({ onBack }: { onBack: () => void }) {
+  const pulse = useRef(new Animated.Value(0.4)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 700,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0.4,
+          duration: 700,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.content}>
+        <Header title="My Profile" onBack={onBack} />
+        <View style={styles.avatarBlock}>
+          <Animated.View style={[styles.skeletonAvatar, { opacity: pulse }]} />
+          <Animated.View style={[styles.skeletonLine, { width: 140, opacity: pulse }]} />
+        </View>
+        {[0, 1, 2].map((i) => (
+          <Animated.View key={i} style={[styles.skeletonCard, { opacity: pulse }]} />
+        ))}
+      </View>
+    </SafeAreaView>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
-  content: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 120 },
-  header: { alignItems: "center", marginBottom: 22 },
+  content: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 140 },
+
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 20,
+  },
   backButton: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: C.surface,
     borderWidth: 1,
     borderColor: C.border,
     alignItems: "center",
     justifyContent: "center",
   },
-  title: { color: C.forest, fontSize: 24, fontWeight: "900", textAlign: "center" },
-  subtitle: { color: C.muted, fontSize: 13, fontWeight: "600", marginTop: 6, textAlign: "center" },
-  avatarBlock: { alignItems: "center", marginBottom: 18 },
+  title: { color: C.forest, fontSize: 18, fontWeight: "800" },
+
+  avatarBlock: { alignItems: "center", marginBottom: 24 },
+  avatarRing: { width: 100, height: 100 },
+  avatarGradientRing: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 4,
+  },
   avatar: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: C.gold,
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    backgroundColor: C.goldSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  avatarText: { color: C.forest, fontSize: 32, fontWeight: "900" },
+  avatarImage: { width: "100%", height: "100%" },
+  avatarOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(6,59,46,0.45)",
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: { color: C.forest, fontSize: 30, fontWeight: "900" },
-  avatarImage: { width: 88, height: 88, borderRadius: 44 },
   cameraBadge: {
     position: "absolute",
     right: 0,
-    bottom: 4,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    bottom: 2,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: C.border,
+    borderWidth: 2,
+    borderColor: C.bg,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
-  upcomingText: { color: C.muted, fontSize: 12, fontWeight: "700", marginTop: 8 },
+  nameText: { color: C.forest, fontSize: 19, fontWeight: "900", marginTop: 12 },
+  handleText: { color: C.muted, fontSize: 13, fontWeight: "700", marginTop: 2 },
+
+  sectionLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 8,
+    marginTop: 4,
+    paddingLeft: 4,
+  },
+  sectionLabelText: {
+    color: C.muted,
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+
   card: {
     backgroundColor: C.surface,
-    borderRadius: 22,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: C.border,
-    padding: 18,
-    marginBottom: 16,
+    padding: 16,
+    marginBottom: 20,
+    shadowColor: "#0B2E23",
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
   },
-  cardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  cardTitle: { color: C.forest, fontSize: 16, fontWeight: "900" },
-  copyButton: { flexDirection: "row", alignItems: "center", gap: 5, padding: 8 },
-  copyText: { color: C.forest, fontSize: 12, fontWeight: "900" },
-  accountNumber: { color: C.forest, fontSize: 26, fontWeight: "900", marginTop: 14 },
-  accountMeta: { color: C.muted, fontSize: 13, fontWeight: "700", marginTop: 4 },
-  emptyText: { color: C.muted, fontSize: 13, fontWeight: "700", marginTop: 12 },
-  field: { marginBottom: 16 },
-  label: { color: C.forest, fontSize: 13, fontWeight: "900", marginBottom: 8 },
+  cardLoading: { paddingVertical: 18, alignItems: "center" },
+
+  accountRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
+  accountNumber: { color: C.forest, fontSize: 22, fontWeight: "900", letterSpacing: 0.5 },
+  accountMeta: { color: C.muted, fontSize: 13, fontWeight: "600", marginTop: 3 },
+  copyButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: C.forestLight,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  copyText: { color: C.forest, fontSize: 12, fontWeight: "800" },
+  emptyRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  emptyText: { color: C.muted, fontSize: 13, fontWeight: "600", flexShrink: 1 },
+
+  divider: { height: 1, backgroundColor: C.border, marginVertical: 4 },
+
+  field: { paddingVertical: 12 },
+  labelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  label: { color: C.forest, fontSize: 12.5, fontWeight: "800", marginBottom: 8, letterSpacing: 0.2 },
+  verifiedPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: C.forestLight,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  verifiedText: { color: C.forest, fontSize: 10.5, fontWeight: "800" },
+
   inputWrap: {
-    minHeight: 52,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: "#F9FBFA",
+    minHeight: 50,
+    borderRadius: 14,
+    borderWidth: 1.3,
+    borderColor: "transparent",
+    backgroundColor: "#F7FAF8",
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 14,
   },
-  inputWrapChecking: { borderColor: "#2563EB", borderWidth: 1.5 },
-  inputWrapAvailable: { borderColor: C.forest, borderWidth: 1.5 },
-  inputWrapTaken: { borderColor: C.danger, borderWidth: 1.5 },
-  verifySpinner: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#2563EB",
+  inputWrapMultiline: { alignItems: "flex-start", paddingTop: 12 },
+  inputWrapFocused: { borderColor: C.forest, backgroundColor: "#FFFFFF" },
+  inputWrapChecking: { borderColor: C.info, backgroundColor: C.infoSoft },
+  inputWrapAvailable: { borderColor: C.forest, backgroundColor: C.forestLight },
+  inputWrapTaken: { borderColor: C.danger, backgroundColor: C.dangerSoft },
+
+  statusChip: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 8,
   },
   prefix: { color: C.forest, fontSize: 15, fontWeight: "900", marginRight: 2 },
   input: { flex: 1, color: C.forest, fontSize: 15, fontWeight: "700", paddingVertical: 12 },
   readonlyValue: { flex: 1, color: C.forest, fontSize: 15, fontWeight: "700" },
-  placeholderText: { color: C.faint },
-  multilineInput: { minHeight: 86, textAlignVertical: "top" },
+  placeholderText: { color: C.faint, fontWeight: "500" },
+  multilineInput: { minHeight: 76, textAlignVertical: "top" },
   hint: { fontSize: 12, fontWeight: "700", marginTop: 6 },
-  doneDateButton: { alignSelf: "flex-end", paddingHorizontal: 14, paddingVertical: 10, marginTop: -8, marginBottom: 10 },
-  doneDateText: { color: C.forest, fontSize: 14, fontWeight: "900" },
+
+  saveBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === "ios" ? 24 : 16,
+    backgroundColor: "rgba(244,247,245,0.92)",
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+  },
   primaryButton: {
-    height: 52,
+    height: 54,
     borderRadius: 16,
     backgroundColor: C.forest,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 4,
+    flexDirection: "row",
+    shadowColor: C.forest,
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
   },
-  primaryButtonDisabled: { opacity: 0.45 },
+  primaryButtonDisabled: { opacity: 0.4, shadowOpacity: 0 },
   primaryText: { color: "#FFFFFF", fontSize: 15, fontWeight: "900" },
-  lockedRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  rowLabel: { color: C.forest, fontSize: 15, fontWeight: "900" },
-  rowSub: { color: C.muted, fontSize: 12, fontWeight: "700", marginTop: 3 },
+
+  lockedRow: { flexDirection: "row", alignItems: "center" },
+  lockedIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: C.forestLight,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rowLabel: { color: C.forest, fontSize: 15, fontWeight: "800" },
+  rowSub: { color: C.muted, fontSize: 12, fontWeight: "600", marginTop: 2 },
   soonPill: {
     backgroundColor: C.forestLight,
     borderRadius: 999,
@@ -515,4 +870,52 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   soonText: { color: C.forest, fontSize: 11, fontWeight: "900" },
+
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(6,20,15,0.45)", justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: C.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 24,
+    paddingTop: 10,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: C.border,
+    alignSelf: "center",
+    marginBottom: 8,
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+  sheetCancel: { color: C.muted, fontSize: 15, fontWeight: "700" },
+  sheetTitle: { color: C.forest, fontSize: 15, fontWeight: "900" },
+  sheetDone: { color: C.forest, fontSize: 15, fontWeight: "900" },
+
+  skeletonAvatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "#E0E7E3",
+  },
+  skeletonLine: {
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#E0E7E3",
+    marginTop: 14,
+  },
+  skeletonCard: {
+    height: 90,
+    borderRadius: 20,
+    backgroundColor: "#E9EFEC",
+    marginBottom: 16,
+  },
 });

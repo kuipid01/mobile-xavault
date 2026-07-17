@@ -5,7 +5,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import ActionButton from "../general/button";
-import AppHeaderActions from "./AppHeaderActions";
 
 interface Props {
   onDeposit: () => void;
@@ -30,8 +29,6 @@ const HomeScreenHeader = ({
 
   return (
     <View>
-      <AppHeaderActions onDeposit={onDeposit} onWithdraw={onWithdraw} />
-
       <LinearGradient
         colors={["#052B20", "#063B2E", "#0B4D3A"]}
         start={{ x: 0, y: 0 }}

@@ -406,9 +406,17 @@ const rowStyles = StyleSheet.create({
 // ─── Loading / Empty states ───────────────────────────────────────────────────
 
 const LoadingState = ({ text }: { text: string }) => (
-  <View style={stateStyles.row}>
-    <ActivityIndicator color={COLOR.forestDeep} size="small" />
-    <Text style={stateStyles.text}>{text}</Text>
+  <View accessibilityLabel={text} style={stateStyles.skeletonWrap}>
+    {[0, 1, 2].map((item) => (
+      <View key={item} style={stateStyles.skeletonRow}>
+        <View style={stateStyles.skeletonIcon} />
+        <View style={stateStyles.skeletonCopy}>
+          <View style={stateStyles.skeletonLine} />
+          <View style={stateStyles.skeletonLineSm} />
+        </View>
+        <View style={stateStyles.skeletonPill} />
+      </View>
+    ))}
   </View>
 );
 
@@ -442,6 +450,48 @@ const stateStyles = StyleSheet.create({
     color: COLOR.textFaint,
     fontSize: 13,
     fontWeight: "600",
+  },
+  skeletonWrap: {
+    gap: 10,
+    paddingVertical: 8,
+  },
+  skeletonRow: {
+    alignItems: "center",
+    backgroundColor: COLOR.surface,
+    borderColor: COLOR.border,
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    padding: 14,
+  },
+  skeletonIcon: {
+    backgroundColor: "#E5ECE8",
+    borderRadius: 18,
+    height: 36,
+    width: 36,
+  },
+  skeletonCopy: {
+    flex: 1,
+    gap: 7,
+  },
+  skeletonLine: {
+    backgroundColor: "#E5ECE8",
+    borderRadius: 6,
+    height: 12,
+    width: "64%",
+  },
+  skeletonLineSm: {
+    backgroundColor: "#E5ECE8",
+    borderRadius: 5,
+    height: 10,
+    width: "42%",
+  },
+  skeletonPill: {
+    backgroundColor: "#E5ECE8",
+    borderRadius: 999,
+    height: 22,
+    width: 58,
   },
   emptyCard: {
     backgroundColor: COLOR.bgSubtle,

@@ -42,3 +42,10 @@ export const verifyDeposit = async (reference: string) => {
   );
   return res.data;
 };
+
+export const dismissDeposit = async (reference: string) => {
+  const res = await api.post<ApiResponse<WalletDeposit>>(
+    `/wallet/deposit/${reference}/dismiss`
+  );
+  return res.data.data;
+};

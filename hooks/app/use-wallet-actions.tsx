@@ -4,9 +4,9 @@ import {
   useInitiateDeposit,
   useWallet,
 } from "@/hooks/app/wallet";
+import { useSubscriptionLimitModal } from "@/hooks/use-subscription-limit-modal";
 import { useDepositVerificationContext } from "@/hooks/verify-deposit";
 import { trackEvent } from "@/lib/analytics";
-import * as WebBrowser from "expo-web-browser";
 import { useCallback, useMemo, useState } from "react";
 import Toast from "react-native-toast-message";
 import DepositModal from "@/components/home/deposit-modal";
@@ -22,10 +22,9 @@ export function useWalletActions() {
     refetch: refetchWallet,
   } = useWallet();
   const {
-    markDepositAbandoned,
     startDepositVerification,
-    verifyPendingDeposit,
   } = useDepositVerificationContext();
+  const { showSubscriptionLimitModal } = useSubscriptionLimitModal();
   const { mutateAsync: deposit, isPending: isDepositing } = useInitiateDeposit();
   const {
     mutateAsync: ensureTransferAccount,
@@ -38,49 +37,49 @@ export function useWalletActions() {
 
   const handleDeposit = useCallback(
     async (amount: string) => {
+      const amountInKobo = nairaToKobo(amount);
+
       try {
-        const amountInKobo = nairaToKobo(amount);
+        const idempotencyKey = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
         const response = await deposit({
           amount: amountInKobo,
-          idempotency_key: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          idempotency_key: idempotencyKey,
         });
 
         const authorizationUrl =
           response?.authorization_url || response?.data?.authorization_url;
         const reference = response?.reference || response?.data?.reference;
 
-        if (authorizationUrl) {
-          if (reference) {
-            await startDepositVerification(reference, amountInKobo);
-          }
-
-          trackEvent("deposit_checkout_opened", {
-            amount: amountInKobo,
-            has_reference: Boolean(reference),
-            reference: reference || null,
-          });
-
-          const browserResult = await WebBrowser.openBrowserAsync(authorizationUrl);
-          if (
-            reference &&
-            (browserResult.type === "cancel" || browserResult.type === "dismiss")
-          ) {
-            await markDepositAbandoned();
-          }
-
-          if (reference) {
-            void verifyPendingDeposit();
-          }
+        if (authorizationUrl && reference) {
+          await startDepositVerification(
+            reference,
+            amountInKobo,
+            authorizationUrl,
+            idempotencyKey
+          );
         }
 
         Toast.show({
           type: "success",
-          text1: "Deposit initiated",
+          text1: "Deposit ready",
           text2: authorizationUrl
-            ? "Complete payment in the opened checkout."
+            ? "Continue payment from the secure checkout modal."
             : "Check your wallet shortly.",
         });
       } catch (error: any) {
+        const requiredVaultCapacityKobo =
+          (wallet?.available_balance || 0) +
+          (wallet?.locked_balance || 0) +
+          amountInKobo;
+
+        if (
+          showSubscriptionLimitModal("deposit", error, {
+            requiredVaultCapacityKobo,
+          })
+        ) {
+          throw error;
+        }
+
         Toast.show({
           type: "error",
           text1: "Deposit failed",
@@ -94,9 +93,10 @@ export function useWalletActions() {
     },
     [
       deposit,
-      markDepositAbandoned,
+      showSubscriptionLimitModal,
       startDepositVerification,
-      verifyPendingDeposit,
+      wallet?.available_balance,
+      wallet?.locked_balance,
     ]
   );
 

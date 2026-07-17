@@ -1,5 +1,6 @@
 import { nairaToKobo } from "@/api/money";
 import { useCreatePlan } from "@/hooks/app/plans";
+import { useSubscriptionLimitModal } from "@/hooks/use-subscription-limit-modal";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { router } from "expo-router";
@@ -43,12 +44,36 @@ const formatDateForDisplay = (date: Date) =>
     year: "numeric",
   });
 
+// --- Duration presets: replaces a forced "open calendar, pick a day"
+// decision with a one-tap default. Custom is still available for anyone
+// who wants an exact date.
+const DURATION_PRESETS = [
+  { key: "1w", label: "1 week", days: 7 },
+  { key: "2w", label: "2 weeks", days: 14 },
+  { key: "1m", label: "1 month", months: 1 },
+  { key: "3m", label: "3 months", months: 3 },
+  { key: "6m", label: "6 months", months: 6 },
+] as const;
+
+type DurationPreset = (typeof DURATION_PRESETS)[number];
+type DurationKey = DurationPreset["key"] | "custom";
+
+const DEFAULT_PRESET: DurationPreset = DURATION_PRESETS[2]; // "1 month"
+
+const addDuration = (date: Date, preset: DurationPreset) => {
+  const next = new Date(date);
+  if ("days" in preset) next.setDate(next.getDate() + preset.days);
+  if ("months" in preset) next.setMonth(next.getMonth() + preset.months);
+  return normalizeDate(next);
+};
+
 export default function CreatePlanScreen() {
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
 
   const [startDate, setStartDate] = useState<Date>(today);
-  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date>(() => addDuration(today, DEFAULT_PRESET));
+  const [durationPreset, setDurationPreset] = useState<DurationKey>(DEFAULT_PRESET.key);
   const [activePicker, setActivePicker] = useState<"start" | "end" | null>(
     null
   );
@@ -58,18 +83,23 @@ export default function CreatePlanScreen() {
   );
 
   const { mutateAsync: create, isPending } = useCreatePlan();
+  const { showSubscriptionLimitModal } = useSubscriptionLimitModal();
 
   const minimumEndDate = useMemo(() => {
     return normalizeDate(startDate);
   }, [startDate]);
 
-  const pickerValue =
-    activePicker === "start" ? startDate : endDate || minimumEndDate;
+  const pickerValue = activePicker === "start" ? startDate : endDate;
 
   const pickerMinimumDate = activePicker === "start" ? today : minimumEndDate;
 
   const disabled =
-    !name.trim() || !amount.trim() || !endDate || Number(amount) <= 0 || isPending;
+    !name.trim() || !amount.trim() || Number(amount) <= 0 || isPending;
+
+  const selectDurationPreset = (preset: DurationPreset) => {
+    setDurationPreset(preset.key);
+    setEndDate(addDuration(startDate, preset));
+  };
 
   const handleDateChange = (selectedDate?: Date) => {
     if (!selectedDate || !activePicker) return;
@@ -79,7 +109,13 @@ export default function CreatePlanScreen() {
     if (activePicker === "start") {
       setStartDate(selected);
 
-      if (endDate && endDate < selected) {
+      // Keep the chosen duration anchored to the new start date. If the
+      // user picked a custom end date, only nudge it forward if it's now
+      // earlier than the start date.
+      if (durationPreset !== "custom") {
+        const preset = DURATION_PRESETS.find((item) => item.key === durationPreset);
+        if (preset) setEndDate(addDuration(selected, preset));
+      } else if (endDate < selected) {
         setEndDate(selected);
       }
 
@@ -88,6 +124,7 @@ export default function CreatePlanScreen() {
 
     if (activePicker === "end") {
       setEndDate(selected);
+      setDurationPreset("custom");
     }
   };
 
@@ -121,15 +158,6 @@ export default function CreatePlanScreen() {
       return;
     }
 
-    if (!endDate) {
-      Toast.show({
-        type: "error",
-        text1: "End date required",
-        text2: "Please choose when this plan should end.",
-      });
-      return;
-    }
-
     if (endDate < startDate) {
       Toast.show({
         type: "error",
@@ -159,6 +187,10 @@ export default function CreatePlanScreen() {
         router.back();
       }
     } catch (error: any) {
+      if (showSubscriptionLimitModal("plan_create", error)) {
+        return;
+      }
+
       Toast.show({
         type: "error",
         text1: "Could not create plan",
@@ -250,11 +282,58 @@ export default function CreatePlanScreen() {
 
             <DateButton
               label="End date"
-              value={endDate ? formatDateForDisplay(endDate) : "Choose date"}
+              value={formatDateForDisplay(endDate)}
               icon="calendar-clear-outline"
-              muted={!endDate}
               onPress={() => setActivePicker("end")}
             />
+          </View>
+
+          <Text style={styles.presetLabel}>How long should this plan run?</Text>
+          <View style={styles.presetRow}>
+            {DURATION_PRESETS.map((preset) => {
+              const active = durationPreset === preset.key;
+              return (
+                <TouchableOpacity
+                  key={preset.key}
+                  onPress={() => selectDurationPreset(preset)}
+                  activeOpacity={0.8}
+                  style={[styles.presetPill, active && styles.presetPillActive]}
+                >
+                  <Text
+                    style={[
+                      styles.presetPillText,
+                      active && styles.presetPillTextActive,
+                    ]}
+                  >
+                    {preset.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+
+            <TouchableOpacity
+              onPress={() => setActivePicker("end")}
+              activeOpacity={0.8}
+              style={[
+                styles.presetPill,
+                durationPreset === "custom" && styles.presetPillActive,
+              ]}
+            >
+              <Ionicons
+                name="calendar-outline"
+                size={13}
+                color={durationPreset === "custom" ? "#FFFFFF" : "#063B2E"}
+                style={styles.presetPillIcon}
+              />
+              <Text
+                style={[
+                  styles.presetPillText,
+                  durationPreset === "custom" && styles.presetPillTextActive,
+                ]}
+              >
+                Custom
+              </Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.dateInfoBox}>
@@ -264,8 +343,8 @@ export default function CreatePlanScreen() {
               color="#106B4F"
             />
             <Text style={styles.dateInfoText}>
-              Start date cannot be in the past. End date must be the same day or
-              after the start date.
+              We have set this to a {DEFAULT_PRESET.label} plan by default — pick
+              another duration above or tap the end date to set an exact day.
             </Text>
           </View>
 
@@ -435,13 +514,11 @@ const DateButton = ({
   label,
   value,
   icon,
-  muted,
   onPress,
 }: {
   label: string;
   value: string;
   icon: keyof typeof Ionicons.glyphMap;
-  muted?: boolean;
   onPress: () => void;
 }) => (
   <View style={styles.dateField}>
@@ -456,10 +533,7 @@ const DateButton = ({
         <Ionicons name={icon} size={18} color="#063B2E" />
       </View>
 
-      <Text
-        style={[styles.dateButtonText, muted && styles.dateButtonTextMuted]}
-        numberOfLines={1}
-      >
+      <Text style={styles.dateButtonText} numberOfLines={1}>
         {value}
       </Text>
 
@@ -699,8 +773,50 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 
-  dateButtonTextMuted: {
-    color: "#9AA5A1",
+  presetLabel: {
+    color: "#3F4945",
+    fontSize: 11,
+    fontWeight: "900",
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+    marginTop: 16,
+    marginBottom: 9,
+  },
+
+  presetRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+
+  presetPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: "#F8FAF9",
+    borderWidth: 1,
+    borderColor: "#E3EAE6",
+  },
+
+  presetPillActive: {
+    backgroundColor: "#063B2E",
+    borderColor: "#063B2E",
+  },
+
+  presetPillIcon: {
+    marginRight: 5,
+  },
+
+  presetPillText: {
+    color: "#063B2E",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+
+  presetPillTextActive: {
+    color: "#FFFFFF",
   },
 
   dateInfoBox: {

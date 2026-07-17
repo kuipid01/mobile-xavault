@@ -8,6 +8,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { BIOMETRIC_LOGIN_KEY } from "../lib/biometric-auth";
 import {
   ACCESS_TOKEN_KEY,
   REFRESH_TOKEN_KEY,
@@ -82,15 +83,20 @@ export const getRefreshToken = (): Promise<string | null> =>
 
 export const removeTokens = clearAuthTokens;
 
-export { isTokenExpired, saveTokens };
+export { isTokenExpired, refreshAuthTokens, saveTokens };
 
 export const isLoggedIn = async (): Promise<boolean> => {
   log.info("Checking login state");
 
   let token = await getAccessToken();
-
+  const biometricKey = await SecureStore.getItemAsync(BIOMETRIC_LOGIN_KEY);
+  console.log("CHECK AUTH LIFE CYCLE FOR BIOMTERIC KEY")
+  if (biometricKey) {
+    token = null
+    return false;
+  }
   if (!token || isTokenExpired(token)) {
-    log.info("Access token missing or expired, attempting refresh");
+    log.info("Access token missing or expired, attempting refresh 1");
 
     token = await refreshAuthTokens();
 
@@ -109,6 +115,12 @@ export const loginUser = async (data: LoginPayload) => {
 
   const res = await api.post("/auth/login", data);
   const response = res.data.data;
+
+  log.info("Login response token presence", {
+    hasAccessToken: Boolean(response?.access_token),
+    hasRefreshToken: Boolean(response?.refresh_token),
+    hasUser: Boolean(response?.user),
+  });
 
   await saveTokens(response.access_token, response.refresh_token);
   if (response.user.name) {
@@ -240,6 +252,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const onLoginSuccess = useCallback((token: string) => {
     log.info("AuthProvider: onLoginSuccess called");
 
+    void saveTokens(token);
+
     setState({
       userToken: token,
       isLoading: false,
@@ -257,9 +271,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     try {
       let token = await getAccessToken();
-
+      console.log(token, "ACESS TOKEN THAT IS THE ISSUE 1")
       if (!token || isTokenExpired(token)) {
-        log.info("AuthProvider: token missing or expired, attempting refresh");
+        log.info("AuthProvider: token missing or expired, attempting refresh 2");
+        let biometricKey = await SecureStore.getItemAsync(BIOMETRIC_LOGIN_KEY);
+
+
+        console.log(biometricKey, "BIOMETRIC KEY re")
+
+
+        if (biometricKey) {
+          console.log(biometricKey, "BIOMETRIC KEY refused to referesh mehn")
+          token = null
+          setState({
+            userToken: null,
+            isLoading: false,
+            isAuthenticated: false,
+          });
+          return
+        }
         token = await refreshAuthTokens();
       }
 

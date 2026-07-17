@@ -1,9 +1,12 @@
 import { getAccessToken } from "@/api/auth";
 import { useForgetPassword, useResetPassword } from "@/hooks/auth/auth";
+import {
+  getBiometricAvailability,
+  setBiometricLoginEnabled,
+} from "@/lib/biometric-auth";
 import { Ionicons } from "@expo/vector-icons";
 import * as LocalAuthentication from "expo-local-authentication";
 import { router } from "expo-router";
-import * as SecureStore from "expo-secure-store";
 import { jwtDecode } from "jwt-decode";
 import { useEffect, useState } from "react";
 import {
@@ -31,7 +34,6 @@ const C = {
   border: "#E4ECE8",
 };
 
-const BIOMETRIC_KEY = "biometric_enabled";
 type JwtWithEmail = { email?: string; sub?: string;[key: string]: unknown };
 type PasswordMode = "menu" | "forgot";
 
@@ -42,6 +44,7 @@ export default function LoginSettingsScreen() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [biometricSupported, setBiometricSupported] = useState(false);
+  const [biometricSessionReady, setBiometricSessionReady] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
 
   const { mutateAsync: requestReset, isPending: isRequesting } = useForgetPassword();
@@ -66,14 +69,42 @@ export default function LoginSettingsScreen() {
 
   useEffect(() => {
     (async () => {
-      const hardware = await LocalAuthentication.hasHardwareAsync();
-      const enrolled = await LocalAuthentication.isEnrolledAsync();
-      setBiometricSupported(hardware && enrolled);
-      setBiometricEnabled((await SecureStore.getItemAsync(BIOMETRIC_KEY)) === "true");
+      const availability = await getBiometricAvailability();
+      setBiometricSupported(availability.deviceReady);
+      setBiometricSessionReady(availability.sessionRecoverable);
+      setBiometricEnabled(availability.enabled && availability.sessionRecoverable);
     })();
   }, []);
 
   const toggleBiometric = async (value: boolean) => {
+    if (!value) {
+      await setBiometricLoginEnabled(false);
+      setBiometricEnabled(false);
+      Toast.show({ type: "success", text1: "Biometric login disabled" });
+      return;
+    }
+
+    const availability = await getBiometricAvailability();
+    console.log("[AVAILABILY DUIDI", availability)
+    setBiometricSupported(availability.deviceReady);
+    setBiometricSessionReady(availability.sessionRecoverable);
+
+    if (!availability.deviceReady) {
+      Toast.show({ type: "error", text1: "Biometrics are not available on this device" });
+      return;
+    }
+
+    if (!availability.sessionRecoverable) {
+      await setBiometricLoginEnabled(false);
+      setBiometricEnabled(false);
+      Toast.show({
+        type: "error",
+        text1: "Sign in again first",
+        text2: "No valid saved session was found.",
+      });
+      return;
+    }
+
     if (value) {
       const result = await LocalAuthentication.authenticateAsync({
         promptMessage: "Confirm to enable biometric login",
@@ -86,9 +117,30 @@ export default function LoginSettingsScreen() {
       }
     }
 
-    await SecureStore.setItemAsync(BIOMETRIC_KEY, value ? "true" : "false");
-    setBiometricEnabled(value);
-    Toast.show({ type: "success", text1: value ? "Biometric login enabled" : "Biometric login disabled" });
+
+    //DONT KNOW USE OF THIS  CODE BLOCK NO NEED TO REFRESH THE ACCESS TOKEN
+    // if (availability.refreshTokenValid) {
+    //   try {
+    //     const accessToken = await refreshAuthTokens();
+    //     if (!accessToken) {
+    //       await setBiometricLoginEnabled(false);
+    //       setBiometricEnabled(false);
+    //       setBiometricSessionReady(false);
+    //       Toast.show({ type: "error", text1: "Session expired", text2: "Sign in again to enable biometrics." });
+    //       return;
+    //     }
+    //   } catch {
+    //     await setBiometricLoginEnabled(false);
+    //     setBiometricEnabled(false);
+    //     setBiometricSessionReady(false);
+    //     Toast.show({ type: "error", text1: "Session expired", text2: "Sign in again to enable biometrics." });
+    //     return;
+    //   }
+    // }
+
+    await setBiometricLoginEnabled(true);
+    setBiometricEnabled(true);
+    Toast.show({ type: "success", text1: "Biometric login enabled" });
   };
 
   const startForgotPassword = async () => {
@@ -193,12 +245,16 @@ export default function LoginSettingsScreen() {
             <View style={styles.rowText}>
               <Text style={styles.rowLabel}>Biometric Login</Text>
               <Text style={styles.rowSub}>
-                {biometricSupported ? "Use Face ID or fingerprint" : "Not available on this device"}
+                {!biometricSupported
+                  ? "Not available on this device"
+                  : biometricSessionReady
+                    ? "Use Face ID or fingerprint"
+                    : "Sign in again before enabling"}
               </Text>
             </View>
             <Switch
               value={biometricEnabled}
-              disabled={!biometricSupported}
+              disabled={!biometricSupported || !biometricSessionReady}
               onValueChange={toggleBiometric}
               trackColor={{ false: "#D1D5DB", true: C.forestMid }}
               thumbColor={biometricEnabled ? C.gold : "#F3F4F6"}

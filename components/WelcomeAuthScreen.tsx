@@ -35,9 +35,9 @@ export function WelcomeAuthScreen() {
 
         <TouchableOpacity
           activeOpacity={0.9}
-          onPress={async () => {
-            await clearRegistrationFlow();
+          onPress={() => {
             router.push("/(auth)/login");
+            void clearRegistrationFlow();
           }}
           style={styles.secondaryButton}
         >

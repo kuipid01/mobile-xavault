@@ -7,11 +7,12 @@ import { jwtDecode } from "jwt-decode";
 
 // const BACKEND_URL = "http://localhost:8080/api/v1/";
 // const BACKEND_URL = "https://apixavault.kuipid.com/api/v1/";
-const BACKEND_URL = "http://192.168.1.118:8080/api/v1/";
+const BACKEND_URL = "http://10.236.123.66:8080/api/v1/";
 // const BACKEND_URL = "http://192.168.1.118:8080/api/v1/";
 
 export const ACCESS_TOKEN_KEY = "access_token";
 export const REFRESH_TOKEN_KEY = "refresh_token";
+const BIOMETRIC_LOGIN_KEY = "biometric_enabled";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,17 +83,38 @@ export const saveTokens = async (
   accessToken: string,
   refreshToken?: string
 ): Promise<void> => {
+  if (!accessToken) {
+    log.error("saveTokens called without an access token");
+    return;
+  }
+
   await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken);
   if (refreshToken) {
     await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken);
   }
-  log.info("Tokens saved to SecureStore");
+
+  const [storedAccessToken, storedRefreshToken] = await Promise.all([
+    SecureStore.getItemAsync(ACCESS_TOKEN_KEY),
+    SecureStore.getItemAsync(REFRESH_TOKEN_KEY),
+  ]);
+
+  log.info("Tokens saved to SecureStore", {
+    accessTokenSaved: Boolean(storedAccessToken),
+    refreshTokenSaved: Boolean(storedRefreshToken),
+    accessTokenExpired: isTokenExpired(storedAccessToken),
+    refreshTokenExpired: storedRefreshToken ? isTokenExpired(storedRefreshToken) : null,
+  });
 };
 
 export const clearAuthTokens = async (): Promise<void> => {
   await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
-  await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
-  log.info("Auth tokens cleared from SecureStore");
+
+  let biometricKey = await SecureStore.getItemAsync(BIOMETRIC_LOGIN_KEY);
+  if (!biometricKey) {
+    await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+  }
+  // await SecureStore.deleteItemAsync(BIOMETRIC_LOGIN_KEY);
+  log.info("Auth tokens and biometric session flag cleared from SecureStore");
 };
 
 // ─── Axios instances ──────────────────────────────────────────────────────────
@@ -112,7 +134,7 @@ export const api = axios.create({
 
 let refreshPromise: Promise<string | null> | null = null;
 
-export const refreshAuthTokens = async (): Promise<string | null> => {
+export const refreshAuthTokens = async (flag?:boolean): Promise<string | null> => {
   if (refreshPromise) {
     log.info("Refresh already in progress, awaiting existing promise");
     return refreshPromise;
@@ -122,7 +144,7 @@ export const refreshAuthTokens = async (): Promise<string | null> => {
     const refreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
 
     if (!refreshToken) {
-      log.warn("No refresh token found — cannot refresh");
+      log.warn("[KUIPID]No refresh token found — cannot refresh");
       await clearAuthTokens();
       triggerLogout();
       return null;
@@ -173,9 +195,16 @@ export const refreshAuthTokens = async (): Promise<string | null> => {
 api.interceptors.request.use(
   async (config) => {
     let token = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
+    let biometricKey = await SecureStore.getItemAsync(BIOMETRIC_LOGIN_KEY);
+
+    console.log(token, "ACESS TOKEN THAT IS THE ISSUE 2")
+    console.log(biometricKey, "BIOMETRIC KEY")
 
     if (token && isTokenExpired(token)) {
-      log.info("Access token expired before request — refreshing proactively");
+     if(biometricKey){
+      token=null
+      return config
+     }
       token = await refreshAuthTokens();
     }
 
@@ -209,6 +238,16 @@ api.interceptors.response.use(
       log.info(`401 on ${url} — attempting token refresh and retry`);
 
       try {
+        let biometricKey = await SecureStore.getItemAsync(BIOMETRIC_LOGIN_KEY);
+
+
+    console.log(biometricKey, "BIOMETRIC KEY re")
+
+
+     if(biometricKey){
+     console.log(biometricKey, "BIOMETRIC KEY refused to referesh mehn")
+      return 
+     }
         const token = await refreshAuthTokens();
 
         if (token) {

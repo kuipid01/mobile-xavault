@@ -104,10 +104,12 @@ function getNextAction({
     return {
       icon: "refresh-circle-outline",
       title:
-        pendingDeposit.status === "abandoned"
-          ? "Checkout was not completed"
+        pendingDeposit.status === "needs_action" ||
+        pendingDeposit.status === "failed" ||
+        pendingDeposit.status === "still_processing"
+          ? "Payment not confirmed"
           : "Deposit needs confirmation",
-      body: `${amount}Ref ${pendingDeposit.reference}. Retry verification if Paystack has completed it.`,
+      body: `${amount}Ref ${pendingDeposit.reference}. Continue payment or verify if Paystack has completed it.`,
       cta: "Check status",
       tone: "alert",
       onPress: pendingDeposit.onPress,

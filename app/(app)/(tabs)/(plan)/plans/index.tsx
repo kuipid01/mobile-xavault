@@ -7,8 +7,10 @@ import { PlanStatus } from "@/api/types";
 import AppHeaderActions from "@/components/home/AppHeaderActions";
 import { EmptyPlanCard } from "@/components/plan/EmptyPlanCard";
 import { PlanCard } from "@/components/plan/PlanCard";
+import { PlanListSkeleton } from "@/components/plan/PlanSkeletons";
 import { usePlans } from "@/hooks/app/plans";
 import { useWalletActions } from "@/hooks/app/use-wallet-actions";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const tabs: { label: string; value: PlanStatus }[] = [
   { label: "Active", value: "active" },
@@ -24,7 +26,7 @@ export default function PlansScreen() {
   const visiblePlans = data?.items || [];
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <AppHeaderActions onDeposit={openDeposit} onWithdraw={openWithdrawal} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.headerCard}>
@@ -56,7 +58,7 @@ export default function PlansScreen() {
           })}
         </ScrollView>
 
-        {isLoading ? <Text style={styles.emptyText}>Loading plans...</Text> : null}
+        {isLoading ? <PlanListSkeleton /> : null}
 
         {!isLoading && !visiblePlans.length ? (
           <Text style={styles.emptyText}>No {activeTab} plans yet.</Text>
@@ -85,7 +87,7 @@ export default function PlansScreen() {
         <Ionicons name="add" size={28} color="#FFFFFF" />
       </TouchableOpacity>
       {walletActionModals}
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -93,11 +95,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F7F8FD",
+
+    paddingHorizontal: 18,
+    paddingBottom: 120,
+    paddingTop: 8,
   },
   content: {
-    paddingHorizontal: 18,
-    paddingTop: 28,
-    paddingBottom: 120,
+    // paddingHorizontal: 18,
+    // paddingTop: 28,
+    // paddingBottom: 120,
   },
   headerCard: {
     backgroundColor: "#063B2E",

@@ -1,7 +1,7 @@
 import { DRAWER_REGISTRY } from "@/drawers";
 import { useDrawerStore } from "@/store/drawerStore";
 import { PropsWithChildren, useEffect } from "react";
-import { BackHandler, View } from "react-native";
+import { BackHandler, StyleSheet, View } from "react-native";
 import { Drawer } from "react-native-drawer-layout";
 
 export default function GlobalDrawerHost({ children }: PropsWithChildren) {
@@ -28,19 +28,44 @@ export default function GlobalDrawerHost({ children }: PropsWithChildren) {
   return (
     <Drawer
       open={activeDrawerId !== null}
-      onOpen={() => { }}
+      onOpen={() => {
+        if (!activeDrawerId) {
+          closeDrawer();
+        }
+      }}
       onClose={closeDrawer}
       drawerPosition={entry?.side ?? "left"}
-      drawerStyle={{ width: 280 }}
+      drawerType="front"
+      swipeEnabled={false}
+      swipeEdgeWidth={0}
+      drawerStyle={styles.drawer}
+      overlayStyle={styles.overlay}
+      overlayAccessibilityLabel="Close drawer"
       renderDrawerContent={() =>
         Content ? (
-          <View style={{ flex: 1 }} key={activeDrawerId}>
+          <View style={styles.content} key={activeDrawerId}>
             <Content {...(activeDrawerProps ?? {})} onClose={closeDrawer} />
           </View>
-        ) : null
+        ) : (
+          <View style={styles.content} />
+        )
       }
     >
       {children}
     </Drawer>
   );
 }
+
+const styles = StyleSheet.create({
+  drawer: {
+    backgroundColor: "#002626",
+    width: 280,
+  },
+  content: {
+    backgroundColor: "#002626",
+    flex: 1,
+  },
+  overlay: {
+    backgroundColor: "rgba(0, 0, 0, 0.42)",
+  },
+});

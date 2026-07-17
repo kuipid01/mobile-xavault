@@ -3,7 +3,6 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Dimensions,
-  Linking,
   NativeScrollEvent,
   NativeSyntheticEvent,
   ScrollView,
@@ -83,28 +82,16 @@ const formatNairaFromKobo = (kobo: number) => {
 };
 
 const formatVolumeFromKobo = (kobo: number) => {
+  if (kobo === -1) return "Unlimited";
   return `₦${Number(kobo / 100).toLocaleString("en-NG")}`;
 };
 const formatLimit = (value: number) =>
   value === -1 ? "Unlimited" : value;
 
-const formatDate = (iso?: string) => {
-  if (!iso) return "";
-  try {
-    return new Date(iso).toLocaleDateString("en-NG", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  } catch {
-    return "";
-  }
-};
-
 const getPlanFeatures = (plan: SingleNormalizedPlan) => {
   const features = [
-    `${formatLimit(plan.max_locked_plans)} locked plans`,
-    `${formatLimit(plan.max_flexible_envelopes)} flexible envelopes`,
+    `${formatLimit(plan.max_locked_plans)} plans`,
+    `${formatLimit(plan.max_flexible_envelopes)} envelopes per plan`,
     `${plan.max_emergency_vaults} emergency vault${plan.max_emergency_vaults > 1 ? "s" : ""}`,
     `Up to ${formatVolumeFromKobo(plan.max_monthly_volume_kobo)} moved monthly`,
   ];
@@ -234,11 +221,8 @@ export default function UpgradePlan() {
 
     if (isActivePlanDowngrade) {
       Alert.alert(
-        "Can't downgrade yet",
-        `Downgrading to ${activePlan.name} is available once your current plan expires${activeSubscription?.current_period_end
-          ? ` on ${formatDate(activeSubscription.current_period_end)}`
-          : ""
-        }.`
+        "Downgrades are not available",
+        "Your vault may already use higher-plan limits. You can only move to a higher plan."
       );
       return;
     }
@@ -254,8 +238,11 @@ export default function UpgradePlan() {
       {
         onSuccess: async (res) => {
           if (res?.payment_url) {
-            await startVerification(activePlan.id);
-            await Linking.openURL(res.payment_url);
+            await startVerification(
+              activePlan.id,
+              res.payment_url,
+              res.payment_reference
+            );
             return;
           }
         },
@@ -273,7 +260,7 @@ export default function UpgradePlan() {
     if (createSubscription.isPending) return "Processing...";
     if (!activePlan) return "Select a plan";
     if (isActivePlanCurrent && hasActivePaidPlan) return "Current Plan";
-    if (isActivePlanDowngrade) return "Available after your plan expires";
+    if (isActivePlanDowngrade) return "Downgrade unavailable";
     return activePlan.price_kobo === 0
       ? `Continue with ${activePlan.name}`
       : `Lock in ${activePlan.name} · ${formatNairaFromKobo(activePlan.price_kobo)}/mo`;
@@ -313,16 +300,14 @@ export default function UpgradePlan() {
           </Text>
 
           <Text style={styles.heroSubtitle}>
-            Every plan gives you more locked plans, more envelopes, and more
+            Every plan gives you more plans, more envelopes inside each plan, and more
             control over how your salary is split and put away, not just a
             bigger budget.
           </Text>
         </View>
 
         {isLoading || isLoadingActiveSubscription ? (
-          <View style={styles.loadingBox}>
-            <Text style={styles.loadingText}>Loading plans...</Text>
-          </View>
+          <UpgradePlansSkeleton />
         ) : (
           <>
             <ScrollView
@@ -351,11 +336,8 @@ export default function UpgradePlan() {
                     onPress={() => {
                       if (isDowngrade) {
                         Alert.alert(
-                          "Can't downgrade yet",
-                          `Downgrading to ${plan.name} is available once your current plan expires${activeSubscription?.current_period_end
-                            ? ` on ${formatDate(activeSubscription.current_period_end)}`
-                            : ""
-                          }.`
+                          "Downgrades are not available",
+                          "Your vault may already use higher-plan limits. You can only move to a higher plan."
                         );
                         return;
                       }
@@ -393,7 +375,7 @@ export default function UpgradePlan() {
                         <Text style={styles.cardName}>{plan.name}</Text>
                         <Text style={styles.cardTagline}>
                           {isDowngrade
-                            ? "Available once your current plan expires"
+                            ? "Downgrades are not supported"
                             : planTaglines[plan.code] || "Upgrade your limits"}
                         </Text>
                       </View>
@@ -476,14 +458,34 @@ export default function UpgradePlan() {
 
         <Text style={styles.footerCaption}>
           {isActivePlanDowngrade
-            ? `You can switch down to this plan once your current one expires${activeSubscription?.current_period_end
-              ? ` on ${formatDate(activeSubscription.current_period_end)}`
-              : ""
-            }.`
+            ? "Downgrades are not supported because your vault may already use higher-plan capacity."
             : "Change or cancel your plan anytime from Settings."}
         </Text>
       </View>
     </SafeAreaView>
+  );
+}
+
+function UpgradePlansSkeleton() {
+  return (
+    <View style={styles.upgradeSkeletonWrap}>
+      {[0, 1].map((item) => (
+        <View key={item} style={styles.upgradeSkeletonCard}>
+          <View style={styles.upgradeSkeletonTop}>
+            <View style={styles.upgradeSkeletonCopy}>
+              <View style={styles.skeletonLineShort} />
+              <View style={styles.skeletonLine} />
+            </View>
+            <View style={styles.skeletonRadio} />
+          </View>
+          <View style={styles.skeletonPrice} />
+          <View style={styles.skeletonDivider} />
+          <View style={styles.skeletonFeature} />
+          <View style={[styles.skeletonFeature, styles.skeletonFeatureSm]} />
+          <View style={styles.skeletonFeature} />
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -548,6 +550,66 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: 14,
     fontWeight: "500",
+  },
+  upgradeSkeletonWrap: {
+    gap: CARD_GAP,
+    paddingHorizontal: Padding.containerX,
+    paddingVertical: 8,
+  },
+  upgradeSkeletonCard: {
+    backgroundColor: COLORS.hash,
+    borderColor: "#E7ECE9",
+    borderRadius: Radius.large,
+    borderWidth: 1.5,
+    gap: 14,
+    padding: 20,
+  },
+  upgradeSkeletonTop: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+  },
+  upgradeSkeletonCopy: {
+    flex: 1,
+    gap: 8,
+  },
+  skeletonLineShort: {
+    backgroundColor: "#E5ECE8",
+    borderRadius: 7,
+    height: 14,
+    width: "44%",
+  },
+  skeletonLine: {
+    backgroundColor: "#E5ECE8",
+    borderRadius: 6,
+    height: 12,
+    width: "74%",
+  },
+  skeletonRadio: {
+    backgroundColor: "#E5ECE8",
+    borderRadius: 11,
+    height: 22,
+    width: 22,
+  },
+  skeletonPrice: {
+    backgroundColor: "#E5ECE8",
+    borderRadius: 13,
+    height: 28,
+    width: 112,
+  },
+  skeletonDivider: {
+    backgroundColor: "#E5ECE8",
+    height: 1,
+  },
+  skeletonFeature: {
+    backgroundColor: "#E5ECE8",
+    borderRadius: 6,
+    height: 12,
+    width: "82%",
+  },
+  skeletonFeatureSm: {
+    width: "62%",
   },
   cardScrollContent: {
     paddingHorizontal: Padding.containerX,

@@ -1,8 +1,13 @@
 import { formatMoney } from "@/api/money";
 import { AddEnvelopeCard } from "@/components/plan/AddEnvelopeCard";
 import { EnvelopeCard } from "@/components/plan/EnvelopeCard";
+import {
+  EnvelopeListSkeleton,
+  PlanDetailSkeleton,
+} from "@/components/plan/PlanSkeletons";
 import { useEnvelopes } from "@/hooks/app/envelopes";
 import { useConfirmPlan, usePlan, usePreviewPlan } from "@/hooks/app/plans";
+import { useSubscriptionLimitModal } from "@/hooks/use-subscription-limit-modal";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import {
@@ -27,12 +32,17 @@ export default function PlanDetailScreen() {
   );
   const { mutateAsync: confirm, isPending: isConfirming } =
     useConfirmPlan(planId);
+  const { showSubscriptionLimitModal } = useSubscriptionLimitModal();
 
   const handleConfirm = async () => {
     try {
       await confirm();
       Toast.show({ type: "success", text1: "Plan confirmed" });
     } catch (error: any) {
+      if (showSubscriptionLimitModal("plan_confirm", error)) {
+        return;
+      }
+
       Toast.show({
         type: "error",
         text1: "Could not confirm plan",
@@ -47,13 +57,7 @@ export default function PlanDetailScreen() {
   if (isPlanLoading) {
     return (
       <View style={styles.container}>
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#063B2E" />
-          <Text style={styles.loadingTitle}>Loading plan…</Text>
-          <Text style={styles.loadingSubtitle}>
-            Fetching your spending plan details.
-          </Text>
-        </View>
+        <PlanDetailSkeleton />
       </View>
     );
   }
@@ -328,10 +332,7 @@ export default function PlanDetailScreen() {
         </View>
 
         {isEnvelopesLoading ? (
-          <View style={styles.envelopeLoadingCard}>
-            <ActivityIndicator color="#063B2E" size="small" />
-            <Text style={styles.loadingTitle}>Loading envelopes…</Text>
-          </View>
+          <EnvelopeListSkeleton />
         ) : null}
 
         {!isEnvelopesLoading && envelopes.length === 0 ? (

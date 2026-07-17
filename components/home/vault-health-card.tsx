@@ -31,47 +31,34 @@ export default function VaultHealthCard({ wallet, plans = [], ledger = [] }: Pro
 
   return (
     <View style={styles.card}>
-      <View style={styles.header}>
-        <View>
+      <View style={styles.iconWrap}>
+        <Ionicons name={getHealthIcon(health.score)} size={18} color="#063B2E" />
+      </View>
+
+      <View style={styles.copy}>
+        <View style={styles.titleRow}>
           <Text style={styles.eyebrow}>Vault Health</Text>
-          <Text style={styles.title}>{health.label}</Text>
+          <Text style={styles.score}>{health.score}/100</Text>
         </View>
-        <View style={styles.scoreCircle}>
-          <Text style={styles.score}>{health.score}</Text>
-          <Text style={styles.scoreUnit}>/100</Text>
-        </View>
+        <Text style={styles.title}>{health.label}</Text>
+        <Text style={styles.recap} numberOfLines={1}>
+          {formatMoney(health.protectedThisWeek, wallet?.currency)} protected this week
+        </Text>
       </View>
 
-      <View style={styles.track}>
-        <View style={[styles.fill, { width: `${health.score}%` }]} />
-      </View>
-
-      <Text style={styles.recap}>
-        You protected {formatMoney(health.protectedThisWeek, wallet?.currency)} this
-        week.
-      </Text>
-
-      <View style={styles.badges}>
-        {health.badges.map((badge) => (
-          <View
-            key={badge.key}
-            style={[styles.badge, badge.active && styles.badgeActive]}
-          >
-            <Ionicons
-              name={badge.active ? "checkmark-circle" : "ellipse-outline"}
-              size={13}
-              color={badge.active ? "#106B4F" : "#9EAAA5"}
-            />
-            <Text
-              style={[styles.badgeText, badge.active && styles.badgeTextActive]}
-            >
-              {badge.label}
-            </Text>
-          </View>
-        ))}
+      <View style={styles.statusPill}>
+        <Ionicons name="checkmark-circle" size={13} color="#106B4F" />
+        <Text style={styles.statusText}>{health.badges.filter((badge) => badge.active).length}/4</Text>
       </View>
     </View>
   );
+}
+
+function getHealthIcon(score: number) {
+  if (score >= 80) return "shield-checkmark-outline";
+  if (score >= 55) return "trending-up-outline";
+  if (score >= 30) return "leaf-outline";
+  return "alert-circle-outline";
 }
 
 function calculateVaultHealth(
@@ -147,18 +134,32 @@ function calculateVaultHealth(
 
 const styles = StyleSheet.create({
   card: {
+    alignItems: "center",
     backgroundColor: "#FFFFFF",
     borderColor: "#DDE6E1",
-    borderRadius: 20,
+    borderRadius: 18,
     borderWidth: 1,
+    flexDirection: "row",
+    gap: 12,
     marginTop: 18,
-    padding: 16,
+    padding: 14,
   },
-  header: {
+  iconWrap: {
+    alignItems: "center",
+    backgroundColor: "#EAF7F1",
+    borderRadius: 14,
+    height: 42,
+    justifyContent: "center",
+    width: 42,
+  },
+  copy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  titleRow: {
     alignItems: "center",
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 14,
+    gap: 8,
   },
   eyebrow: {
     color: "#7A8580",
@@ -169,73 +170,35 @@ const styles = StyleSheet.create({
   },
   title: {
     color: "#063B2E",
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: "900",
-    marginTop: 2,
-  },
-  scoreCircle: {
-    alignItems: "baseline",
-    backgroundColor: "#EAF7F1",
-    borderRadius: 18,
-    flexDirection: "row",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    marginTop: 3,
   },
   score: {
-    color: "#063B2E",
-    fontSize: 20,
-    fontWeight: "900",
-  },
-  scoreUnit: {
-    color: "#7A8580",
+    color: "#106B4F",
     fontSize: 11,
-    fontWeight: "800",
-  },
-  track: {
-    backgroundColor: "#EDF1EE",
-    borderRadius: 999,
-    height: 8,
-    overflow: "hidden",
-  },
-  fill: {
-    backgroundColor: "#58FFBE",
-    borderRadius: 999,
-    height: "100%",
+    fontWeight: "900",
   },
   recap: {
     color: "#7A8580",
     fontSize: 12,
     fontWeight: "700",
-    lineHeight: 18,
-    marginTop: 12,
+    marginTop: 4,
   },
-  badges: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 14,
-  },
-  badge: {
+  statusPill: {
     alignItems: "center",
     backgroundColor: "#F4F7F5",
     borderColor: "#DDE6E1",
     borderRadius: 999,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 5,
-    paddingHorizontal: 10,
+    gap: 4,
+    paddingHorizontal: 9,
     paddingVertical: 7,
   },
-  badgeActive: {
-    backgroundColor: "#EAF7F1",
-    borderColor: "#CDEDE0",
-  },
-  badgeText: {
-    color: "#7A8580",
-    fontSize: 11,
-    fontWeight: "800",
-  },
-  badgeTextActive: {
+  statusText: {
     color: "#106B4F",
+    fontSize: 11,
+    fontWeight: "900",
   },
 });

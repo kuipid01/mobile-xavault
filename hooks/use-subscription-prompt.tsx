@@ -170,7 +170,7 @@ function getPromptTitle(trigger: SubscriptionPromptTrigger) {
 function getPromptSubtitle(trigger: SubscriptionPromptTrigger) {
   switch (trigger) {
     case "feature_limit_reached":
-      return "Upgrade when you are ready to add more locked plans, envelopes, and smarter controls.";
+      return "Upgrade when you are ready to add more plans, more envelopes inside each plan, and smarter controls.";
     case "premium_feature_click":
       return "Paid plans add salary split, analytics, shared envelopes, and higher limits.";
     case "wallet_action":
@@ -182,6 +182,6 @@ function getPromptSubtitle(trigger: SubscriptionPromptTrigger) {
     case "manual_upgrade_button":
       return "Compare the available plans and pick the one that matches how you save.";
     case "app_open":
-      return "More locked plans, envelopes, analytics, and salary tools are available when you need them.";
+      return "More plans, envelopes, analytics, and salary tools are available when you need them.";
   }
 }

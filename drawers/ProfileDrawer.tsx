@@ -1,4 +1,4 @@
-import { getAccessToken } from "@/api/auth";
+import { getAccessToken, useAuth } from "@/api/auth";
 import { COLORS } from "@/themes/colors";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -21,7 +21,6 @@ type JwtWithEmail = {
   sub?: string;
   [key: string]: unknown;
 };
-
 type DrawerRoute = {
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
@@ -35,9 +34,8 @@ const drawerRoutes: DrawerRoute[] = [
     icon: "card-outline",
     href: "/(app)/payment-settings",
   },
-  { label: "Nest", icon: "cube-outline", href: "/(app)/(tabs)/(plan)/plans" },
-  { label: "Chat", icon: "chatbubble-ellipses-outline" },
-  { label: "About Us", icon: "information-circle-outline" },
+  { label: "Plan", icon: "cube-outline", href: "/(app)/(tabs)/(plan)/plans" },
+
 ];
 
 export default function ProfileDrawerContent({
@@ -46,7 +44,7 @@ export default function ProfileDrawerContent({
   const insets = useSafeAreaInsets();
   const [email, setEmail] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
-
+  const { logout } = useAuth();
   useEffect(() => {
     getAccessToken().then((token) => {
       if (!token) return;
@@ -68,6 +66,11 @@ export default function ProfileDrawerContent({
     if (href) {
       router.push(href);
     }
+  };
+  const handleLogout = async () => {
+    onClose();
+    await logout();
+    router.replace("/(auth)/welcome");
   };
 
   return (
@@ -101,25 +104,29 @@ export default function ProfileDrawerContent({
             <Pressable
               key={item.label}
               onPress={() => navigateTo(item.href)}
-              style={({ pressed }) => [
-                styles.menuItem,
-
-                pressed && styles.menuItemPressed,
-              ]}
             >
-              <View style={styles.menuIcon}>
-                <Ionicons name={item.icon} size={19} color={COLORS.primary} />
-              </View>
-              <Text style={styles.menuLabel}>{item.label}</Text>
-              <Ionicons
-                name="chevron-forward"
-                size={17}
-                color="rgba(255,255,255,0.38)"
-              />
+              {({ pressed }) => (
+                <View
+                  style={[
+                    styles.menuItem,
+                    pressed ? styles.menuItemPressed : undefined,
+                  ]}
+                >
+                  <View style={styles.menuIcon}>
+                    <Ionicons name={item.icon} size={19} color={COLORS.white} />
+                  </View>
+                  <Text style={styles.menuLabel}>{item.label}</Text>
+                  {/* <Ionicons
+                    name="chevron-forward"
+                    size={17}
+                    color="rgba(255,255,255,0.38)"
+                  /> */}
+                </View>
+              )}
             </Pressable>
           ))}
         </View>
-
+        <View style={styles.divider} />
         <View style={styles.referCard}>
           <View style={styles.referIcon}>
             <Ionicons name="gift-outline" size={20} color="#063B2E" />
@@ -131,6 +138,15 @@ export default function ProfileDrawerContent({
             </Text>
           </View>
         </View>
+        <View style={styles.divider} />
+        <Pressable style={styles.logoutBtn} onPress={handleLogout}>
+          {({ pressed }) => (
+            <View style={[styles.logoutInner, pressed && styles.logoutPressed]}>
+              <Ionicons name="power-outline" size={20} color="rgba(226,232,240,0.86)" />
+              <Text style={styles.logoutText}>Sign Out</Text>
+            </View>
+          )}
+        </Pressable>
       </ScrollView>
 
     </View>
@@ -139,7 +155,7 @@ export default function ProfileDrawerContent({
 
 const styles = StyleSheet.create({
   shell: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: "#002626",
 
     flex: 1,
   },
@@ -183,29 +199,32 @@ const styles = StyleSheet.create({
   menu: {
     gap: 8,
     paddingTop: 22,
-
-    display: "flex",
+    // removed display: "flex" (default anyway)
   },
   menuItem: {
-    alignItems: "center",
-    borderRadius: 18,
-    display: "flex",
     flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "stretch", // Ensures the pressable stretches to 100% parent width
+    borderRadius: 18,
     gap: 12,
     minHeight: 54,
-    paddingHorizontal: 12,
-
+    // paddingHorizontal: 12,
   },
   menuItemPressed: {
     backgroundColor: "rgba(255,255,255,0.08)",
   },
+  menuItemText: {
+    fontSize: 16,
+    color: COLORS.white,
+    fontWeight: "800",
+  },
   menuIcon: {
     alignItems: "center",
-    backgroundColor: "rgba(214,168,79,0.13)",
     borderRadius: 17,
     height: 34,
     justifyContent: "center",
     width: 34,
+    color: COLORS.primary,
   },
   menuLabel: {
     color: COLORS.white,
@@ -256,5 +275,26 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 16,
     width: 38,
+  },
+  logoutBtn: {
+    marginTop: 4,
+  },
+  logoutInner: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 34,
+  },
+  logoutPressed: {
+    backgroundColor: "#1D2430",
+  },
+  logoutText: {
+    color: "rgba(226,232,240,0.86)",
+    fontSize: 20,
+    fontWeight: "500",
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    marginVertical: 16,
   },
 });

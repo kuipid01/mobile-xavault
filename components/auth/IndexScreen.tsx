@@ -45,9 +45,9 @@ const IndexScreen = () => {
             {/* Action CTA Buttons */}
             <View style={styles.bottomView}>
                 <TouchableOpacity
-                    onPress={async () => {
-                        await clearRegistrationFlow();
+                    onPress={() => {
                         router.replace("/(auth)/login");
+                        void clearRegistrationFlow();
                     }}
                     style={styles.loginButton}
                     activeOpacity={0.8}

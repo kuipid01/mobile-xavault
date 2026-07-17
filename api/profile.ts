@@ -14,6 +14,8 @@ export type UserProfile = {
   has_withdrawal_pin?: boolean;
   created_at?: string;
   updated_at?: string;
+  first_name?:string;
+  last_name?:string;
 }; 
 
 export type UpdateProfilePayload = {

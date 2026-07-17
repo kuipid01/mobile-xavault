@@ -30,11 +30,11 @@ const C = {
   gold: "#D6A84F",
   surface: "#FFFFFF",
   bg: "#F4F7F5",
+  ink: "#0F1F1A",
   muted: "#6B7280",
   faint: "#9EAAA5",
-  border: "#E4ECE8",
+  border: "#E9EFEC",
   danger: "#B42318",
-  dangerBg: "#FFF1F3",
 };
 
 const PIN_LENGTH = 4;
@@ -225,6 +225,7 @@ export default function PaymentSettingsScreen() {
             sublabel="Send an OTP to your email"
             onPress={sendForgotOtp}
             loading={isSendingOtp}
+            last
           />
         </View>
       );
@@ -331,11 +332,11 @@ export default function PaymentSettingsScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-              <Ionicons name="arrow-back" size={22} color={C.forest} />
+            <TouchableOpacity style={styles.backButton} onPress={handleBack} activeOpacity={0.7}>
+              <Ionicons name="arrow-back" size={20} color={C.forest} />
             </TouchableOpacity>
             <View style={styles.headerIcon}>
-              <Ionicons name="card-outline" size={26} color={C.forest} />
+              <Ionicons name="card-outline" size={24} color={C.forest} />
             </View>
             <Text style={styles.title}>Payment Settings</Text>
             <Text style={styles.subtitle}>
@@ -350,6 +351,7 @@ export default function PaymentSettingsScreen() {
               style={styles.cancelButton}
               onPress={() => resetForm("menu")}
               disabled={busy}
+              activeOpacity={0.7}
             >
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
@@ -366,17 +368,24 @@ function ActionRow({
   sublabel,
   onPress,
   loading,
+  last,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   sublabel: string;
   onPress: () => void;
   loading?: boolean;
+  last?: boolean;
 }) {
   return (
-    <TouchableOpacity style={styles.row} onPress={onPress} disabled={loading}>
+    <TouchableOpacity
+      style={[styles.row, last && styles.rowLast]}
+      onPress={onPress}
+      disabled={loading}
+      activeOpacity={0.6}
+    >
       <View style={styles.rowIcon}>
-        <Ionicons name={icon} size={20} color={C.forest} />
+        <Ionicons name={icon} size={19} color={C.forest} />
       </View>
       <View style={styles.rowText}>
         <Text style={styles.rowLabel}>{label}</Text>
@@ -385,7 +394,7 @@ function ActionRow({
       {loading ? (
         <ActivityIndicator color={C.forest} />
       ) : (
-        <Ionicons name="chevron-forward" size={18} color={C.faint} />
+        <Ionicons name="chevron-forward" size={17} color={C.faint} />
       )}
     </TouchableOpacity>
   );
@@ -427,7 +436,7 @@ function TextButton({
   loading?: boolean;
 }) {
   return (
-    <TouchableOpacity style={styles.textButton} onPress={onPress} disabled={loading}>
+    <TouchableOpacity style={styles.textButton} onPress={onPress} disabled={loading} activeOpacity={0.6}>
       <Text style={styles.textButtonLabel}>{loading ? "Sending OTP..." : label}</Text>
     </TouchableOpacity>
   );
@@ -436,115 +445,126 @@ function TextButton({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   content: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 120 },
-  header: { alignItems: "center", marginBottom: 24 },
+  header: { alignItems: "center", marginBottom: 26 },
   backButton: {
     position: "absolute",
     left: 0,
     top: 0,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: C.surface,
     borderWidth: 1,
     borderColor: C.border,
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: C.ink,
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
   },
   headerIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 22,
+    width: 60,
+    height: 60,
+    borderRadius: 20,
     backgroundColor: C.forestLight,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 14,
   },
-  title: { color: C.forest, fontSize: 24, fontWeight: "900", textAlign: "center" },
+  title: { color: C.ink, fontSize: 21, fontWeight: "700", textAlign: "center" },
   subtitle: {
     color: C.muted,
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "500",
     textAlign: "center",
     marginTop: 6,
     lineHeight: 19,
-    maxWidth: 300,
+    maxWidth: 290,
   },
   card: {
     backgroundColor: C.surface,
-    borderRadius: 22,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: C.border,
     padding: 18,
-    shadowColor: C.forest,
+    shadowColor: C.ink,
     shadowOpacity: 0.05,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 4 },
     elevation: 2,
   },
   loadingCard: {
     backgroundColor: C.surface,
-    borderRadius: 22,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: C.border,
-    padding: 28,
+    padding: 30,
     alignItems: "center",
     gap: 12,
   },
-  loadingText: { color: C.muted, fontSize: 13, fontWeight: "700" },
-  cardTitle: { color: C.forest, fontSize: 18, fontWeight: "900" },
-  cardSub: { color: C.muted, fontSize: 13, fontWeight: "600", marginTop: 6, lineHeight: 19 },
+  loadingText: { color: C.muted, fontSize: 13, fontWeight: "600" },
+  cardTitle: { color: C.ink, fontSize: 17, fontWeight: "700" },
+  cardSub: { color: C.muted, fontSize: 13, fontWeight: "500", marginTop: 6, lineHeight: 19 },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginLeft: 56 },
   row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14 },
+  rowLast: {},
   rowIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 42,
+    height: 42,
+    borderRadius: 13,
     backgroundColor: C.forestLight,
     alignItems: "center",
     justifyContent: "center",
   },
   rowText: { flex: 1 },
-  rowLabel: { color: C.forest, fontSize: 15, fontWeight: "900" },
-  rowSub: { color: C.muted, fontSize: 12, fontWeight: "600", marginTop: 2 },
+  rowLabel: { color: C.ink, fontSize: 14.5, fontWeight: "700" },
+  rowSub: { color: C.muted, fontSize: 12, fontWeight: "500", marginTop: 2 },
   inputGroup: { marginTop: 20 },
-  inputLabel: { color: C.forest, fontSize: 13, fontWeight: "800", marginBottom: 8 },
+  inputLabel: { color: C.ink, fontSize: 12.5, fontWeight: "700", marginBottom: 8 },
   input: {
     height: 52,
-    borderRadius: 16,
+    borderRadius: 15,
     borderWidth: 1,
     borderColor: C.border,
     backgroundColor: "#F9FBFA",
     paddingHorizontal: 16,
-    color: C.forest,
-    fontSize: 18,
-    fontWeight: "800",
+    color: C.ink,
+    fontSize: 17,
+    fontWeight: "700",
     letterSpacing: 4,
   },
   dots: { flexDirection: "row", gap: 8, marginTop: 10 },
   dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#D1D5DB",
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: "#D9DEDB",
   },
   dotFilled: { backgroundColor: C.gold },
   primaryButton: {
     height: 52,
-    borderRadius: 16,
+    borderRadius: 15,
     backgroundColor: C.forest,
     alignItems: "center",
     justifyContent: "center",
     marginTop: 24,
+    shadowColor: C.forest,
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
   },
-  buttonDisabled: { opacity: 0.45 },
-  primaryText: { color: "#FFFFFF", fontSize: 15, fontWeight: "900" },
-  textButton: { alignSelf: "center", paddingHorizontal: 16, paddingVertical: 14, marginTop: 8 },
-  textButtonLabel: { color: C.forestMid, fontSize: 14, fontWeight: "900" },
+  buttonDisabled: { opacity: 0.4, shadowOpacity: 0 },
+  primaryText: { color: "#FFFFFF", fontSize: 14.5, fontWeight: "700", letterSpacing: 0.2 },
+  textButton: { alignSelf: "center", paddingHorizontal: 16, paddingVertical: 14, marginTop: 6 },
+  textButtonLabel: { color: C.forestMid, fontSize: 13.5, fontWeight: "700" },
   cancelButton: {
     alignSelf: "center",
     paddingHorizontal: 24,
     paddingVertical: 14,
-    marginTop: 14,
+    marginTop: 12,
   },
-  cancelText: { color: C.danger, fontSize: 14, fontWeight: "900" },
+  cancelText: { color: C.danger, fontSize: 13.5, fontWeight: "700" },
 });

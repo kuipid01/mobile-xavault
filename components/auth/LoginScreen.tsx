@@ -1,9 +1,14 @@
 import { useLogin } from "@/hooks/auth/auth";
+import {
+  getBiometricAvailability,
+  unlockWithBiometrics,
+} from "@/lib/biometric-auth";
 import { COLORS, Radius } from "@/themes/colors";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Ionicons } from "@expo/vector-icons";
 import { Image } from 'expo-image';
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import Toast from "react-native-toast-message";
 import { useAuth } from "../../api/auth";
@@ -18,8 +23,12 @@ const LoginScreen = () => {
   const [mailAvailable, setMailAvailable] = useState(false)
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [showBiometricEntry, setShowBiometricEntry] = useState(false);
+  const [biometricCanAutoUnlock, setBiometricCanAutoUnlock] = useState(false);
+  const [isBiometricPending, setIsBiometricPending] = useState(false);
   const { mutateAsync: login, isPending } = useLogin();
   const { onLoginSuccess } = useAuth();
+  const didAutoPromptBiometric = useRef(false);
   useEffect(() => {
     const checkMail = async () => {
       const mailInStorage = await AsyncStorage.getItem("email");
@@ -34,6 +43,43 @@ const LoginScreen = () => {
     }
     checkMail();
   }, [])
+
+  useEffect(() => {
+    const checkBiometric = async () => {
+      const availability = await getBiometricAvailability();
+      const shouldShow = availability.enabled && availability.deviceReady;
+      const canAutoUnlock = shouldShow && availability.sessionRecoverable;
+
+      console.log("[LoginScreen] biometric availability", {
+        ...availability,
+        shouldShow,
+        canAutoUnlock,
+      });
+
+      setShowBiometricEntry(shouldShow);
+      setBiometricCanAutoUnlock(canAutoUnlock);
+    };
+
+    void checkBiometric();
+  }, []);
+
+  useEffect(() => {
+    if (
+      didAutoPromptBiometric.current ||
+      !showBiometricEntry ||
+      !biometricCanAutoUnlock ||
+      isPending ||
+      isBiometricPending
+    ) {
+      return;
+    }
+
+    didAutoPromptBiometric.current = true;
+    console.log("[LoginScreen] auto prompting biometric login");
+    void handleBiometricLogin({ automatic: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [biometricCanAutoUnlock, showBiometricEntry]);
+
   const handleLogin = async () => {
     try {
       const response = await login({
@@ -56,6 +102,69 @@ const LoginScreen = () => {
     } catch (error) {
       console.error("Login failed:", error);
       setErrorMessage("Incorrect email or password.");
+    }
+  };
+
+  const handleBiometricLogin = async (options: { automatic?: boolean } = {}) => {
+    try {
+      console.log("[LoginScreen] biometric login pressed", options);
+      setIsBiometricPending(true);
+      const result = await unlockWithBiometrics("Sign in to XAVAULT");
+      console.log("[LoginScreen] biometric login result", {
+        hasAccessToken: Boolean(result.accessToken),
+        reason: result.reason,
+      });
+
+      if (!result.accessToken) {
+        const availability = await getBiometricAvailability();
+        setShowBiometricEntry(availability.enabled && availability.deviceReady);
+        setBiometricCanAutoUnlock(
+          availability.enabled &&
+          availability.deviceReady &&
+          availability.sessionRecoverable
+        );
+
+        if (result.reason === "authentication_failed") {
+          if (!options.automatic) {
+            Toast.show({
+              type: "info",
+              text1: "Biometric cancelled",
+              text2: "Tap the fingerprint to try again.",
+            });
+          }
+          return;
+        }
+
+        Toast.show({
+          type: "error",
+          text1: "Biometric login unavailable",
+          text2: "Sign in with your password to refresh your session.",
+        });
+        return;
+      }
+
+      onLoginSuccess(result.accessToken);
+      await clearRegistrationFlow();
+
+      Toast.show({
+        type: "success",
+        text1: "Welcome back",
+        text2: "Signed in with biometrics.",
+      });
+
+      router.replace("/(app)/(tabs)/home");
+    } catch (error) {
+      console.error("Biometric login failed:", error);
+      const availability = await getBiometricAvailability();
+      setShowBiometricEntry(availability.enabled && availability.deviceReady);
+      setBiometricCanAutoUnlock(false);
+      Toast.show({
+        type: "error",
+        text1: "Biometric login failed",
+        text2: "Sign in with your password to continue.",
+      });
+    } finally {
+      setIsBiometricPending(false);
     }
   };
 
@@ -106,13 +215,33 @@ const LoginScreen = () => {
 
         <TouchableOpacity
           style={[styles.button, isPending && styles.buttonDisabled]}
-          disabled={isPending}
+          disabled={isPending || isBiometricPending}
           onPress={handleLogin}
         >
           <Text style={styles.buttonText}>
             {isPending ? "Signing in..." : "Sign In"}
           </Text>
         </TouchableOpacity>
+
+        {showBiometricEntry ? (
+          <TouchableOpacity
+            style={[
+              styles.biometricIconButton,
+              isBiometricPending && styles.buttonDisabled,
+            ]}
+            disabled={isPending || isBiometricPending}
+            onPress={() => handleBiometricLogin()}
+            accessibilityRole="button"
+            accessibilityLabel="Use biometric login"
+          >
+            <Ionicons
+              name="finger-print-outline"
+              size={28}
+              color={COLORS.primary}
+            />
+          </TouchableOpacity>
+        ) : null}
+
         <Text
           onPress={() => router.push("/(auth)/initial")}
           style={styles.footerText}
@@ -244,6 +373,22 @@ const styles = {
 
   buttonDisabled: {
     opacity: 0.65,
+  },
+
+  biometricIconButton: {
+    alignItems: "center" as const,
+    alignSelf: "center" as const,
+    backgroundColor: "#FFFFFF",
+    borderColor: "rgba(6, 59, 46, 0.18)",
+    borderRadius: 28,
+    borderWidth: 1,
+    height: 56,
+    justifyContent: "center" as const,
+    marginTop: 14,
+    shadowColor: COLORS.primary,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    width: 56,
   },
 
   forgotText: {

@@ -1,13 +1,16 @@
 import { koboToNaira, nairaToKobo } from "@/api/money";
 import { useCreateEnvelope } from "@/hooks/app/envelopes";
 import { usePlan } from "@/hooks/app/plans";
+import { useSubscriptionLimitModal } from "@/hooks/use-subscription-limit-modal";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Modal,
   Platform,
   Pressable,
@@ -16,9 +19,14 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   View,
 } from "react-native";
 import Toast from "react-native-toast-message";
+
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const normalizeDate = (date: Date) => {
   const next = new Date(date);
@@ -38,11 +46,8 @@ const parseApiDate = (value?: string | null) => {
   return normalizeDate(new Date(year, month - 1, day));
 };
 
-
-
 const formatNumber = (value: number) =>
   new Intl.NumberFormat("en-NG").format(value);
-
 
 const formatDateForApi = (date: Date) => {
   const year = date.getFullYear();
@@ -60,19 +65,47 @@ const formatDateForDisplay = (date: Date) =>
     year: "numeric",
   });
 
+const formatDateShort = (date: Date) =>
+  date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+// --- Duration presets, same pattern as the create-plan screen: replace a
+// forced "open calendar, pick a day" decision with one-tap defaults. Every
+// numeric preset is automatically disabled if it would run past the plan's
+// own end date, and "Full plan" / "Custom" cover the edge cases.
+const DURATION_PRESETS = [
+  { key: "1w", label: "1 week", days: 7 },
+  { key: "2w", label: "2 weeks", days: 14 },
+  { key: "1m", label: "1 month", months: 1 },
+  { key: "3m", label: "3 months", months: 3 },
+  { key: "6m", label: "6 months", months: 6 },
+] as const;
+
+type DurationPreset = (typeof DURATION_PRESETS)[number];
+type DurationKey = DurationPreset["key"] | "full" | "custom";
+
+const addDuration = (date: Date, preset: DurationPreset) => {
+  const next = new Date(date);
+  if ("days" in preset) next.setDate(next.getDate() + preset.days);
+  if ("months" in preset) next.setMonth(next.getMonth() + preset.months);
+  return normalizeDate(next);
+};
+
 export default function CreateEnvelopeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const planId = typeof id === "string" ? id : "";
 
   const { data: plan, isLoading: isPlanLoading } = usePlan(planId);
   const { mutateAsync: createEnvelope, isPending } = useCreateEnvelope(planId);
+  const { showSubscriptionLimitModal } = useSubscriptionLimitModal();
 
   const planStartDate = useMemo(() => parseApiDate(plan?.start_date), [plan?.start_date]);
   const planEndDate = useMemo(() => parseApiDate(plan?.end_date), [plan?.end_date]);
   const planAmountNaira = koboToNaira(plan?.amount);
   const allocatedNaira = koboToNaira(plan?.top_level_allocated);
   const remainingPlanBalance = Math.max(planAmountNaira - allocatedNaira, 0);
-
 
   const minimumStartDate = useMemo(() => {
     if (planStartDate && planStartDate > today) return planStartDate;
@@ -83,53 +116,87 @@ export default function CreateEnvelopeScreen() {
   const [amount, setAmount] = useState("");
   const [startDate, setStartDate] = useState<Date>(minimumStartDate);
   const [endDate, setEndDate] = useState<Date | null>(planEndDate || null);
+  const [durationPreset, setDurationPreset] = useState<DurationKey>("full");
   const [activePicker, setActivePicker] = useState<"start" | "end" | null>(null);
-
-  const amountNumber = Number(amount || 0);
   const [policy, setPolicy] = useState<"flexible" | "locked_until_parent_ends">(
     "flexible"
   );
 
-  useEffect(() => {
-    setStartDate((current) => {
-      if (current < minimumStartDate) return minimumStartDate;
-      return current;
-    });
+  const amountNumber = Number(amount || 0);
 
-    setEndDate((current) => {
-      if (!current) return planEndDate || null;
-      if (current < minimumStartDate) return minimumStartDate;
-      if (planEndDate && current > planEndDate) return planEndDate;
-      return current;
-    });
-  }, [minimumStartDate, planEndDate]);
+  // Keep the start date inside the plan window as plan data resolves.
+  useEffect(() => {
+    setStartDate((current) => (current < minimumStartDate ? minimumStartDate : current));
+  }, [minimumStartDate]);
+
+  // Keep the end date anchored to whichever duration is active, always
+  // clamped inside the plan's own start/end range.
+  useEffect(() => {
+    if (durationPreset === "custom") {
+      setEndDate((current) => {
+        if (!current) return planEndDate;
+        if (current < startDate) return startDate;
+        if (planEndDate && current > planEndDate) return planEndDate;
+        return current;
+      });
+      return;
+    }
+
+    if (durationPreset === "full") {
+      setEndDate(planEndDate);
+      return;
+    }
+
+    const preset = DURATION_PRESETS.find((item) => item.key === durationPreset);
+    if (!preset) return;
+
+    const raw = addDuration(startDate, preset);
+    setEndDate(planEndDate && raw > planEndDate ? planEndDate : raw);
+  }, [durationPreset, startDate, planEndDate]);
 
   const minimumEndDate = useMemo(() => {
     if (startDate > minimumStartDate) return startDate;
     return minimumStartDate;
   }, [startDate, minimumStartDate]);
 
+  const isPresetAvailable = (preset: DurationPreset) => {
+    if (!planEndDate) return true;
+    return addDuration(startDate, preset) <= planEndDate;
+  };
+
+  const selectDurationPreset = (key: DurationKey) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setDurationPreset(key);
+  };
+
   const handleDateChange = (selectedDate?: Date) => {
     if (!selectedDate || !activePicker) return;
 
     const selected = normalizeDate(selectedDate);
 
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+
     if (activePicker === "start") {
       setStartDate(selected);
-
-      if (endDate && endDate < selected) {
-        setEndDate(selected);
-      }
-
       return;
     }
 
     if (activePicker === "end") {
       setEndDate(selected);
+      setDurationPreset("custom");
     }
   };
 
   const handleSubmit = async () => {
+    if (!name.trim()) {
+      Toast.show({
+        type: "error",
+        text1: "Envelope name required",
+        text2: "Please enter a name for this envelope.",
+      });
+      return;
+    }
+
     if (!endDate) {
       Toast.show({
         type: "error",
@@ -138,20 +205,12 @@ export default function CreateEnvelopeScreen() {
       });
       return;
     }
+
     if (startDate < minimumStartDate) {
       Toast.show({
         type: "error",
         text1: "Invalid start date",
         text2: "Envelope start date cannot be before the plan start date.",
-      });
-      return;
-    }
-
-    if (!endDate) {
-      Toast.show({
-        type: "error",
-        text1: "End date required",
-        text2: "Please choose when this envelope should end.",
       });
       return;
     }
@@ -174,6 +233,15 @@ export default function CreateEnvelopeScreen() {
       return;
     }
 
+    if (amountNumber <= 0) {
+      Toast.show({
+        type: "error",
+        text1: "Invalid amount",
+        text2: "Please enter an amount greater than zero.",
+      });
+      return;
+    }
+
     if (amountNumber > remainingPlanBalance) {
       Toast.show({
         type: "error",
@@ -181,15 +249,6 @@ export default function CreateEnvelopeScreen() {
         text2: `You cannot save more than ₦${formatNumber(
           remainingPlanBalance
         )} in this plan.`,
-      });
-      return;
-    }
-
-    if (amountNumber <= 0) {
-      Toast.show({
-        type: "error",
-        text1: "Invalid amount",
-        text2: "Please enter an amount greater than zero.",
       });
       return;
     }
@@ -206,6 +265,10 @@ export default function CreateEnvelopeScreen() {
       Toast.show({ type: "success", text1: "Envelope created" });
       router.back();
     } catch (error: any) {
+      if (showSubscriptionLimitModal("envelope_create", error)) {
+        return;
+      }
+
       Toast.show({
         type: "error",
         text1: "Could not create envelope",
@@ -232,6 +295,64 @@ export default function CreateEnvelopeScreen() {
 
   const pickerMaximumDate = planEndDate || undefined;
 
+  // Where the envelope's date range sits inside the plan's own range, as
+  // percentages — drives the timeline bar below.
+  const timeline = useMemo(() => {
+    if (!planStartDate || !planEndDate) return null;
+
+    const total = planEndDate.getTime() - planStartDate.getTime();
+    if (total <= 0) return null;
+
+    const endForMath = endDate || planEndDate;
+    const startPercent = clamp(
+      ((startDate.getTime() - planStartDate.getTime()) / total) * 100,
+      0,
+      100
+    );
+    const endPercent = clamp(
+      ((endForMath.getTime() - planStartDate.getTime()) / total) * 100,
+      0,
+      100
+    );
+
+    return { startPercent, endPercent: Math.max(endPercent, startPercent) };
+  }, [planStartDate, planEndDate, startDate, endDate]);
+
+  const allocationPercent =
+    planAmountNaira > 0 ? clamp((allocatedNaira / planAmountNaira) * 100, 0, 100) : 0;
+
+  const projectedPercent =
+    planAmountNaira > 0
+      ? clamp(((allocatedNaira + amountNumber) / planAmountNaira) * 100, 0, 100)
+      : 0;
+
+  // --- Entrance animation ---------------------------------------------
+  const headerAnim = useRef(new Animated.Value(0)).current;
+  const summaryAnim = useRef(new Animated.Value(0)).current;
+  const formAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.stagger(90, [
+      Animated.timing(headerAnim, { toValue: 1, duration: 380, useNativeDriver: true }),
+      Animated.timing(summaryAnim, { toValue: 1, duration: 380, useNativeDriver: true }),
+      Animated.timing(formAnim, { toValue: 1, duration: 380, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  const enterStyle = (anim: Animated.Value) => ({
+    opacity: anim,
+    transform: [
+      { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) },
+    ],
+  });
+
+  // Button press feedback.
+  const buttonScale = useRef(new Animated.Value(1)).current;
+  const pressButtonIn = () =>
+    Animated.spring(buttonScale, { toValue: 0.96, useNativeDriver: true, speed: 30 }).start();
+  const pressButtonOut = () =>
+    Animated.spring(buttonScale, { toValue: 1, useNativeDriver: true, speed: 30 }).start();
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -241,7 +362,7 @@ export default function CreateEnvelopeScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
+        <Animated.View style={[styles.header, enterStyle(headerAnim)]}>
           <TouchableOpacity
             onPress={() => router.back()}
             activeOpacity={0.75}
@@ -256,9 +377,9 @@ export default function CreateEnvelopeScreen() {
               Partition {plan?.name || "this plan"} into a specific spending bucket.
             </Text>
           </View>
-        </View>
+        </Animated.View>
 
-        <View style={styles.summaryCard}>
+        <Animated.View style={[styles.summaryCard, enterStyle(summaryAnim)]}>
           <View style={styles.summaryIcon}>
             <Ionicons name="albums-outline" size={22} color="#FFFFFF" />
           </View>
@@ -269,9 +390,9 @@ export default function CreateEnvelopeScreen() {
               Use envelopes for things like rent, food, savings, bills, or transport.
             </Text>
           </View>
-        </View>
+        </Animated.View>
 
-        <View style={styles.formCard}>
+        <Animated.View style={[styles.formCard, enterStyle(formAnim)]}>
           <Text style={styles.sectionTitle}>Envelope details</Text>
 
           <Field
@@ -309,6 +430,36 @@ export default function CreateEnvelopeScreen() {
             prefix="₦"
           />
 
+          {planAmountNaira > 0 ? (
+            <View style={styles.allocationBlock}>
+              <View style={styles.allocationLabelRow}>
+                <Text style={styles.allocationLabel}>Plan allocation</Text>
+                <Text style={styles.allocationValue}>
+                  ₦{formatNumber(allocatedNaira + amountNumber)} / ₦{formatNumber(planAmountNaira)}
+                </Text>
+              </View>
+
+              <View style={styles.allocationTrack}>
+                <View style={[styles.allocationFillBase, { width: `${allocationPercent}%` }]} />
+                {amountNumber > 0 ? (
+                  <View
+                    style={[
+                      styles.allocationFillNew,
+                      {
+                        left: `${allocationPercent}%`,
+                        width: `${Math.max(projectedPercent - allocationPercent, 0)}%`,
+                      },
+                    ]}
+                  />
+                ) : null}
+              </View>
+
+              <Text style={styles.allocationHint}>
+                ₦{formatNumber(remainingPlanBalance)} left unassigned in this plan
+              </Text>
+            </View>
+          ) : null}
+
           <View style={styles.dateRow}>
             <DateButton
               label="Start date"
@@ -326,19 +477,126 @@ export default function CreateEnvelopeScreen() {
             />
           </View>
 
+          <Text style={styles.presetLabel}>How long should this envelope run?</Text>
+          <View style={styles.presetRow}>
+            {DURATION_PRESETS.map((preset) => {
+              const active = durationPreset === preset.key;
+              const available = isPresetAvailable(preset);
+
+              return (
+                <TouchableOpacity
+                  key={preset.key}
+                  disabled={!available}
+                  onPress={() => selectDurationPreset(preset.key)}
+                  activeOpacity={0.8}
+                  style={[
+                    styles.presetPill,
+                    active && styles.presetPillActive,
+                    !available && styles.presetPillDisabled,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.presetPillText,
+                      active && styles.presetPillTextActive,
+                      !available && styles.presetPillTextDisabled,
+                    ]}
+                  >
+                    {preset.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+
+            <TouchableOpacity
+              disabled={!planEndDate}
+              onPress={() => selectDurationPreset("full")}
+              activeOpacity={0.8}
+              style={[
+                styles.presetPill,
+                durationPreset === "full" && styles.presetPillActive,
+                !planEndDate && styles.presetPillDisabled,
+              ]}
+            >
+              <Ionicons
+                name="expand-outline"
+                size={13}
+                color={durationPreset === "full" ? "#FFFFFF" : "#063B2E"}
+                style={styles.presetPillIcon}
+              />
+              <Text
+                style={[
+                  styles.presetPillText,
+                  durationPreset === "full" && styles.presetPillTextActive,
+                  !planEndDate && styles.presetPillTextDisabled,
+                ]}
+              >
+                Full plan
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setActivePicker("end")}
+              activeOpacity={0.8}
+              style={[
+                styles.presetPill,
+                durationPreset === "custom" && styles.presetPillActive,
+              ]}
+            >
+              <Ionicons
+                name="calendar-outline"
+                size={13}
+                color={durationPreset === "custom" ? "#FFFFFF" : "#063B2E"}
+                style={styles.presetPillIcon}
+              />
+              <Text
+                style={[
+                  styles.presetPillText,
+                  durationPreset === "custom" && styles.presetPillTextActive,
+                ]}
+              >
+                Custom
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.dateInfoBox}>
             <Ionicons name="information-circle-outline" size={16} color="#106B4F" />
             <Text style={styles.dateInfoText}>
-              Envelope dates must stay within the plan period. End date cannot be before start date.
+              Envelope dates must stay within the plan period — presets that
+              would run past it are greyed out.
             </Text>
           </View>
 
           <View style={styles.planPeriodCard}>
-            <Text style={styles.planPeriodLabel}>Plan period</Text>
-            <Text style={styles.planPeriodText}>
-              {planStartDate ? formatDateForDisplay(planStartDate) : "Today"} to{" "}
-              {planEndDate ? formatDateForDisplay(planEndDate) : "No end date"}
-            </Text>
+            <View style={styles.planPeriodHeaderRow}>
+              <Text style={styles.planPeriodLabel}>Plan period</Text>
+              <Text style={styles.planPeriodText}>
+                {planStartDate ? formatDateShort(planStartDate) : "Today"} —{" "}
+                {planEndDate ? formatDateShort(planEndDate) : "No end date"}
+              </Text>
+            </View>
+
+            {timeline ? (
+              <View style={styles.timelineTrack}>
+                <View
+                  style={[
+                    styles.timelineFill,
+                    {
+                      left: `${timeline.startPercent}%`,
+                      width: `${Math.max(timeline.endPercent - timeline.startPercent, 2)}%`,
+                    },
+                  ]}
+                />
+              </View>
+            ) : null}
+
+            <View style={styles.timelineLabelsRow}>
+              <Text style={styles.timelineLabelText}>
+                Envelope: {formatDateShort(startDate)}
+                {endDate ? ` – ${formatDateShort(endDate)}` : ""}
+              </Text>
+            </View>
           </View>
 
           <View style={styles.divider} />
@@ -367,21 +625,30 @@ export default function CreateEnvelopeScreen() {
           </View>
 
           <TouchableOpacity
-            style={[styles.button, disabled && styles.buttonDisabled]}
             disabled={disabled}
             onPress={handleSubmit}
-            activeOpacity={0.8}
+            onPressIn={pressButtonIn}
+            onPressOut={pressButtonOut}
+            activeOpacity={0.85}
           >
-            {isPending ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <>
-                <Text style={styles.buttonText}>Create Envelope</Text>
-                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
-              </>
-            )}
+            <Animated.View
+              style={[
+                styles.button,
+                disabled && styles.buttonDisabled,
+                { transform: [{ scale: buttonScale }] },
+              ]}
+            >
+              {isPending ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Text style={styles.buttonText}>Create Envelope</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                </>
+              )}
+            </Animated.View>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
       </ScrollView>
 
       {activePicker && Platform.OS === "android" ? (
@@ -734,6 +1001,60 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
 
+  allocationBlock: {
+    marginTop: 14,
+  },
+
+  allocationLabelRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 7,
+  },
+
+  allocationLabel: {
+    color: "#3F4945",
+    fontSize: 11,
+    fontWeight: "900",
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+  },
+
+  allocationValue: {
+    color: "#063B2E",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  allocationTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: "#EEF2F0",
+    overflow: "hidden",
+    position: "relative",
+  },
+
+  allocationFillBase: {
+    height: "100%",
+    backgroundColor: "#D8E4DF",
+    borderRadius: 999,
+  },
+
+  allocationFillNew: {
+    position: "absolute",
+    top: 0,
+    height: "100%",
+    backgroundColor: "#106B4F",
+    borderRadius: 999,
+  },
+
+  allocationHint: {
+    color: "#7A8580",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 7,
+  },
+
   dateRow: {
     flexDirection: "row",
     gap: 12,
@@ -776,6 +1097,60 @@ const styles = StyleSheet.create({
     color: "#9AA5A1",
   },
 
+  presetLabel: {
+    color: "#3F4945",
+    fontSize: 11,
+    fontWeight: "900",
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+    marginTop: 16,
+    marginBottom: 9,
+  },
+
+  presetRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+
+  presetPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: "#F8FAF9",
+    borderWidth: 1,
+    borderColor: "#E3EAE6",
+  },
+
+  presetPillActive: {
+    backgroundColor: "#063B2E",
+    borderColor: "#063B2E",
+  },
+
+  presetPillDisabled: {
+    opacity: 0.4,
+  },
+
+  presetPillIcon: {
+    marginRight: 5,
+  },
+
+  presetPillText: {
+    color: "#063B2E",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+
+  presetPillTextActive: {
+    color: "#FFFFFF",
+  },
+
+  presetPillTextDisabled: {
+    color: "#9AA5A1",
+  },
+
   dateInfoBox: {
     marginTop: 14,
     padding: 12,
@@ -803,20 +1178,51 @@ const styles = StyleSheet.create({
     borderColor: "#F6E5B3",
   },
 
+  planPeriodHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+
   planPeriodLabel: {
     color: "#946500",
     fontSize: 10,
     fontWeight: "900",
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    marginBottom: 4,
   },
 
   planPeriodText: {
     color: "#6B4E00",
     fontSize: 12,
     fontWeight: "800",
-    lineHeight: 17,
+  },
+
+  timelineTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(148, 101, 0, 0.14)",
+    overflow: "hidden",
+    position: "relative",
+  },
+
+  timelineFill: {
+    position: "absolute",
+    top: 0,
+    height: "100%",
+    backgroundColor: "#946500",
+    borderRadius: 999,
+  },
+
+  timelineLabelsRow: {
+    marginTop: 8,
+  },
+
+  timelineLabelText: {
+    color: "#946500",
+    fontSize: 11,
+    fontWeight: "800",
   },
 
   divider: {

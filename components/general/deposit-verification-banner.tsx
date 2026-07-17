@@ -24,13 +24,21 @@ const statusCopy: Record<
     title: "",
     body: "",
   },
-  initiated: {
-    title: "Deposit started",
-    body: "Complete payment in checkout. We will confirm it when you return.",
+  ready: {
+    title: "Deposit ready",
+    body: "Continue payment from the secure checkout modal.",
+  },
+  checkout_opened: {
+    title: "Checkout opened",
+    body: "We will check once when you return.",
   },
   verifying: {
     title: "Checking payment",
     body: "We are confirming your Paystack payment now.",
+  },
+  needs_action: {
+    title: "Payment not confirmed",
+    body: "Continue the same payment or verify again.",
   },
   confirmed: {
     title: "Deposit confirmed",
@@ -44,9 +52,13 @@ const statusCopy: Record<
     title: "Deposit failed",
     body: "We could not confirm this payment. Try again or start a new deposit.",
   },
-  abandoned: {
-    title: "Checkout not completed",
-    body: "You can retry verification or dismiss this pending deposit.",
+  expired: {
+    title: "Payment link expired",
+    body: "Start a new Paystack checkout to continue this deposit.",
+  },
+  dismissed: {
+    title: "Deposit dismissed",
+    body: "Webhook verification can still complete it later.",
   },
 };
 
@@ -63,8 +75,8 @@ export function DepositVerificationBanner() {
   } = useDepositVerificationContext();
   const translateY = useRef(new Animated.Value(-18)).current;
   const opacity = useRef(new Animated.Value(0)).current;
-  const isReceipt = Boolean(confirmedReceipt && !pendingReference);
-  const isVisible = Boolean(pendingReference || confirmedReceipt);
+  const isReceipt = Boolean(confirmedReceipt);
+  const isVisible = Boolean(confirmedReceipt);
 
   useEffect(() => {
     Animated.parallel([
@@ -93,11 +105,7 @@ export function DepositVerificationBanner() {
 
   const reference = pendingReference || confirmedReceipt?.reference || "";
   const copy = isReceipt ? statusCopy.confirmed : statusCopy[pendingStatus];
-  const showRetry =
-    !isReceipt &&
-    (pendingStatus === "still_processing" ||
-      pendingStatus === "failed" ||
-      pendingStatus === "abandoned");
+  const showRetry = false;
   const amount = pendingAmount || confirmedReceipt?.amount || 0;
   const amountLabel =
     amount > 0

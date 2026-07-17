@@ -15,6 +15,7 @@ import {
   PENDING_EMAIL_KEY,
   REGISTRATION_DRAFT_KEY,
 } from "../components/auth/authFlow";
+import { DepositPaymentModal } from "../components/general/deposit-payment-modal";
 import { DepositVerificationBanner } from "../components/general/deposit-verification-banner";
 import { ModalProvider } from "../context/special-modal-context";
 import { useSubscriptionPrompt } from "../hooks/use-subscription-prompt";
@@ -316,6 +317,7 @@ export default function RootLayout() {
                   <RootLayoutContent />
                 </GlobalDrawerHost>
                 <DepositVerificationWatcher />
+                <DepositPaymentModal />
                 <DepositVerificationBanner />
                 <Toast />
               </OnboardingProvider>
