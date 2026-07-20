@@ -1,11 +1,11 @@
 import { getAccessToken } from "@/api/auth";
 import { useForgetPassword, useResetPassword } from "@/hooks/auth/auth";
 import {
+  disableBiometricLogin,
+  enrollBiometricLogin,
   getBiometricAvailability,
-  setBiometricLoginEnabled,
 } from "@/lib/biometric-auth";
 import { Ionicons } from "@expo/vector-icons";
-import * as LocalAuthentication from "expo-local-authentication";
 import { router } from "expo-router";
 import { jwtDecode } from "jwt-decode";
 import { useEffect, useState } from "react";
@@ -71,14 +71,16 @@ export default function LoginSettingsScreen() {
     (async () => {
       const availability = await getBiometricAvailability();
       setBiometricSupported(availability.deviceReady);
-      setBiometricSessionReady(availability.sessionRecoverable);
+      setBiometricSessionReady(
+        availability.accessTokenValid || availability.credentialReady,
+      );
       setBiometricEnabled(availability.enabled && availability.sessionRecoverable);
     })();
   }, []);
 
   const toggleBiometric = async (value: boolean) => {
     if (!value) {
-      await setBiometricLoginEnabled(false);
+      await disableBiometricLogin();
       setBiometricEnabled(false);
       Toast.show({ type: "success", text1: "Biometric login disabled" });
       return;
@@ -87,60 +89,30 @@ export default function LoginSettingsScreen() {
     const availability = await getBiometricAvailability();
     console.log("[AVAILABILY DUIDI", availability)
     setBiometricSupported(availability.deviceReady);
-    setBiometricSessionReady(availability.sessionRecoverable);
+    setBiometricSessionReady(
+      availability.accessTokenValid || availability.credentialReady,
+    );
 
     if (!availability.deviceReady) {
       Toast.show({ type: "error", text1: "Biometrics are not available on this device" });
       return;
     }
 
-    if (!availability.sessionRecoverable) {
-      await setBiometricLoginEnabled(false);
-      setBiometricEnabled(false);
-      Toast.show({
-        type: "error",
-        text1: "Sign in again first",
-        text2: "No valid saved session was found.",
-      });
+    if (!availability.accessTokenValid) {
+      Toast.show({ type: "error", text1: "Sign in again first" });
       return;
     }
 
-    if (value) {
-      const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: "Confirm to enable biometric login",
-        fallbackLabel: "Use password",
-        cancelLabel: "Cancel",
-      });
-      if (!result.success) {
-        Toast.show({ type: "error", text1: "Authentication failed" });
-        return;
-      }
+    try {
+      const enrolled = await enrollBiometricLogin();
+      if (!enrolled) return;
+      setBiometricEnabled(true);
+      setBiometricSessionReady(true);
+      Toast.show({ type: "success", text1: "Biometric login enabled" });
+    } catch (error) {
+      console.error("Could not enable biometric login", error);
+      Toast.show({ type: "error", text1: "Could not enable biometric login" });
     }
-
-
-    //DONT KNOW USE OF THIS  CODE BLOCK NO NEED TO REFRESH THE ACCESS TOKEN
-    // if (availability.refreshTokenValid) {
-    //   try {
-    //     const accessToken = await refreshAuthTokens();
-    //     if (!accessToken) {
-    //       await setBiometricLoginEnabled(false);
-    //       setBiometricEnabled(false);
-    //       setBiometricSessionReady(false);
-    //       Toast.show({ type: "error", text1: "Session expired", text2: "Sign in again to enable biometrics." });
-    //       return;
-    //     }
-    //   } catch {
-    //     await setBiometricLoginEnabled(false);
-    //     setBiometricEnabled(false);
-    //     setBiometricSessionReady(false);
-    //     Toast.show({ type: "error", text1: "Session expired", text2: "Sign in again to enable biometrics." });
-    //     return;
-    //   }
-    // }
-
-    await setBiometricLoginEnabled(true);
-    setBiometricEnabled(true);
-    Toast.show({ type: "success", text1: "Biometric login enabled" });
   };
 
   const startForgotPassword = async () => {

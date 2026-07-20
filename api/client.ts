@@ -106,21 +106,19 @@ export const saveTokens = async (
   });
 };
 
-export const clearAuthTokens = async (): Promise<void> => {
-  await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
-
-  let biometricKey = await SecureStore.getItemAsync(BIOMETRIC_LOGIN_KEY);
-  if (!biometricKey) {
-    await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
-  }
-  // await SecureStore.deleteItemAsync(BIOMETRIC_LOGIN_KEY);
-  log.info("Auth tokens and biometric session flag cleared from SecureStore");
+export const clearAuthTokens = async (
+  options: { clearBiometric?: boolean } = {},
+): Promise<void> => {
+  const keys = [ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY];
+  if (options.clearBiometric) keys.push(BIOMETRIC_LOGIN_KEY);
+  await Promise.all(keys.map((key) => SecureStore.deleteItemAsync(key)));
+  log.info("Auth tokens cleared from SecureStore", options);
 };
 
 // ─── Axios instances ──────────────────────────────────────────────────────────
 
 // authApi is intentionally interceptor-free so refresh calls don't loop
-const authApi = axios.create({
+export const authApi = axios.create({
   baseURL: BACKEND_URL,
   headers: { "Content-Type": "application/json" },
 });
@@ -179,8 +177,11 @@ export const refreshAuthTokens = async (flag?:boolean): Promise<string | null> =
       return accessToken;
     } catch (err) {
       log.error("Token refresh request failed:", err);
-      await clearAuthTokens();
-      triggerLogout();
+      const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+      if (status === 400 || status === 401 || status === 403) {
+        await clearAuthTokens();
+        triggerLogout();
+      }
       throw err;
     } finally {
       refreshPromise = null;
@@ -195,16 +196,7 @@ export const refreshAuthTokens = async (flag?:boolean): Promise<string | null> =
 api.interceptors.request.use(
   async (config) => {
     let token = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
-    let biometricKey = await SecureStore.getItemAsync(BIOMETRIC_LOGIN_KEY);
-
-    console.log(token, "ACESS TOKEN THAT IS THE ISSUE 2")
-    console.log(biometricKey, "BIOMETRIC KEY")
-
     if (token && isTokenExpired(token)) {
-     if(biometricKey){
-      token=null
-      return config
-     }
       token = await refreshAuthTokens();
     }
 
@@ -238,16 +230,6 @@ api.interceptors.response.use(
       log.info(`401 on ${url} — attempting token refresh and retry`);
 
       try {
-        let biometricKey = await SecureStore.getItemAsync(BIOMETRIC_LOGIN_KEY);
-
-
-    console.log(biometricKey, "BIOMETRIC KEY re")
-
-
-     if(biometricKey){
-     console.log(biometricKey, "BIOMETRIC KEY refused to referesh mehn")
-      return 
-     }
         const token = await refreshAuthTokens();
 
         if (token) {

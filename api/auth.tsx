@@ -8,7 +8,10 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { BIOMETRIC_LOGIN_KEY } from "../lib/biometric-auth";
+import {
+  BIOMETRIC_LOGIN_KEY,
+  disableBiometricLogin,
+} from "../lib/biometric-auth";
 import {
   ACCESS_TOKEN_KEY,
   REFRESH_TOKEN_KEY,
@@ -209,7 +212,8 @@ export const resetPassword = async (data: ResetPasswordPayload) => {
 
 export const logoutUser = async (): Promise<void> => {
   log.info("Logging out user, clearing tokens");
-  await clearAuthTokens();
+  await disableBiometricLogin();
+  await clearAuthTokens({ clearBiometric: true });
 };
 
 type AuthState = {
@@ -271,25 +275,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     try {
       let token = await getAccessToken();
-      console.log(token, "ACESS TOKEN THAT IS THE ISSUE 1")
+      const biometricKey = await SecureStore.getItemAsync(BIOMETRIC_LOGIN_KEY);
+
+      // A biometric-enabled session must be unlocked from the login screen,
+      // even while its cached access token is still valid.
+      if (biometricKey) {
+        setState({
+          userToken: null,
+          isLoading: false,
+          isAuthenticated: false,
+        });
+        return;
+      }
+
       if (!token || isTokenExpired(token)) {
         log.info("AuthProvider: token missing or expired, attempting refresh 2");
-        let biometricKey = await SecureStore.getItemAsync(BIOMETRIC_LOGIN_KEY);
-
-
-        console.log(biometricKey, "BIOMETRIC KEY re")
-
-
-        if (biometricKey) {
-          console.log(biometricKey, "BIOMETRIC KEY refused to referesh mehn")
-          token = null
-          setState({
-            userToken: null,
-            isLoading: false,
-            isAuthenticated: false,
-          });
-          return
-        }
         token = await refreshAuthTokens();
       }
 

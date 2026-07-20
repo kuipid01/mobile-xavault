@@ -40,6 +40,12 @@
         }
       ],
       "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow XAVAULT to use Face ID for secure login."
+        }
+      ],
       "@react-native-community/datetimepicker",
       "expo-font"
     ],

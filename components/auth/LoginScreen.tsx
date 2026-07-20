@@ -47,8 +47,11 @@ const LoginScreen = () => {
   useEffect(() => {
     const checkBiometric = async () => {
       const availability = await getBiometricAvailability();
-      const shouldShow = availability.enabled && availability.deviceReady;
-      const canAutoUnlock = shouldShow && availability.sessionRecoverable;
+      const canAutoUnlock =
+        availability.enabled &&
+        availability.deviceReady &&
+        availability.sessionRecoverable;
+      const shouldShow = canAutoUnlock;
 
       console.log("[LoginScreen] biometric availability", {
         ...availability,
@@ -117,7 +120,11 @@ const LoginScreen = () => {
 
       if (!result.accessToken) {
         const availability = await getBiometricAvailability();
-        setShowBiometricEntry(availability.enabled && availability.deviceReady);
+        setShowBiometricEntry(
+          availability.enabled &&
+          availability.deviceReady &&
+          availability.sessionRecoverable,
+        );
         setBiometricCanAutoUnlock(
           availability.enabled &&
           availability.deviceReady &&
@@ -156,7 +163,11 @@ const LoginScreen = () => {
     } catch (error) {
       console.error("Biometric login failed:", error);
       const availability = await getBiometricAvailability();
-      setShowBiometricEntry(availability.enabled && availability.deviceReady);
+      setShowBiometricEntry(
+        availability.enabled &&
+        availability.deviceReady &&
+        availability.sessionRecoverable,
+      );
       setBiometricCanAutoUnlock(false);
       Toast.show({
         type: "error",

@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Text, TextInput, View } from "react-native";
 import Toast from "react-native-toast-message";
 import { AuthProvider, useAuth } from "../api/auth";
+import { getBiometricAvailability } from "../lib/biometric-auth";
 import {
   loadAuthFlow,
   PENDING_EMAIL_KEY,
@@ -131,6 +132,18 @@ function RootLayoutContent() {
 
         if (!isAuthenticated) {
           debugLog("user is not authenticated, checking saved auth flow");
+          const biometric = await getBiometricAvailability();
+
+          if (
+            biometric.enabled &&
+            biometric.deviceReady &&
+            biometric.sessionRecoverable
+          ) {
+            if (!pathname.includes("/login")) {
+              router.replace("/(auth)/login");
+            }
+            return;
+          }
 
           const [authFlow, email, registrationDraft] = await Promise.all([
             loadAuthFlow(),
