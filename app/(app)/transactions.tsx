@@ -1,13 +1,14 @@
 import { formatMoney } from "@/api/money";
 import { WalletLedger } from "@/api/types";
+import { WithdrawalRecord } from "@/api/withdrawals";
 import { useWalletLedger } from "@/hooks/app/wallet";
+import { useWithdrawalHistory } from "@/hooks/app/withdrawals";
 import { trackEvent } from "@/lib/analytics";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Modal,
   Platform,
   RefreshControl,
@@ -27,6 +28,12 @@ const monoFont = Platform.select({ ios: "Courier New", android: "monospace", def
 
 type Filter = "all" | "credit" | "debit";
 
+type TransactionItem = WalletLedger & {
+  withdrawal_status?: string;
+  withdrawal_id?: string;
+  is_withdrawal_record?: boolean;
+};
+
 const filters: { key: Filter; label: string }[] = [
   { key: "all", label: "All" },
   { key: "credit", label: "Credits" },
@@ -35,8 +42,60 @@ const filters: { key: Filter; label: string }[] = [
 
 export default function TransactionsScreen() {
   const [filter, setFilter] = useState<Filter>("all");
-  const [selected, setSelected] = useState<WalletLedger | null>(null);
+  const [selected, setSelected] = useState<TransactionItem | null>(null);
   const { data: ledger = [], isLoading, isRefetching, refetch } = useWalletLedger();
+  const {
+    data: withdrawals = [],
+    isLoading: isWithdrawalsLoading,
+    isRefetching: isWithdrawalsRefetching,
+    refetch: refetchWithdrawals,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage
+  } = useWithdrawalHistory();
+  const previousWithdrawalStatuses = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    const signature = withdrawals.map((item) => `${item.id}:${item.status}`).join("|");
+    if (previousWithdrawalStatuses.current === undefined) {
+      previousWithdrawalStatuses.current = signature;
+      return;
+    }
+    if (previousWithdrawalStatuses.current !== signature) {
+      previousWithdrawalStatuses.current = signature;
+      void refetch();
+    }
+  }, [refetch, withdrawals]);
+
+  const transactions = useMemo<TransactionItem[]>(() => {
+    const withdrawalByReference = new Map(
+      withdrawals.map((withdrawal) => [withdrawal.reference, withdrawal])
+    );
+    const withdrawalByID = new Map(withdrawals.map((withdrawal) => [withdrawal.id, withdrawal]));
+    const representedReferences = new Set<string>();
+
+    const ledgerItems = ledger.map((item) => {
+      const reference = getReference(item);
+      const sourceID = item.source_id || item.SourceID;
+      const withdrawal = withdrawalByReference.get(reference) || withdrawalByID.get(sourceID || "");
+      if (withdrawal) representedReferences.add(withdrawal.reference);
+      return withdrawal
+        ? {
+            ...item,
+            withdrawal_status: withdrawal.status,
+            withdrawal_id: withdrawal.id
+          }
+        : item;
+    });
+
+    const historyItems = withdrawals
+      .filter((withdrawal) => !representedReferences.has(withdrawal.reference))
+      .map(withdrawalToTransaction);
+
+    return [...ledgerItems, ...historyItems].sort(
+      (a, b) => new Date(getTimestamp(b)).getTime() - new Date(getTimestamp(a)).getTime()
+    );
+  }, [ledger, withdrawals]);
 
   useEffect(() => {
     trackEvent("transactions_opened", {
@@ -45,11 +104,11 @@ export default function TransactionsScreen() {
   }, [ledger.length]);
 
   const filtered = useMemo(() => {
-    return ledger.filter((item) => {
+    return transactions.filter((item) => {
       if (filter === "all") return true;
       return getDirection(item) === filter;
     });
-  }, [filter, ledger]);
+  }, [filter, transactions]);
 
   const totals = useMemo(() => {
     return ledger.reduce(
@@ -67,7 +126,7 @@ export default function TransactionsScreen() {
     );
   }, [ledger]);
 
-  const openDetails = (item: WalletLedger) => {
+  const openDetails = (item: TransactionItem) => {
     setSelected(item);
     trackEvent("transaction_detail_opened", {
       direction: getDirection(item),
@@ -100,8 +159,8 @@ export default function TransactionsScreen() {
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl
-            refreshing={isRefetching}
-            onRefresh={refetch}
+            refreshing={isRefetching || isWithdrawalsRefetching}
+            onRefresh={() => void Promise.all([refetch(), refetchWithdrawals()])}
             tintColor={COLORS.primary}
           />
         }
@@ -138,11 +197,8 @@ export default function TransactionsScreen() {
             </Text>
           </View>
 
-          {isLoading ? (
-            <View style={styles.loading}>
-              <ActivityIndicator color={COLORS.secondary} />
-              <Text style={styles.loadingText}>Loading transactions...</Text>
-            </View>
+          {isLoading || isWithdrawalsLoading ? (
+            <TransactionListSkeleton />
           ) : filtered.length === 0 ? (
             <View style={styles.empty}>
               <Ionicons name="receipt-outline" size={28} color={COLORS.border} />
@@ -152,12 +208,26 @@ export default function TransactionsScreen() {
               </Text>
             </View>
           ) : (
-            filtered.map((item, index) => (
-              <View key={item.id || item.reference || index}>
-                <TransactionRow item={item} onPress={() => openDetails(item)} />
-                {index < filtered.length - 1 ? <View style={styles.divider} /> : null}
-              </View>
-            ))
+            <>
+              {filtered.map((item, index) => (
+                <View key={item.id || item.reference || index}>
+                  <TransactionRow item={item} onPress={() => openDetails(item)} />
+                  {index < filtered.length - 1 ? <View style={styles.divider} /> : null}
+                </View>
+              ))}
+              {hasNextPage ? (
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  disabled={isFetchingNextPage}
+                  onPress={() => void fetchNextPage()}
+                  style={styles.loadMoreButton}
+                >
+                  <Text style={styles.loadMoreText}>
+                    {isFetchingNextPage ? "Loading..." : "Load older"}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </>
           )}
         </View>
       </ScrollView>
@@ -200,11 +270,12 @@ function TransactionRow({
   item,
   onPress,
 }: {
-  item: WalletLedger;
+  item: TransactionItem;
   onPress: () => void;
 }) {
   const direction = getDirection(item);
   const isCredit = direction === "credit";
+  const status = getTransactionStatus(item);
 
   return (
     <TouchableOpacity activeOpacity={0.78} onPress={onPress} style={styles.row}>
@@ -228,8 +299,8 @@ function TransactionRow({
           {isCredit ? "+" : "−"}
           {formatMoney(Math.abs(getAmount(item)), getCurrency(item))}
         </Text>
-        <Text style={[styles.rowType, isCredit ? styles.rowTypeCredit : styles.rowTypeDebit]}>
-          {direction}
+        <Text style={[styles.rowType, statusToneStyle(status)]}>
+          {formatStatus(status)}
         </Text>
       </View>
     </TouchableOpacity>
@@ -240,7 +311,7 @@ function TransactionDetailModal({
   item,
   onClose,
 }: {
-  item: WalletLedger | null;
+  item: TransactionItem | null;
   onClose: () => void;
 }) {
   if (!item) return null;
@@ -249,6 +320,7 @@ function TransactionDetailModal({
   const direction = getDirection(item);
   const isCredit = direction === "credit";
   const amount = Math.abs(getAmount(item));
+  const status = getTransactionStatus(item);
 
   const copyReference = async () => {
     if (!reference) return;
@@ -265,7 +337,7 @@ function TransactionDetailModal({
     <Modal transparent visible animationType="fade" onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <View style={styles.receiptWrap}>
-          <View style={styles.detailCard}>
+          <View style={[styles.detailCard, receiptToneStyle(status)]}>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={16} color={COLORS.primary} />
             </TouchableOpacity>
@@ -296,21 +368,26 @@ function TransactionDetailModal({
             </View>
 
             <View style={styles.auditList}>
+              <AuditRow label="Status" value={formatStatus(status)} />
               <AuditRow label="Timestamp" value={formatTimestamp(getTimestamp(item), true)} />
               <AuditRow label="Reference" value={reference || "Unavailable"} mono />
               <AuditRow label="Source" value={getSource(item)} />
               <AuditRow label="Ledger type" value={getType(item) || direction} />
-              <AuditRow
-                label="Balance before"
-                value={formatMoney(getBalanceBefore(item), getCurrency(item))}
-                mono
-              />
-              <AuditRow
-                label="Balance after"
-                value={formatMoney(getBalanceAfter(item), getCurrency(item))}
-                mono
-                last
-              />
+              {!item.is_withdrawal_record ? (
+                <>
+                  <AuditRow
+                    label="Balance before"
+                    value={formatMoney(getBalanceBefore(item), getCurrency(item))}
+                    mono
+                  />
+                  <AuditRow
+                    label="Balance after"
+                    value={formatMoney(getBalanceAfter(item), getCurrency(item))}
+                    mono
+                    last
+                  />
+                </>
+              ) : null}
             </View>
 
             {reference ? (
@@ -353,14 +430,91 @@ function AuditRow({
   );
 }
 
+function withdrawalToTransaction(withdrawal: WithdrawalRecord): TransactionItem {
+  return {
+    id: `withdrawal:${withdrawal.id}`,
+    user_id: "",
+    wallet_id: "",
+    currency: withdrawal.currency,
+    reference: withdrawal.reference,
+    type: "withdrawal_debit",
+    source: "withdrawal",
+    amount: withdrawal.amount,
+    description: withdrawal.description || "Wallet withdrawal",
+    created_at: withdrawal.created_at || "",
+    withdrawal_status: withdrawal.status,
+    withdrawal_id: withdrawal.id,
+    is_withdrawal_record: true
+  };
+}
+
+function getTransactionStatus(item: TransactionItem) {
+  return String(item.withdrawal_status || "completed").toLowerCase();
+}
+
+function formatStatus(status: string) {
+  if (["paid", "success", "successful", "completed"].includes(status)) return "Completed";
+  if (["failed", "reversed", "cancelled", "canceled", "rejected"].includes(status)) {
+    return status === "reversed" ? "Reversed" : "Failed";
+  }
+  return "Processing";
+}
+
+function isCompletedStatus(status: string) {
+  return formatStatus(status) === "Completed";
+}
+
+function isFailedStatus(status: string) {
+  return ["Failed", "Reversed"].includes(formatStatus(status));
+}
+
+function statusToneStyle(status: string) {
+  if (isCompletedStatus(status)) return styles.rowTypeCompleted;
+  if (isFailedStatus(status)) return styles.rowTypeFailed;
+  return styles.rowTypeProcessing;
+}
+
+function receiptToneStyle(status: string) {
+  if (isCompletedStatus(status)) return styles.detailCardCompleted;
+  if (isFailedStatus(status)) return styles.detailCardFailed;
+  return styles.detailCardProcessing;
+}
+
+function TransactionListSkeleton() {
+  return (
+    <View style={styles.skeletonList}>
+      {[0, 1, 2, 3].map((item) => (
+        <View key={item} style={styles.skeletonRow}>
+          <View style={styles.skeletonIcon} />
+          <View style={styles.skeletonCopy}>
+            <View style={styles.skeletonLine} />
+            <View style={styles.skeletonLineShort} />
+          </View>
+          <View style={styles.skeletonAmount} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function getAmount(item: WalletLedger) {
   return item.amount ?? item.Amount ?? 0;
 }
 
 function getDirection(item: WalletLedger): "credit" | "debit" {
   const type = getType(item);
+  if (
+    type === "debit" ||
+    type === "withdrawal" ||
+    type === "withdrawal_debit" ||
+    type.includes("fee")
+  ) {
+    return "debit";
+  }
+  if (type === "credit" || type === "refund") return "credit";
   const amount = getAmount(item);
-  if (type.includes("credit") || amount > 0) return "credit";
+  if (amount < 0) return "debit";
+  if (amount > 0) return "credit";
   return "debit";
 }
 
@@ -394,11 +548,11 @@ function getTimestamp(item: WalletLedger) {
 }
 
 function getCurrency(item: WalletLedger) {
-  return item.currency || "NGN";
+  return item.currency || item.Currency || "NGN";
 }
 
 function getReference(item: WalletLedger) {
-  return item.reference || "";
+  return item.reference || item.Reference || "";
 }
 
 function getBalanceBefore(item: WalletLedger) {
@@ -595,6 +749,44 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     opacity: 0.7,
   },
+  skeletonList: {
+    paddingHorizontal: 18,
+    paddingBottom: 10
+  },
+  skeletonRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    paddingVertical: 14
+  },
+  skeletonIcon: {
+    backgroundColor: COLORS.hash,
+    borderRadius: Radius.medium + 6,
+    height: 38,
+    width: 38
+  },
+  skeletonCopy: {
+    flex: 1,
+    gap: 7
+  },
+  skeletonLine: {
+    backgroundColor: COLORS.hash,
+    borderRadius: 6,
+    height: 12,
+    width: "66%"
+  },
+  skeletonLineShort: {
+    backgroundColor: COLORS.hash,
+    borderRadius: 5,
+    height: 9,
+    width: "42%"
+  },
+  skeletonAmount: {
+    backgroundColor: COLORS.hash,
+    borderRadius: 6,
+    height: 13,
+    width: 72
+  },
   empty: {
     alignItems: "center",
     padding: 34,
@@ -618,6 +810,19 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.hash,
     height: 1,
     marginHorizontal: 18,
+  },
+  loadMoreButton: {
+    alignItems: "center",
+    borderTopColor: COLORS.hash,
+    borderTopWidth: 1,
+    justifyContent: "center",
+    marginHorizontal: 18,
+    minHeight: 48
+  },
+  loadMoreText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: "800"
   },
   row: {
     alignItems: "center",
@@ -677,6 +882,15 @@ const styles = StyleSheet.create({
     color: COLORS.tertiary,
     opacity: 0.85,
   },
+  rowTypeCompleted: {
+    color: COLORS.secondary
+  },
+  rowTypeProcessing: {
+    color: "#C47B08"
+  },
+  rowTypeFailed: {
+    color: "#C93C37"
+  },
   modalOverlay: {
     alignItems: "center",
     backgroundColor: "rgba(6, 20, 16, 0.6)",
@@ -708,6 +922,16 @@ const styles = StyleSheet.create({
     borderRadius: Radius.large + 12,
     padding: Padding.containerX,
     width: "100%",
+    borderTopWidth: 7
+  },
+  detailCardCompleted: {
+    borderTopColor: COLORS.secondary
+  },
+  detailCardProcessing: {
+    borderTopColor: "#E59A18"
+  },
+  detailCardFailed: {
+    borderTopColor: "#C93C37"
   },
   closeButton: {
     alignItems: "center",

@@ -4,11 +4,11 @@ import {
   unlockWithBiometrics,
 } from "@/lib/biometric-auth";
 import { COLORS, Radius } from "@/themes/colors";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image } from 'expo-image';
 import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import Toast from "react-native-toast-message";
 import { useAuth } from "../../api/auth";
@@ -16,9 +16,12 @@ import { FlatInput } from "../flatinput";
 import { ErrorModal } from "../ui/ErrorModal";
 import { clearRegistrationFlow } from "./authFlow";
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const LoginScreen = () => {
   const [viewPassword, setViewPassword] = useState(false);
   const [email, setEmail] = useState("");
+  const [rememberedName, setRememberedName] = useState("");
   const [title, setTitle] = useState("Welcome back");
   const [mailAvailable, setMailAvailable] = useState(false)
   const [password, setPassword] = useState("");
@@ -26,13 +29,17 @@ const LoginScreen = () => {
   const [showBiometricEntry, setShowBiometricEntry] = useState(false);
   const [biometricCanAutoUnlock, setBiometricCanAutoUnlock] = useState(false);
   const [isBiometricPending, setIsBiometricPending] = useState(false);
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [passwordTouched, setPasswordTouched] = useState(false);
   const { mutateAsync: login, isPending } = useLogin();
-  const { onLoginSuccess } = useAuth();
+  const { logout, onLoginSuccess } = useAuth();
   const didAutoPromptBiometric = useRef(false);
+
   useEffect(() => {
     const checkMail = async () => {
       const mailInStorage = await AsyncStorage.getItem("email");
       const nameInStorage = await AsyncStorage.getItem("name");
+      setRememberedName(nameInStorage ?? "");
       if (mailInStorage) {
         setEmail(mailInStorage)
         setMailAvailable(true)
@@ -43,6 +50,15 @@ const LoginScreen = () => {
     }
     checkMail();
   }, [])
+
+  const handleSwitchAccount = async () => {
+    await logout();
+    await AsyncStorage.multiRemove(["name", "email"]);
+    setRememberedName("");
+    setEmail("");
+    setTitle("Welcome back");
+    router.replace("/(auth)/initial");
+  };
 
   useEffect(() => {
     const checkBiometric = async () => {
@@ -83,17 +99,54 @@ const LoginScreen = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [biometricCanAutoUnlock, showBiometricEntry]);
 
+  // --- Validation -------------------------------------------------------
+  const trimmedEmail = email.trim();
+  const isEmailValid = mailAvailable
+    ? trimmedEmail.length > 0
+    : EMAIL_REGEX.test(trimmedEmail);
+  const isPasswordValid = password.length > 0;
+
+  const canSubmit = useMemo(
+    () => isEmailValid && isPasswordValid && !isPending && !isBiometricPending,
+    [isEmailValid, isPasswordValid, isPending, isBiometricPending]
+  );
+
+  const emailErrorText =
+    emailTouched && !mailAvailable && !isEmailValid
+      ? trimmedEmail.length === 0
+        ? "Email is required"
+        : "Enter a valid email address"
+      : "";
+
+  const passwordErrorText =
+    passwordTouched && !isPasswordValid ? "Password is required" : "";
+
+  // Clear any stale error as soon as the person starts fixing their input
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
+    if (!emailTouched) setEmailTouched(true);
+    if (errorMessage) setErrorMessage("");
+  };
+
+  const handlePasswordChange = (value: string) => {
+    setPassword(value);
+    if (!passwordTouched) setPasswordTouched(true);
+    if (errorMessage) setErrorMessage("");
+  };
+
   const handleLogin = async () => {
+    if (!canSubmit) return;
+
     try {
       const response = await login({
-        email: email.trim().toLowerCase(),
+        email: trimmedEmail.toLowerCase(),
         password,
       });
 
       onLoginSuccess(response.access_token);
 
       await clearRegistrationFlow();
-      await AsyncStorage.setItem("email", email.trim().toLowerCase());
+      await AsyncStorage.setItem("email", trimmedEmail.toLowerCase());
 
       Toast.show({
         type: "success",
@@ -199,24 +252,41 @@ const LoginScreen = () => {
 
       <View style={styles.card}>
 
-        {!mailAvailable && <FlatInput
-          label="Email"
-          placeholder="Enter your email"
-          value={email}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          onChangeText={setEmail}
-        />}
+        {!mailAvailable && (
+          <>
+            <FlatInput
+              label="Email"
+              placeholder="Enter your email"
+              value={email}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              onChangeText={handleEmailChange}
+              onBlur={() => setEmailTouched(true)}
+              onSubmitEditing={() => {
+                // let the return key move focus rather than submit;
+                // keeps the flow predictable when password isn't filled yet
+              }}
+            />
+            {!!emailErrorText && (
+              <Text style={styles.fieldError}>{emailErrorText}</Text>
+            )}
+          </>
+        )}
         <FlatInput
           label="Password"
           placeholder="Enter your password"
           value={password}
-          onChangeText={setPassword}
-
+          onChangeText={handlePasswordChange}
+          onBlur={() => setPasswordTouched(true)}
+          onSubmitEditing={canSubmit ? handleLogin : undefined}
+          returnKeyType="go"
           secureTextEntry
           viewPassword={viewPassword}
           setViewPassword={setViewPassword}
         />
+        {!!passwordErrorText && (
+          <Text style={styles.fieldError}>{passwordErrorText}</Text>
+        )}
 
         <TouchableOpacity
           onPress={() => router.push("/(auth)/forgot-password")}
@@ -225,8 +295,8 @@ const LoginScreen = () => {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.button, isPending && styles.buttonDisabled]}
-          disabled={isPending || isBiometricPending}
+          style={[styles.button, !canSubmit && styles.buttonDisabled]}
+          disabled={!canSubmit}
           onPress={handleLogin}
         >
           <Text style={styles.buttonText}>
@@ -254,11 +324,10 @@ const LoginScreen = () => {
         ) : null}
 
         <Text
-          onPress={() => router.push("/(auth)/initial")}
+          onPress={() => void handleSwitchAccount()}
           style={styles.footerText}
         >
-          {/* :TODO USE REAL NAME  */}
-          Not Stephen ?
+          {rememberedName ? `Not ${rememberedName}? ` : ""}
           <Text style={styles.link}>Switch Account</Text>
         </Text>
 
@@ -384,6 +453,14 @@ const styles = {
 
   buttonDisabled: {
     opacity: 0.65,
+  },
+
+  fieldError: {
+    color: "#D14343",
+    fontFamily: "System",
+    fontSize: 12,
+    marginBottom: 10,
+    marginTop: -6,
   },
 
   biometricIconButton: {

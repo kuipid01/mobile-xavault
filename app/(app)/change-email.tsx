@@ -290,7 +290,7 @@ export default function ChangeEmailScreen() {
                 ))}
               </View>
               {otpError ? (
-                <Text style={styles.errorHint}>That code didn't match. Try again.</Text>
+                <Text style={styles.errorHint}>That code did not match. Try again.</Text>
               ) : null}
 
               <TouchableOpacity
@@ -306,7 +306,7 @@ export default function ChangeEmailScreen() {
               </TouchableOpacity>
 
               <View style={styles.resendRow}>
-                <Text style={styles.resendText}>Didn't get a code? </Text>
+                <Text style={styles.resendText}>Did not get a code? </Text>
                 <TouchableOpacity onPress={handleResend} disabled={resendIn > 0}>
                   <Text style={[styles.resendLink, resendIn > 0 && styles.resendLinkDisabled]}>
                     {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend code"}

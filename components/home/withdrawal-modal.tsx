@@ -1,9 +1,5 @@
-import {
-  Bank,
-  BankAccount,
-  CreateBankAccountPayload,
-  ResolveAccountResponse,
-} from "@/api/banking";
+import { Bank, BankAccount, CreateBankAccountPayload, ResolveAccountResponse } from "@/api/banking";
+import { getWithdrawal } from "@/api/withdrawals";
 import { formatMoney, nairaToKobo } from "@/api/money";
 import { Envelope, Plan } from "@/api/types";
 import {
@@ -12,7 +8,7 @@ import {
   useBeneficiaries,
   useCreateBankAccount,
   useCreateBeneficiary,
-  useResolveBankAccount,
+  useResolveBankAccount
 } from "@/hooks/app/banking";
 import { useEnvelopes } from "@/hooks/app/envelopes";
 import { usePlans } from "@/hooks/app/plans";
@@ -20,10 +16,11 @@ import {
   useForgotWithdrawalPin,
   useResetWithdrawalPin,
   useSetWithdrawalPin,
-  useWithdrawalPinStatus,
+  useWithdrawalPinStatus
 } from "@/hooks/app/withdrawal-pin";
-import { useRequestWithdrawal } from "@/hooks/app/withdrawals";
+import { usePreviewWithdrawal, useRequestWithdrawal } from "@/hooks/app/withdrawals";
 import { trackEvent } from "@/lib/analytics";
+import { ErrorModal } from "@/components/ui/ErrorModal";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
@@ -41,7 +38,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import Toast from "react-native-toast-message";
 
@@ -63,7 +60,7 @@ const COLOR = {
   amberBorder: "#F2E4A8",
   textBody: "#063B2E",
   textMuted: "#7A8580",
-  textFaint: "#9EAAA5",
+  textFaint: "#9EAAA5"
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -77,13 +74,13 @@ type Props = {
 type WithdrawalTarget =
   | { type: "plan"; id: string; label: string; balance: number; reason: string }
   | {
-    type: "envelope";
-    id: string;
-    label: string;
-    balance: number;
-    reason: string;
-    envelope: Envelope;
-  };
+      type: "envelope";
+      id: string;
+      label: string;
+      balance: number;
+      reason: string;
+      envelope: Envelope;
+    };
 
 type Step = "plan" | "source" | "amount" | "destination" | "review" | "pin";
 
@@ -102,6 +99,20 @@ type WithdrawalReceipt = {
   destination: string;
 };
 
+type WithdrawalProcessingState = "submitting" | "processing" | "completed" | "failed";
+
+const WITHDRAWAL_POLL_INTERVAL_MS = 2000;
+const WITHDRAWAL_POLL_ATTEMPTS = 30;
+
+const normalizeWithdrawalState = (status?: string): WithdrawalProcessingState => {
+  const normalized = String(status || "processing").toLowerCase();
+  if (["paid", "success", "successful", "completed"].includes(normalized)) return "completed";
+  if (["failed", "reversed", "cancelled", "canceled", "rejected"].includes(normalized)) {
+    return "failed";
+  }
+  return "processing";
+};
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const isDateReached = (date?: string | null) => {
@@ -111,9 +122,7 @@ const isDateReached = (date?: string | null) => {
 };
 
 const isPlanMatured = (plan: Plan) =>
-  plan.status === "expired" ||
-  plan.status === "completed" ||
-  isDateReached(plan.end_date);
+  plan.status === "expired" || plan.status === "completed" || isDateReached(plan.end_date);
 
 const isEnvelopeMatured = (envelope: Envelope) =>
   envelope.status === "expired" ||
@@ -133,7 +142,7 @@ const planWithdrawalTarget = (plan: Plan): WithdrawalTarget | null => {
     id: plan.id,
     label: plan.name,
     balance,
-    reason: matured ? "Reached end date" : "Flexible",
+    reason: matured ? "Reached end date" : "Flexible"
   };
 };
 
@@ -148,12 +157,11 @@ const envelopeWithdrawalTarget = (envelope: Envelope): WithdrawalTarget | null =
     label: envelope.name,
     balance,
     reason: matured ? "Reached end date" : "Flexible",
-    envelope,
+    envelope
   };
 };
 
-const maskAccountNumber = (value: string) =>
-  value.length > 4 ? `••${value.slice(-4)}` : value;
+const maskAccountNumber = (value: string) => (value.length > 4 ? `••${value.slice(-4)}` : value);
 
 const mapDestination = (
   account: BankAccount,
@@ -163,7 +171,7 @@ const mapDestination = (
   id: account.id,
   label: account.nickname || account.account_name,
   bank: account.bank_name,
-  accountNumber: account.account_number,
+  accountNumber: account.account_number
 });
 
 const createWithdrawalAttemptKey = () =>
@@ -183,7 +191,7 @@ const STEP_LABELS: Record<Step, string> = {
   amount: "Amount",
   destination: "To",
   review: "Review",
-  pin: "PIN",
+  pin: "PIN"
 };
 // ─── Progress bar ─────────────────────────────────────────────────────────────
 
@@ -196,13 +204,13 @@ const ProgressBar = ({ current }: { current: Step }) => {
       toValue: (currentIdx + 1) / STEPS.length,
       useNativeDriver: false,
       tension: 60,
-      friction: 10,
+      friction: 10
     }).start();
   }, [currentIdx, progress]);
 
   const barWidth = progress.interpolate({
     inputRange: [0, 1],
-    outputRange: ["0%", "100%"],
+    outputRange: ["0%", "100%"]
   });
 
   return (
@@ -211,9 +219,7 @@ const ProgressBar = ({ current }: { current: Step }) => {
         <Animated.View style={[progressStyles.fill, { width: barWidth }]} />
       </View>
       <View style={progressStyles.labelRow}>
-        <Text style={progressStyles.stepName}>
-          {STEP_LABELS[current]}
-        </Text>
+        <Text style={progressStyles.stepName}>{STEP_LABELS[current]}</Text>
         <Text style={progressStyles.stepCount}>
           {currentIdx + 1} of {STEPS.length}
         </Text>
@@ -225,36 +231,36 @@ const ProgressBar = ({ current }: { current: Step }) => {
 const progressStyles = StyleSheet.create({
   wrap: {
     marginBottom: 24,
-    gap: 8,
+    gap: 8
   },
   track: {
     height: 3,
     borderRadius: 99,
     backgroundColor: COLOR.border,
-    overflow: "hidden",
+    overflow: "hidden"
   },
   fill: {
     height: "100%",
     borderRadius: 99,
-    backgroundColor: COLOR.forestMid,
+    backgroundColor: COLOR.forestMid
   },
   labelRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "center"
   },
   stepName: {
     fontSize: 12,
     fontWeight: "800",
     color: COLOR.forestMid,
     textTransform: "uppercase",
-    letterSpacing: 0.6,
+    letterSpacing: 0.6
   },
   stepCount: {
     fontSize: 11,
     fontWeight: "700",
-    color: COLOR.textFaint,
-  },
+    color: COLOR.textFaint
+  }
 });
 
 // ─── Shared list row ──────────────────────────────────────────────────────────
@@ -267,7 +273,7 @@ const SelectRow = ({
   tag,
   balance,
   currency,
-  onPress,
+  onPress
 }: {
   selected: boolean;
   icon: keyof typeof Ionicons.glyphMap;
@@ -297,9 +303,7 @@ const SelectRow = ({
       ) : null}
       {tag ? (
         <View style={[rowStyles.tag, selected && rowStyles.tagSelected]}>
-          <Text style={[rowStyles.tagText, selected && rowStyles.tagTextSelected]}>
-            {tag}
-          </Text>
+          <Text style={[rowStyles.tagText, selected && rowStyles.tagTextSelected]}>{tag}</Text>
         </View>
       ) : null}
       {balance != null ? (
@@ -323,11 +327,11 @@ const rowStyles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: COLOR.border,
     backgroundColor: COLOR.surface,
-    padding: 14,
+    padding: 14
   },
   rowSelected: {
     borderColor: COLOR.forestDeep,
-    backgroundColor: "#F4FAF7",
+    backgroundColor: "#F4FAF7"
   },
   icon: {
     width: 42,
@@ -335,24 +339,24 @@ const rowStyles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: COLOR.bgSubtle,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
   },
   iconSelected: {
-    backgroundColor: COLOR.forestDeep,
+    backgroundColor: COLOR.forestDeep
   },
   body: { flex: 1, gap: 3 },
   title: {
     fontSize: 14,
     fontWeight: "800",
-    color: COLOR.textBody,
+    color: COLOR.textBody
   },
   titleSelected: {
-    color: COLOR.forestDeep,
+    color: COLOR.forestDeep
   },
   meta: {
     fontSize: 12,
     fontWeight: "600",
-    color: COLOR.textFaint,
+    color: COLOR.textFaint
   },
   tag: {
     alignSelf: "flex-start",
@@ -360,28 +364,28 @@ const rowStyles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 999,
     backgroundColor: COLOR.bgSubtle,
-    marginTop: 2,
+    marginTop: 2
   },
   tagSelected: {
-    backgroundColor: COLOR.forestLight,
+    backgroundColor: COLOR.forestLight
   },
   tagText: {
     fontSize: 10,
     fontWeight: "700",
     color: COLOR.textMuted,
-    textTransform: "capitalize",
+    textTransform: "capitalize"
   },
   tagTextSelected: {
-    color: COLOR.forestMid,
+    color: COLOR.forestMid
   },
   balance: {
     fontSize: 13,
     fontWeight: "900",
     color: COLOR.textBody,
-    marginTop: 2,
+    marginTop: 2
   },
   balanceSelected: {
-    color: COLOR.forestMid,
+    color: COLOR.forestMid
   },
   radio: {
     width: 22,
@@ -390,17 +394,17 @@ const rowStyles = StyleSheet.create({
     borderWidth: 2,
     borderColor: COLOR.border,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
   },
   radioSelected: {
-    borderColor: COLOR.forestDeep,
+    borderColor: COLOR.forestDeep
   },
   radioDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: COLOR.forestDeep,
-  },
+    backgroundColor: COLOR.forestDeep
+  }
 });
 
 // ─── Loading / Empty states ───────────────────────────────────────────────────
@@ -423,7 +427,7 @@ const LoadingState = ({ text }: { text: string }) => (
 const EmptyState = ({
   icon,
   title,
-  subtitle,
+  subtitle
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
@@ -444,16 +448,16 @@ const stateStyles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
     paddingVertical: 24,
-    justifyContent: "center",
+    justifyContent: "center"
   },
   text: {
     color: COLOR.textFaint,
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "600"
   },
   skeletonWrap: {
     gap: 10,
-    paddingVertical: 8,
+    paddingVertical: 8
   },
   skeletonRow: {
     alignItems: "center",
@@ -463,35 +467,35 @@ const stateStyles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: 12,
-    padding: 14,
+    padding: 14
   },
   skeletonIcon: {
     backgroundColor: "#E5ECE8",
     borderRadius: 18,
     height: 36,
-    width: 36,
+    width: 36
   },
   skeletonCopy: {
     flex: 1,
-    gap: 7,
+    gap: 7
   },
   skeletonLine: {
     backgroundColor: "#E5ECE8",
     borderRadius: 6,
     height: 12,
-    width: "64%",
+    width: "64%"
   },
   skeletonLineSm: {
     backgroundColor: "#E5ECE8",
     borderRadius: 5,
     height: 10,
-    width: "42%",
+    width: "42%"
   },
   skeletonPill: {
     backgroundColor: "#E5ECE8",
     borderRadius: 999,
     height: 22,
-    width: 58,
+    width: 58
   },
   emptyCard: {
     backgroundColor: COLOR.bgSubtle,
@@ -500,7 +504,7 @@ const stateStyles = StyleSheet.create({
     borderColor: COLOR.border,
     padding: 28,
     alignItems: "center",
-    gap: 8,
+    gap: 8
   },
   emptyIcon: {
     width: 52,
@@ -511,12 +515,12 @@ const stateStyles = StyleSheet.create({
     borderColor: COLOR.border,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 4,
+    marginBottom: 4
   },
   emptyTitle: {
     fontSize: 14,
     fontWeight: "900",
-    color: COLOR.textBody,
+    color: COLOR.textBody
   },
   emptySub: {
     fontSize: 12,
@@ -524,8 +528,8 @@ const stateStyles = StyleSheet.create({
     color: COLOR.textFaint,
     textAlign: "center",
     lineHeight: 18,
-    maxWidth: 240,
-  },
+    maxWidth: 240
+  }
 });
 
 // ─── Summary card (reused in PIN + Confirm steps) ─────────────────────────────
@@ -536,7 +540,7 @@ const SummaryCard = ({
   destination,
   amountInKobo,
   withdrawAll,
-  compact = false,
+  compact = false
 }: {
   plan?: Plan;
   target?: WithdrawalTarget;
@@ -548,9 +552,7 @@ const SummaryCard = ({
   <View style={summaryStyles.card}>
     <View style={summaryStyles.amountBlock}>
       <Text style={summaryStyles.amountLabel}>You&apos;re withdrawing</Text>
-      <Text style={summaryStyles.amountValue}>
-        {formatMoney(amountInKobo, plan?.currency)}
-      </Text>
+      <Text style={summaryStyles.amountValue}>{formatMoney(amountInKobo, plan?.currency)}</Text>
       {withdrawAll && (
         <View style={summaryStyles.badge}>
           <Ionicons name="checkmark-circle" size={11} color={COLOR.forestMid} />
@@ -560,13 +562,7 @@ const SummaryCard = ({
     </View>
     <View style={summaryStyles.divider} />
     <View style={summaryStyles.rows}>
-      {!compact && (
-        <SummaryRow
-          label="Plan"
-          value={plan?.name}
-          icon="layers-outline"
-        />
-      )}
+      {!compact && <SummaryRow label="Plan" value={plan?.name} icon="layers-outline" />}
       <SummaryRow
         label="From"
         value={target?.label}
@@ -593,7 +589,7 @@ const SummaryRow = ({
   value,
   icon,
   sub,
-  last,
+  last
 }: {
   label: string;
   value?: string;
@@ -622,25 +618,25 @@ const summaryStyles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: COLOR.border,
     overflow: "hidden",
-    marginBottom: 16,
+    marginBottom: 16
   },
   amountBlock: {
     padding: 20,
     gap: 6,
-    backgroundColor: COLOR.forestLight,
+    backgroundColor: COLOR.forestLight
   },
   amountLabel: {
     fontSize: 10,
     fontWeight: "800",
     color: COLOR.forestMid,
     textTransform: "uppercase",
-    letterSpacing: 0.8,
+    letterSpacing: 0.8
   },
   amountValue: {
     fontSize: 32,
     fontWeight: "900",
     color: COLOR.forestDeep,
-    letterSpacing: -1,
+    letterSpacing: -1
   },
   badge: {
     flexDirection: "row",
@@ -653,16 +649,16 @@ const summaryStyles = StyleSheet.create({
     backgroundColor: COLOR.surface,
     borderWidth: 1,
     borderColor: COLOR.forestBorder,
-    marginTop: 2,
+    marginTop: 2
   },
   badgeText: {
     fontSize: 11,
     fontWeight: "800",
-    color: COLOR.forestMid,
+    color: COLOR.forestMid
   },
   divider: {
     height: 1,
-    backgroundColor: COLOR.border,
+    backgroundColor: COLOR.border
   },
   rows: {},
   detailRow: {
@@ -672,10 +668,10 @@ const summaryStyles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#F0F4F2",
+    borderBottomColor: "#F0F4F2"
   },
   detailRowLast: {
-    borderBottomWidth: 0,
+    borderBottomWidth: 0
   },
   detailIconWrap: {
     width: 28,
@@ -684,29 +680,29 @@ const summaryStyles = StyleSheet.create({
     backgroundColor: COLOR.forestLight,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 2,
+    marginTop: 2
   },
   detailContent: {
     flex: 1,
-    gap: 2,
+    gap: 2
   },
   detailLabel: {
     fontSize: 10,
     fontWeight: "800",
     color: COLOR.textFaint,
     textTransform: "uppercase",
-    letterSpacing: 0.4,
+    letterSpacing: 0.4
   },
   detailValue: {
     fontSize: 13,
     fontWeight: "800",
-    color: COLOR.textBody,
+    color: COLOR.textBody
   },
   detailSub: {
     fontSize: 11,
     fontWeight: "600",
-    color: COLOR.textMuted,
-  },
+    color: COLOR.textMuted
+  }
 });
 
 // ─── Main modal ───────────────────────────────────────────────────────────────
@@ -722,42 +718,54 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
   const [newWithdrawalPin, setNewWithdrawalPin] = useState("");
   const [resetOtp, setResetOtp] = useState("");
   const [pinMode, setPinMode] = useState<"enter" | "reset">("enter");
-  const [withdrawalAttemptKey, setWithdrawalAttemptKey] = useState(
-    createWithdrawalAttemptKey
-  );
-  const [processingState, setProcessingState] = useState<
-    "processing" | "success" | undefined
-  >();
-  const [withdrawalReceipt, setWithdrawalReceipt] =
-    useState<WithdrawalReceipt | null>(null);
+  const [withdrawalAttemptKey, setWithdrawalAttemptKey] = useState(createWithdrawalAttemptKey);
+  const [processingState, setProcessingState] = useState<WithdrawalProcessingState>();
+  const [withdrawalReceipt, setWithdrawalReceipt] = useState<WithdrawalReceipt | null>(null);
+  const [modalError, setModalError] = useState<{
+    title: string;
+    message: string;
+    supportReference?: string;
+  } | null>(null);
+  const withdrawalPollSession = useRef(0);
 
-  const { data: plansData, isLoading: isPlansLoading } = usePlans();
+  const showError = (title: string, error: any, fallback: string) => {
+    const message =
+      error?.response?.data?.message ||
+      error?.response?.data?.error?.message ||
+      error?.message ||
+      fallback;
+    const supportReference =
+      error?.response?.data?.support_reference ||
+      error?.response?.headers?.["x-support-reference"];
+    setModalError({
+      title,
+      message: String(message),
+      supportReference: supportReference ? String(supportReference) : undefined,
+    });
+  };
+
+  const { data: plansData, isLoading: isPlansLoading, refetch: refetchPlans } = usePlans();
   const plans = useMemo(() => plansData?.items || [], [plansData?.items]);
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
 
-  const { data: envelopes = [], isLoading: isEnvelopesLoading } =
-    useEnvelopes(selectedPlanId);
+  const {
+    data: envelopes = [],
+    isLoading: isEnvelopesLoading,
+    refetch: refetchEnvelopes
+  } = useEnvelopes(selectedPlanId);
   const { data: banks = [], isLoading: isBanksLoading } = useBanks();
-  const { data: bankAccounts = [], isLoading: isAccountsLoading } =
-    useBankAccounts();
-  const { data: beneficiaries = [], isLoading: isBeneficiariesLoading } =
-    useBeneficiaries();
-  const { mutateAsync: resolveAccount, isPending: isResolvingAccount } =
-    useResolveBankAccount();
-  const { mutateAsync: createBankAccount, isPending: isCreatingAccount } =
-    useCreateBankAccount();
+  const { data: bankAccounts = [], isLoading: isAccountsLoading } = useBankAccounts();
+  const { data: beneficiaries = [], isLoading: isBeneficiariesLoading } = useBeneficiaries();
+  const { mutateAsync: resolveAccount, isPending: isResolvingAccount } = useResolveBankAccount();
+  const { mutateAsync: createBankAccount, isPending: isCreatingAccount } = useCreateBankAccount();
   const { mutateAsync: createBeneficiary, isPending: isCreatingBeneficiary } =
     useCreateBeneficiary();
-  const { mutateAsync: requestWithdrawal, isPending: isWithdrawing } =
-    useRequestWithdrawal();
-  const { data: pinStatus, isLoading: isPinStatusLoading } =
-    useWithdrawalPinStatus();
-  const { mutateAsync: saveWithdrawalPin, isPending: isSettingPin } =
-    useSetWithdrawalPin();
-  const { mutateAsync: forgotWithdrawalPin, isPending: isSendingPinOtp } =
-    useForgotWithdrawalPin();
-  const { mutateAsync: resetWithdrawalPin, isPending: isResettingPin } =
-    useResetWithdrawalPin();
+  const { mutateAsync: requestWithdrawal, isPending: isWithdrawing } = useRequestWithdrawal();
+  const { mutateAsync: previewWithdrawal, isPending: isPreviewing } = usePreviewWithdrawal();
+  const { data: pinStatus, isLoading: isPinStatusLoading } = useWithdrawalPinStatus();
+  const { mutateAsync: saveWithdrawalPin, isPending: isSettingPin } = useSetWithdrawalPin();
+  const { mutateAsync: forgotWithdrawalPin, isPending: isSendingPinOtp } = useForgotWithdrawalPin();
+  const { mutateAsync: resetWithdrawalPin, isPending: isResettingPin } = useResetWithdrawalPin();
 
   const targetOptions = useMemo(() => {
     if (!selectedPlan) return [];
@@ -772,16 +780,14 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
   const destinationOptions: DestinationSelection[] = useMemo(
     () => [
       ...bankAccounts.map((account) => mapDestination(account, "account")),
-      ...beneficiaries.map((account) => mapDestination(account, "beneficiary")),
+      ...beneficiaries.map((account) => mapDestination(account, "beneficiary"))
     ],
     [bankAccounts, beneficiaries]
   );
   const selectedDestination = destinationOptions.find(
     (d) => `${d.type}:${d.id}` === selectedDestinationKey
   );
-  const amountInKobo = withdrawAll
-    ? selectedTarget?.balance || 0
-    : nairaToKobo(amount);
+  const amountInKobo = withdrawAll ? selectedTarget?.balance || 0 : nairaToKobo(amount);
   const amountIsValid =
     !!selectedTarget && amountInKobo > 0 && amountInKobo <= selectedTarget.balance;
   const hasWithdrawalPin = !!pinStatus?.has_pin;
@@ -795,7 +801,14 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
     !isPinStatusLoading &&
     pinMode === "enter" &&
     pinIsValid &&
+    !isPreviewing &&
     !processingState;
+
+  useEffect(() => {
+    if (!visible) return;
+    void refetchPlans();
+    if (selectedPlanId) void refetchEnvelopes();
+  }, [refetchEnvelopes, refetchPlans, selectedPlanId, visible]);
 
   // Auto-select first plan
   useEffect(() => {
@@ -810,6 +823,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
   }, [selectedPlanId, targetOptions]);
 
   const resetAndClose = () => {
+    withdrawalPollSession.current += 1;
     setStep("plan");
     setAmount("");
     setWithdrawAll(true);
@@ -823,6 +837,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
     setWithdrawalAttemptKey(createWithdrawalAttemptKey());
     setProcessingState(undefined);
     setWithdrawalReceipt(null);
+    setModalError(null);
     onClose();
   };
 
@@ -835,11 +850,11 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
     resetOtp.length > 0;
 
   const requestClose = () => {
-    if (processingState === "processing" || isWithdrawing || isSettingPin) {
+    if (processingState === "submitting" || isWithdrawing || isSettingPin) {
       showBottomToast({
         type: "info",
         text1: "Withdrawal in progress",
-        text2: "Please wait while we finish this request.",
+        text2: "Please wait while we finish this request."
       });
       return;
     }
@@ -851,14 +866,14 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
 
     trackEvent("withdrawal_abandoned", {
       amount: amountInKobo,
-      step,
+      step
     });
     Alert.alert(
       "Discard withdrawal?",
       "You have started a withdrawal. Closing now will clear this request.",
       [
         { text: "Keep editing", style: "cancel" },
-        { text: "Discard", style: "destructive", onPress: resetAndClose },
+        { text: "Discard", style: "destructive", onPress: resetAndClose }
       ]
     );
   };
@@ -869,7 +884,17 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
     else requestClose();
   };
 
-  const handleContinue = () => {
+  const buildPreviewPayload = () => {
+    if (!selectedTarget) return null;
+    return {
+      source_type:
+        selectedTarget.type === "plan" ? ("plan_unboxed" as const) : ("envelope" as const),
+      envelope_id: selectedTarget.type === "envelope" ? selectedTarget.id : undefined,
+      amount: amountInKobo
+    };
+  };
+
+  const handleContinue = async () => {
     if (step === "plan") {
       if (!selectedPlanId) {
         showBottomToast({ type: "error", text1: "Select a plan to continue." });
@@ -878,12 +903,15 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
       setStep("source");
     } else if (step === "source") {
       if (!selectedTargetId) {
-        showBottomToast({ type: "error", text1: "Select a withdrawal source." });
+        showBottomToast({
+          type: "error",
+          text1: "Select a withdrawal source."
+        });
         return;
       }
       trackEvent("withdrawal_source_selected", {
         source_type: selectedTarget?.type || null,
-        source_id: selectedTargetId,
+        source_id: selectedTargetId
       });
       setStep("amount");
     } else if (step === "amount") {
@@ -891,24 +919,44 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
         showBottomToast({
           type: "error",
           text1: "Invalid amount",
-          text2: `Max: ${formatMoney(selectedTarget?.balance || 0)}`,
+          text2: `Max: ${formatMoney(selectedTarget?.balance || 0)}`
         });
         return;
       }
-      setStep("destination");
+      const previewPayload = buildPreviewPayload();
+      if (!previewPayload || !selectedPlan) return;
+      try {
+        const preview = await previewWithdrawal({
+          planId: selectedPlan.id,
+          payload: previewPayload
+        });
+        if (!preview?.can_withdraw) {
+          setModalError({
+            title: "Balance is no longer available",
+            message: preview?.validation_errors?.[0] || "Refresh and choose another amount."
+          });
+          return;
+        }
+        setStep("destination");
+      } catch (error: any) {
+        showError("Could not verify this balance", error, "Please try again.");
+      }
     } else if (step === "destination") {
       if (!selectedDestination) {
-        showBottomToast({ type: "error", text1: "Select a destination account." });
+        showBottomToast({
+          type: "error",
+          text1: "Select a destination account."
+        });
         return;
       }
       trackEvent("withdrawal_destination_selected", {
-        destination_type: selectedDestination.type,
+        destination_type: selectedDestination.type
       });
       setStep("review");
     } else if (step === "review") {
       trackEvent("withdrawal_reviewed", {
         amount: amountInKobo,
-        source_type: selectedTarget?.type || null,
+        source_type: selectedTarget?.type || null
       });
       setStep("pin");
     } else if (step === "pin") {
@@ -917,8 +965,27 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
   };
 
   const handleConfirm = async () => {
-    if (!canConfirm || !selectedPlan || !selectedTarget || !selectedDestination)
+    if (!canConfirm || !selectedPlan || !selectedTarget || !selectedDestination) return;
+
+    const previewPayload = buildPreviewPayload();
+    if (!previewPayload) return;
+    try {
+      const latest = await previewWithdrawal({
+        planId: selectedPlan.id,
+        payload: previewPayload
+      });
+      if (!latest?.can_withdraw) {
+        setStep("amount");
+        setModalError({
+          title: "Balance changed",
+          message: latest?.validation_errors?.[0] || "Review the available amount and try again."
+        });
+        return;
+      }
+    } catch (error: any) {
+      showError("Could not verify this balance", error, "Please try again.");
       return;
+    }
 
     // If user doesn't have a PIN yet, save it first
     if (!hasWithdrawalPin) {
@@ -926,43 +993,34 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
         await saveWithdrawalPin(newWithdrawalPin);
         setWithdrawalPin(newWithdrawalPin);
       } catch (error: any) {
-        showBottomToast({
-          type: "error",
-          text1: "Could not save PIN",
-          text2:
-            error?.response?.data?.message ||
-            error?.message ||
-            "Please try again.",
-        });
+        showError("Could not save PIN", error, "Please try again.");
         return;
       }
     }
 
     const payload = {
       source_type:
-        selectedTarget.type === "plan"
-          ? ("plan_unboxed" as const)
-          : ("envelope" as const),
-      envelope_id:
-        selectedTarget.type === "envelope" ? selectedTarget.id : undefined,
+        selectedTarget.type === "plan" ? ("plan_unboxed" as const) : ("envelope" as const),
+      envelope_id: selectedTarget.type === "envelope" ? selectedTarget.id : undefined,
       amount: amountInKobo,
       destination_type: selectedDestination.type,
       destination_id: selectedDestination.id,
       withdrawal_pin: pinToSubmit,
-      idempotency_key: withdrawalAttemptKey,
+      idempotency_key: withdrawalAttemptKey
     };
 
     try {
-      setProcessingState("processing");
+      setProcessingState("submitting");
       trackEvent("withdrawal_pin_entered", {
         amount: amountInKobo,
-        source_type: selectedTarget.type,
+        source_type: selectedTarget.type
       });
-      const response = await requestWithdrawal({ planId: selectedPlan.id, payload });
+      const response = await requestWithdrawal({
+        planId: selectedPlan.id,
+        payload
+      });
       const reference =
-        response?.withdrawal?.reference ||
-        response?.paystack?.reference ||
-        withdrawalAttemptKey;
+        response?.withdrawal?.reference || response?.paystack?.reference || withdrawalAttemptKey;
 
       setWithdrawalReceipt({
         reference,
@@ -970,41 +1028,79 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
         status: response?.withdrawal?.status || "processing",
         destination: `${selectedDestination.bank} ${maskAccountNumber(
           selectedDestination.accountNumber
-        )}`,
+        )}`
       });
-      trackEvent("withdrawal_completed", {
-        amount: response?.withdrawal?.amount || amountInKobo,
-        reference,
-        status: response?.withdrawal?.status || "processing",
-      });
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      await onCompleted?.();
-      setProcessingState("success");
+      const initialState = normalizeWithdrawalState(response?.withdrawal?.status);
+      setProcessingState(initialState);
+
+      if (initialState === "completed") {
+        trackEvent("withdrawal_completed", {
+          amount: response?.withdrawal?.amount || amountInKobo,
+          reference,
+          status: response?.withdrawal?.status || "paid"
+        });
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        await onCompleted?.();
+        return;
+      }
+
+      const withdrawalId = response?.withdrawal?.id;
+      if (!withdrawalId || initialState === "failed") return;
+      const pollSession = ++withdrawalPollSession.current;
+
+      for (let attempt = 0; attempt < WITHDRAWAL_POLL_ATTEMPTS; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, WITHDRAWAL_POLL_INTERVAL_MS));
+        if (withdrawalPollSession.current !== pollSession) return;
+        let current;
+        try {
+          current = await getWithdrawal(withdrawalId);
+        } catch {
+          // A temporary network error must not turn an accepted transfer into a failed one.
+          continue;
+        }
+        const currentState = normalizeWithdrawalState(current?.status);
+        setWithdrawalReceipt((receipt) =>
+          receipt ? { ...receipt, status: current?.status || receipt.status } : receipt
+        );
+        setProcessingState(currentState);
+
+        if (currentState === "completed") {
+          trackEvent("withdrawal_completed", {
+            amount: current?.amount || amountInKobo,
+            reference: current?.reference || reference,
+            status: current?.status || "paid"
+          });
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          await onCompleted?.();
+          break;
+        }
+        if (currentState === "failed") {
+          trackEvent("withdrawal_failed", {
+            amount: current?.amount || amountInKobo,
+            reference: current?.reference || reference,
+            status: current?.status || "failed"
+          });
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          break;
+        }
+      }
     } catch (error: any) {
       setProcessingState(undefined);
       setWithdrawalAttemptKey(createWithdrawalAttemptKey());
       trackEvent("withdrawal_failed", {
         amount: amountInKobo,
-        error:
-          error?.response?.data?.message ||
-          error?.message ||
-          "unknown",
+        error: error?.response?.data?.message || error?.message || "unknown"
       });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      showBottomToast({
-        type: "error",
-        text1: "Withdrawal failed",
-        text2:
-          error?.response?.data?.message ||
-          error?.message ||
-          "Please try again.",
-      });
+      setWithdrawalPin("");
+      showError("Withdrawal failed", error, "Please try again.");
     }
   };
 
   const isCTADisabled =
     (step === "plan" && !selectedPlanId) ||
     (step === "source" && !selectedTargetId) ||
+    isPreviewing ||
     (step === "amount" && !amountIsValid) ||
     (step === "destination" && !selectedDestination) ||
     (step === "review" && (!selectedDestination || !amountIsValid)) ||
@@ -1013,6 +1109,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
   const isLastStep = step === "pin";
 
   return (
+    <>
     <Modal visible={visible} transparent animationType="slide" onRequestClose={requestClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -1026,21 +1123,13 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
 
           {/* ── Sheet header ── */}
           <View style={styles.sheetHeader}>
-            <TouchableOpacity
-              onPress={goBack}
-              style={styles.navButton}
-              activeOpacity={0.75}
-            >
+            <TouchableOpacity onPress={goBack} style={styles.navButton} activeOpacity={0.75}>
               <Ionicons name="arrow-back" size={18} color={COLOR.forestDeep} />
             </TouchableOpacity>
 
             <Text style={styles.sheetTitle}>Withdraw</Text>
 
-            <TouchableOpacity
-              onPress={requestClose}
-              style={styles.navButton}
-              activeOpacity={0.75}
-            >
+            <TouchableOpacity onPress={requestClose} style={styles.navButton} activeOpacity={0.75}>
               <Ionicons name="close" size={16} color={COLOR.forestDeep} />
             </TouchableOpacity>
           </View>
@@ -1097,9 +1186,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
                 accounts={bankAccounts}
                 destinationOptions={destinationOptions}
                 selectedDestinationKey={selectedDestinationKey}
-                isLoading={
-                  isBanksLoading || isAccountsLoading || isBeneficiariesLoading
-                }
+                isLoading={isBanksLoading || isAccountsLoading || isBeneficiariesLoading}
                 isResolving={isResolvingAccount}
                 isSaving={isCreatingAccount || isCreatingBeneficiary}
                 onSelect={setSelectedDestinationKey}
@@ -1154,24 +1241,17 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
                     showBottomToast({
                       type: "success",
                       text1: "OTP sent",
-                      text2: "Check your email for the reset code.",
+                      text2: "Check your email for the reset code."
                     });
                   } catch (error: any) {
-                    showBottomToast({
-                      type: "error",
-                      text1: "Could not send OTP",
-                      text2:
-                        error?.response?.data?.message ||
-                        error?.message ||
-                        "Please try again.",
-                    });
+                    showError("Could not send OTP", error, "Please try again.");
                   }
                 }}
                 onResetPin={async () => {
                   try {
                     await resetWithdrawalPin({
                       otp: resetOtp,
-                      pin: newWithdrawalPin,
+                      pin: newWithdrawalPin
                     });
                     setWithdrawalPin(newWithdrawalPin);
                     setNewWithdrawalPin("");
@@ -1180,17 +1260,10 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
                     showBottomToast({
                       type: "success",
                       text1: "PIN reset",
-                      text2: "You can now confirm this withdrawal.",
+                      text2: "You can now confirm this withdrawal."
                     });
                   } catch (error: any) {
-                    showBottomToast({
-                      type: "error",
-                      text1: "Could not reset PIN",
-                      text2:
-                        error?.response?.data?.message ||
-                        error?.message ||
-                        "Please check the OTP and try again.",
-                    });
+                    showError("Could not reset PIN", error, "Please check the OTP and try again.");
                   }
                 }}
                 onCancelReset={() => {
@@ -1241,6 +1314,14 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
         )}
       </KeyboardAvoidingView>
     </Modal>
+    <ErrorModal
+      visible={modalError !== null}
+      title={modalError?.title}
+      message={modalError?.message || "Something went wrong."}
+      supportReference={modalError?.supportReference}
+      onClose={() => setModalError(null)}
+    />
+    </>
   );
 };
 
@@ -1250,7 +1331,7 @@ const StepPlan = ({
   plans,
   isLoading,
   selectedPlanId,
-  onSelect,
+  onSelect
 }: {
   plans: Plan[];
   isLoading: boolean;
@@ -1258,10 +1339,7 @@ const StepPlan = ({
   onSelect: (id: string) => void;
 }) => (
   <View style={stepStyles.wrap}>
-    <StepHeading
-      title="Which plan?"
-      sub="Choose the plan you want to withdraw from."
-    />
+    <StepHeading title="Which plan?" sub="Choose the plan you want to withdraw from." />
     {isLoading ? (
       <LoadingState text="Loading plans…" />
     ) : plans.length === 0 ? (
@@ -1290,7 +1368,7 @@ const StepSource = ({
   isLoading,
   selectedTargetId,
   onSelect,
-  currency,
+  currency
 }: {
   targetOptions: WithdrawalTarget[];
   isLoading: boolean;
@@ -1299,10 +1377,7 @@ const StepSource = ({
   currency?: string;
 }) => (
   <View style={stepStyles.wrap}>
-    <StepHeading
-      title="Which balance?"
-      sub="Only unlocked or matured balances can be withdrawn."
-    />
+    <StepHeading title="Which balance?" sub="Only unlocked or matured balances can be withdrawn." />
     {isLoading ? (
       <LoadingState text="Checking sources…" />
     ) : targetOptions.length === 0 ? (
@@ -1339,7 +1414,7 @@ const StepAmount = ({
   withdrawAll,
   amountInKobo,
   onChangeAmount,
-  onWithdrawAll,
+  onWithdrawAll
 }: {
   selectedTarget?: WithdrawalTarget;
   currency?: string;
@@ -1368,7 +1443,11 @@ const StepAmount = ({
     <View style={[amountStyles.inputWrap, withdrawAll && amountStyles.inputWrapMuted]}>
       <Text style={amountStyles.currencySymbol}>₦</Text>
       <TextInput
-        value={withdrawAll ? formatMoney(selectedTarget?.balance || 0, currency).replace(/[^0-9]/g, "") : amount}
+        value={
+          withdrawAll
+            ? formatMoney(selectedTarget?.balance || 0, currency).replace(/[^0-9]/g, "")
+            : amount
+        }
         onChangeText={(v) => {
           if (withdrawAll) return;
           onChangeAmount(v);
@@ -1407,10 +1486,7 @@ const StepAmount = ({
       <View style={amountStyles.preview}>
         <Ionicons name="arrow-forward-circle-outline" size={15} color={COLOR.forestMid} />
         <Text style={amountStyles.previewText}>
-          Sending{" "}
-          <Text style={{ fontWeight: "900" }}>
-            {formatMoney(amountInKobo, currency)}
-          </Text>{" "}
+          Sending <Text style={{ fontWeight: "900" }}>{formatMoney(amountInKobo, currency)}</Text>{" "}
           to your account.
         </Text>
       </View>
@@ -1431,7 +1507,7 @@ const StepDestination = ({
   onSelect,
   onResolve,
   onCreateAccount,
-  onCreateBeneficiary,
+  onCreateBeneficiary
 }: {
   banks: Bank[];
   accounts: BankAccount[];
@@ -1461,27 +1537,26 @@ const StepDestination = ({
   const filteredDestinations = destinationOptions.filter((d) => {
     const q = destinationSearch.trim().toLowerCase();
     if (!q) return true;
-    return [d.label, d.bank, d.accountNumber].some((v) =>
-      v.toLowerCase().includes(q)
-    );
+    return [d.label, d.bank, d.accountNumber].some((v) => v.toLowerCase().includes(q));
   });
   const filteredBanks = banks.filter((b) => {
     const q = bankSearch.trim().toLowerCase();
     if (!q) return true;
-    return [b.name, b.code, b.slug]
-      .filter(Boolean)
-      .some((v) => v.toLowerCase().includes(q));
+    return [b.name, b.code, b.slug].filter(Boolean).some((v) => v.toLowerCase().includes(q));
   });
 
   const handleResolve = async () => {
     if (!selectedBankCode || accountNumber.length < 10) {
-      showBottomToast({ type: "error", text1: "Enter bank and 10-digit account number" });
+      showBottomToast({
+        type: "error",
+        text1: "Enter bank and 10-digit account number"
+      });
       return;
     }
     try {
       const result = await onResolve({
         bank_code: selectedBankCode,
-        account_number: accountNumber,
+        account_number: accountNumber
       });
       setResolved(result);
     } catch (error: any) {
@@ -1489,10 +1564,7 @@ const StepDestination = ({
       showBottomToast({
         type: "error",
         text1: "Could not verify account",
-        text2:
-          error?.response?.data?.message ||
-          error?.message ||
-          "Please check the bank details.",
+        text2: error?.response?.data?.message || error?.message || "Please check the bank details."
       });
     }
   };
@@ -1504,7 +1576,7 @@ const StepDestination = ({
       bank_code: selectedBank.code,
       account_number: resolved.account_number,
       nickname,
-      is_default: saveAs === "account" && accounts.length === 0,
+      is_default: saveAs === "account" && accounts.length === 0
     };
     try {
       if (saveAs === "account") await onCreateAccount(payload);
@@ -1518,18 +1590,14 @@ const StepDestination = ({
       showBottomToast({
         type: "error",
         text1: "Could not save account",
-        text2:
-          error?.response?.data?.message || error?.message || "Please try again.",
+        text2: error?.response?.data?.message || error?.message || "Please try again."
       });
     }
   };
 
   return (
     <View style={stepStyles.wrap}>
-      <StepHeading
-        title="Send to where?"
-        sub="Pick a saved account or add a new one."
-      />
+      <StepHeading title="Send to where?" sub="Pick a saved account or add a new one." />
 
       {isLoading && <LoadingState text="Loading accounts…" />}
 
@@ -1589,9 +1657,7 @@ const StepDestination = ({
         <View style={destStyles.addToggleIcon}>
           <Ionicons name={showAdd ? "remove" : "add"} size={16} color={COLOR.forestDeep} />
         </View>
-        <Text style={destStyles.addToggleText}>
-          {showAdd ? "Cancel" : "Add a new account"}
-        </Text>
+        <Text style={destStyles.addToggleText}>{showAdd ? "Cancel" : "Add a new account"}</Text>
       </TouchableOpacity>
 
       {showAdd && (
@@ -1610,9 +1676,7 @@ const StepDestination = ({
                   size={13}
                   color={saveAs === opt ? "#FFF" : COLOR.textMuted}
                 />
-                <Text
-                  style={[destStyles.segText, saveAs === opt && destStyles.segTextActive]}
-                >
+                <Text style={[destStyles.segText, saveAs === opt && destStyles.segTextActive]}>
                   {opt === "account" ? "My account" : "Beneficiary"}
                 </Text>
               </TouchableOpacity>
@@ -1649,9 +1713,7 @@ const StepDestination = ({
                   }}
                   style={[destStyles.bankChip, sel && destStyles.bankChipActive]}
                 >
-                  {sel && (
-                    <Ionicons name="checkmark-circle" size={13} color={COLOR.forestMid} />
-                  )}
+                  {sel && <Ionicons name="checkmark-circle" size={13} color={COLOR.forestMid} />}
                   <Text
                     style={[destStyles.bankChipText, sel && destStyles.bankChipTextActive]}
                     numberOfLines={1}
@@ -1661,9 +1723,7 @@ const StepDestination = ({
                 </TouchableOpacity>
               );
             })}
-            {filteredBanks.length === 0 && (
-              <Text style={destStyles.noBank}>No matching bank.</Text>
-            )}
+            {filteredBanks.length === 0 && <Text style={destStyles.noBank}>No matching bank.</Text>}
           </ScrollView>
 
           {/* Account number */}
@@ -1738,7 +1798,7 @@ const StepReview = ({
   selectedTarget,
   selectedDestination,
   amountInKobo,
-  withdrawAll,
+  withdrawAll
 }: {
   selectedPlan?: Plan;
   selectedTarget?: WithdrawalTarget;
@@ -1765,9 +1825,7 @@ const StepReview = ({
         label="From"
         value={selectedTarget?.label || "Selected source"}
         sub={
-          selectedTarget?.type === "envelope"
-            ? "Envelope unboxed balance"
-            : "Plan unboxed balance"
+          selectedTarget?.type === "envelope" ? "Envelope unboxed balance" : "Plan unboxed balance"
         }
       />
       <ReviewRow
@@ -1776,8 +1834,8 @@ const StepReview = ({
         sub={
           selectedDestination
             ? `${selectedDestination.bank} | ${maskAccountNumber(
-              selectedDestination.accountNumber
-            )}`
+                selectedDestination.accountNumber
+              )}`
             : undefined
         }
       />
@@ -1807,7 +1865,7 @@ const ReviewRow = ({
   label,
   value,
   sub,
-  last,
+  last
 }: {
   label: string;
   value: string;
@@ -1830,7 +1888,7 @@ const reviewStyles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1.5,
     marginBottom: 14,
-    overflow: "hidden",
+    overflow: "hidden"
   },
   row: {
     borderBottomColor: "#F0F4F2",
@@ -1838,10 +1896,10 @@ const reviewStyles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
     paddingHorizontal: 16,
-    paddingVertical: 13,
+    paddingVertical: 13
   },
   rowLast: {
-    borderBottomWidth: 0,
+    borderBottomWidth: 0
   },
   label: {
     color: COLOR.textFaint,
@@ -1849,23 +1907,23 @@ const reviewStyles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: 0.5,
     textTransform: "uppercase",
-    width: 76,
+    width: 76
   },
   copy: {
     flex: 1,
-    gap: 2,
+    gap: 2
   },
   value: {
     color: COLOR.textBody,
     fontSize: 13,
-    fontWeight: "900",
+    fontWeight: "900"
   },
   sub: {
     color: COLOR.textMuted,
     fontSize: 11,
     fontWeight: "600",
-    lineHeight: 16,
-  },
+    lineHeight: 16
+  }
 });
 
 const StepPin = ({
@@ -1887,7 +1945,7 @@ const StepPin = ({
   onChangeResetOtp,
   onForgotPin,
   onResetPin,
-  onCancelReset,
+  onCancelReset
 }: {
   selectedPlan?: Plan;
   selectedTarget?: WithdrawalTarget;
@@ -2037,7 +2095,11 @@ const StepPin = ({
 // ─── PIN sub-components ───────────────────────────────────────────────────────
 
 // Standard phone keypad order: 1 2 3 / 4 5 6 / 7 8 9 / _ 0 ⌫
-const PIN_ROWS = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]];
+const PIN_ROWS = [
+  ["1", "2", "3"],
+  ["4", "5", "6"],
+  ["7", "8", "9"]
+];
 
 const PinDots = ({ value }: { value: string }) => (
   <View style={pinStyles.dots}>
@@ -2047,13 +2109,7 @@ const PinDots = ({ value }: { value: string }) => (
   </View>
 );
 
-const PinKeypad = ({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) => (
+const PinKeypad = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
   <View style={pinStyles.keypad}>
     {PIN_ROWS.map((row, ri) => (
       <View key={ri} style={pinStyles.keyRow}>
@@ -2100,33 +2156,66 @@ const ProcessingOverlay = ({
   state,
   amount,
   receipt,
-  onDone,
+  onDone
 }: {
-  state: "processing" | "success";
+  state: WithdrawalProcessingState;
   amount: string;
   receipt: WithdrawalReceipt | null;
   onDone: () => void;
-}) => (
+}) => {
+  const isSubmitting = state === "submitting";
+  const isCompleted = state === "completed";
+  const isFailed = state === "failed";
+  const toneStyle = isCompleted
+    ? overlayStyles.cardCompleted
+    : isFailed
+      ? overlayStyles.cardFailed
+      : overlayStyles.cardProcessing;
+
+  return (
   <View style={overlayStyles.wrap}>
-    <View style={overlayStyles.card}>
-      {state === "success" ? (
-        <View style={overlayStyles.successIcon}>
-          <Ionicons name="checkmark" size={30} color="#FFF" />
-        </View>
-      ) : (
+    <View style={[overlayStyles.card, toneStyle]}>
+      {isSubmitting ? (
         <View style={overlayStyles.spinnerWrap}>
           <ActivityIndicator color={COLOR.forestDeep} size="large" />
         </View>
+      ) : (
+        <View
+          style={[
+            overlayStyles.statusIcon,
+            isCompleted
+              ? overlayStyles.statusIconCompleted
+              : isFailed
+                ? overlayStyles.statusIconFailed
+                : overlayStyles.statusIconProcessing
+          ]}
+        >
+          <Ionicons
+            name={isCompleted ? "checkmark" : isFailed ? "close" : "time-outline"}
+            size={30}
+            color="#FFF"
+          />
+        </View>
       )}
       <Text style={overlayStyles.title}>
-        {state === "success" ? "Withdrawal sent!" : "Sending withdrawal…"}
+        {isSubmitting
+          ? "Sending withdrawal..."
+          : isCompleted
+            ? "Withdrawal completed"
+            : isFailed
+              ? "Withdrawal failed"
+              : "Transfer processing"}
       </Text>
       <Text style={overlayStyles.sub}>
-        {state === "success"
-          ? `${amount} is now being processed by Paystack.`
-          : "Keep this screen open while we process your request."}
+        {isSubmitting
+          ? "Keep this screen open while Paystack accepts your request."
+          : isCompleted
+            ? `${amount} was successfully transferred.`
+            : isFailed
+              ? "The transfer was not completed. The funds remain in your plan or envelope."
+              : `${amount} was accepted and is awaiting confirmation from Paystack.`}
       </Text>
-      {state === "success" && receipt ? (
+      {!isSubmitting && receipt ? (
         <View style={overlayStyles.receiptBox}>
           <View style={overlayStyles.receiptRow}>
             <Text style={overlayStyles.receiptLabel}>Reference</Text>
@@ -2136,9 +2225,7 @@ const ProcessingOverlay = ({
           </View>
           <View style={overlayStyles.receiptRow}>
             <Text style={overlayStyles.receiptLabel}>Status</Text>
-            <Text style={overlayStyles.receiptValue}>
-              {receipt.status}
-            </Text>
+            <Text style={overlayStyles.receiptValue}>{receipt.status}</Text>
           </View>
           <View style={overlayStyles.receiptRow}>
             <Text style={overlayStyles.receiptLabel}>To</Text>
@@ -2148,18 +2235,15 @@ const ProcessingOverlay = ({
           </View>
         </View>
       ) : null}
-      {state === "success" && (
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={onDone}
-          style={overlayStyles.doneBtn}
-        >
+      {!isSubmitting && (
+        <TouchableOpacity activeOpacity={0.85} onPress={onDone} style={overlayStyles.doneBtn}>
           <Text style={overlayStyles.doneBtnText}>Done</Text>
         </TouchableOpacity>
       )}
     </View>
   </View>
-);
+  );
+};
 
 // ─── Step heading helper ──────────────────────────────────────────────────────
 
@@ -2180,13 +2264,13 @@ const stepStyles = StyleSheet.create({
     fontWeight: "900",
     color: COLOR.forestDeep,
     letterSpacing: -0.6,
-    marginBottom: 6,
+    marginBottom: 6
   },
   sub: {
     fontSize: 13,
     fontWeight: "600",
     color: COLOR.textMuted,
-    lineHeight: 19,
+    lineHeight: 19
   },
   notice: {
     flexDirection: "row",
@@ -2196,15 +2280,15 @@ const stepStyles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: COLOR.amberBorder,
-    padding: 12,
+    padding: 12
   },
   noticeText: {
     flex: 1,
     fontSize: 12,
     fontWeight: "700",
     color: COLOR.amber,
-    lineHeight: 18,
-  },
+    lineHeight: 18
+  }
 });
 
 const amountStyles = StyleSheet.create({
@@ -2219,17 +2303,17 @@ const amountStyles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    marginBottom: 16,
+    marginBottom: 16
   },
   availableLabel: {
     fontSize: 11,
     fontWeight: "700",
-    color: COLOR.forestMuted,
+    color: COLOR.forestMuted
   },
   availableValue: {
     fontSize: 12,
     fontWeight: "900",
-    color: COLOR.forestDeep,
+    color: COLOR.forestDeep
   },
   inputWrap: {
     height: 84,
@@ -2240,17 +2324,17 @@ const amountStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 20,
-    marginBottom: 12,
+    marginBottom: 12
   },
   inputWrapMuted: {
     backgroundColor: COLOR.forestLight,
-    borderColor: COLOR.forestBorder,
+    borderColor: COLOR.forestBorder
   },
   currencySymbol: {
     fontSize: 28,
     fontWeight: "900",
     color: `${COLOR.forestDeep}33`,
-    marginRight: 6,
+    marginRight: 6
   },
   input: {
     flex: 1,
@@ -2258,10 +2342,10 @@ const amountStyles = StyleSheet.create({
     fontWeight: "900",
     color: COLOR.forestDeep,
     letterSpacing: -1.2,
-    paddingVertical: 0,
+    paddingVertical: 0
   },
   inputMuted: {
-    color: COLOR.forestMid,
+    color: COLOR.forestMid
   },
   allRow: {
     flexDirection: "row",
@@ -2273,11 +2357,11 @@ const amountStyles = StyleSheet.create({
     backgroundColor: COLOR.surface,
     paddingVertical: 12,
     paddingHorizontal: 14,
-    marginBottom: 14,
+    marginBottom: 14
   },
   allRowActive: {
     borderColor: COLOR.forestDeep,
-    backgroundColor: "#F4FAF7",
+    backgroundColor: "#F4FAF7"
   },
   checkbox: {
     width: 22,
@@ -2286,26 +2370,26 @@ const amountStyles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: COLOR.border,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
   },
   checkboxActive: {
     backgroundColor: COLOR.forestDeep,
-    borderColor: COLOR.forestDeep,
+    borderColor: COLOR.forestDeep
   },
   allLabel: {
     flex: 1,
     fontSize: 13,
     fontWeight: "700",
-    color: COLOR.textMuted,
+    color: COLOR.textMuted
   },
   allLabelActive: {
     color: COLOR.forestDeep,
-    fontWeight: "800",
+    fontWeight: "800"
   },
   allAmount: {
     fontSize: 13,
     fontWeight: "900",
-    color: COLOR.forestMid,
+    color: COLOR.forestMid
   },
   preview: {
     flexDirection: "row",
@@ -2315,15 +2399,15 @@ const amountStyles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: COLOR.forestBorder,
-    padding: 12,
+    padding: 12
   },
   previewText: {
     flex: 1,
     fontSize: 13,
     fontWeight: "600",
     color: COLOR.forestMid,
-    lineHeight: 19,
-  },
+    lineHeight: 19
+  }
 });
 
 const destStyles = StyleSheet.create({
@@ -2336,14 +2420,14 @@ const destStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 12
   },
   searchInput: {
     flex: 1,
     color: COLOR.textBody,
     fontSize: 14,
     fontWeight: "700",
-    paddingVertical: 0,
+    paddingVertical: 0
   },
   addToggle: {
     marginTop: 14,
@@ -2356,7 +2440,7 @@ const destStyles = StyleSheet.create({
     borderColor: COLOR.border,
     borderStyle: "dashed",
     backgroundColor: COLOR.surface,
-    paddingVertical: 13,
+    paddingVertical: 13
   },
   addToggleIcon: {
     width: 24,
@@ -2364,12 +2448,12 @@ const destStyles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: COLOR.forestLight,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
   },
   addToggleText: {
     color: COLOR.forestDeep,
     fontSize: 13,
-    fontWeight: "800",
+    fontWeight: "800"
   },
   form: {
     marginTop: 14,
@@ -2378,14 +2462,14 @@ const destStyles = StyleSheet.create({
     borderColor: COLOR.border,
     backgroundColor: COLOR.surface,
     padding: 16,
-    gap: 12,
+    gap: 12
   },
   segment: {
     flexDirection: "row",
     backgroundColor: COLOR.bgSubtle,
     borderRadius: 12,
     padding: 4,
-    gap: 4,
+    gap: 4
   },
   segItem: {
     flex: 1,
@@ -2394,18 +2478,18 @@ const destStyles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
+    gap: 6
   },
   segItemActive: {
-    backgroundColor: COLOR.forestDeep,
+    backgroundColor: COLOR.forestDeep
   },
   segText: {
     color: COLOR.textMuted,
     fontSize: 12,
-    fontWeight: "800",
+    fontWeight: "800"
   },
   segTextActive: {
-    color: "#FFF",
+    color: "#FFF"
   },
   fieldLabel: {
     color: COLOR.textFaint,
@@ -2413,7 +2497,7 @@ const destStyles = StyleSheet.create({
     fontWeight: "900",
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    marginBottom: -6,
+    marginBottom: -6
   },
   bankScroll: {
     maxHeight: 180,
@@ -2421,7 +2505,7 @@ const destStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLOR.border,
     backgroundColor: COLOR.bgSubtle,
-    padding: 8,
+    padding: 8
   },
   bankChip: {
     flexDirection: "row",
@@ -2432,28 +2516,28 @@ const destStyles = StyleSheet.create({
     borderColor: COLOR.border,
     backgroundColor: COLOR.surface,
     paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingVertical: 9
   },
   bankChipActive: {
     borderColor: COLOR.forestMid,
-    backgroundColor: COLOR.forestLight,
+    backgroundColor: COLOR.forestLight
   },
   bankChipText: {
     color: COLOR.textMuted,
     fontSize: 13,
     fontWeight: "700",
-    flex: 1,
+    flex: 1
   },
   bankChipTextActive: {
     color: COLOR.forestDeep,
-    fontWeight: "800",
+    fontWeight: "800"
   },
   noBank: {
     color: COLOR.textFaint,
     fontSize: 13,
     fontWeight: "600",
     textAlign: "center",
-    paddingVertical: 12,
+    paddingVertical: 12
   },
   fieldInput: {
     height: 48,
@@ -2464,7 +2548,7 @@ const destStyles = StyleSheet.create({
     color: COLOR.textBody,
     fontSize: 15,
     fontWeight: "800",
-    paddingHorizontal: 14,
+    paddingHorizontal: 14
   },
   resolvedBox: {
     flexDirection: "row",
@@ -2474,17 +2558,17 @@ const destStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLOR.forestBorder,
     backgroundColor: COLOR.forestLight,
-    padding: 12,
+    padding: 12
   },
   resolvedName: {
     color: COLOR.forestMid,
     fontSize: 13,
     fontWeight: "900",
-    flex: 1,
+    flex: 1
   },
   formActions: {
     flexDirection: "row",
-    gap: 10,
+    gap: 10
   },
   secondaryBtn: {
     flex: 1,
@@ -2494,12 +2578,12 @@ const destStyles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: COLOR.border,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
   },
   secondaryBtnText: {
     color: COLOR.forestDeep,
     fontSize: 13,
-    fontWeight: "900",
+    fontWeight: "900"
   },
   primaryBtn: {
     flex: 2,
@@ -2507,13 +2591,13 @@ const destStyles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: COLOR.forestMid,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
   },
   primaryBtnText: {
     color: "#FFF",
     fontSize: 13,
-    fontWeight: "900",
-  },
+    fontWeight: "900"
+  }
 });
 
 const pinStyles = StyleSheet.create({
@@ -2524,12 +2608,12 @@ const pinStyles = StyleSheet.create({
     borderColor: COLOR.border,
     padding: 16,
     gap: 16,
-    marginBottom: 14,
+    marginBottom: 14
   },
   cardHeader: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 12,
+    gap: 12
   },
   cardIcon: {
     width: 38,
@@ -2537,28 +2621,28 @@ const pinStyles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: COLOR.forestLight,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
   },
   cardTitle: {
     color: COLOR.textBody,
     fontSize: 14,
     fontWeight: "900",
-    marginBottom: 3,
+    marginBottom: 3
   },
   cardSub: {
     color: COLOR.textMuted,
     fontSize: 12,
     fontWeight: "600",
-    lineHeight: 17,
+    lineHeight: 17
   },
   form: {
-    gap: 12,
+    gap: 12
   },
   dots: {
     flexDirection: "row",
     justifyContent: "center",
     gap: 16,
-    paddingVertical: 6,
+    paddingVertical: 6
   },
   dot: {
     width: 16,
@@ -2566,19 +2650,19 @@ const pinStyles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1.5,
     borderColor: COLOR.border,
-    backgroundColor: COLOR.surface,
+    backgroundColor: COLOR.surface
   },
   dotFilled: {
     backgroundColor: COLOR.forestDeep,
-    borderColor: COLOR.forestDeep,
+    borderColor: COLOR.forestDeep
   },
   keypad: {
-    gap: 10,
+    gap: 10
   },
   keyRow: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: 10,
+    gap: 10
   },
   key: {
     width: 90,
@@ -2588,26 +2672,26 @@ const pinStyles = StyleSheet.create({
     borderColor: COLOR.border,
     backgroundColor: COLOR.bgSubtle,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
   },
   keyGhost: {
     width: 90,
-    height: 56,
+    height: 56
   },
   keyText: {
     color: COLOR.forestDeep,
     fontSize: 22,
-    fontWeight: "900",
+    fontWeight: "900"
   },
   otpWrap: {
-    gap: 6,
+    gap: 6
   },
   otpLabel: {
     color: COLOR.textFaint,
     fontSize: 10,
     fontWeight: "900",
     textTransform: "uppercase",
-    letterSpacing: 0.6,
+    letterSpacing: 0.6
   },
   otpInput: {
     height: 48,
@@ -2619,7 +2703,7 @@ const pinStyles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "900",
     paddingHorizontal: 14,
-    letterSpacing: 4,
+    letterSpacing: 4
   },
   newPinLabel: {
     color: COLOR.textFaint,
@@ -2627,11 +2711,11 @@ const pinStyles = StyleSheet.create({
     fontWeight: "900",
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    textAlign: "center",
+    textAlign: "center"
   },
   actions: {
     flexDirection: "row",
-    gap: 10,
+    gap: 10
   },
   secondaryBtn: {
     flex: 1,
@@ -2641,12 +2725,12 @@ const pinStyles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: COLOR.border,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
   },
   secondaryBtnText: {
     color: COLOR.forestDeep,
     fontSize: 13,
-    fontWeight: "900",
+    fontWeight: "900"
   },
   primaryBtn: {
     flex: 1,
@@ -2654,23 +2738,23 @@ const pinStyles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: COLOR.forestMid,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
   },
   primaryBtnText: {
     color: "#FFF",
     fontSize: 13,
-    fontWeight: "900",
+    fontWeight: "900"
   },
   forgotBtn: {
     alignSelf: "center",
     paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingHorizontal: 8
   },
   forgotBtnText: {
     color: COLOR.forestMid,
     fontSize: 13,
-    fontWeight: "900",
-  },
+    fontWeight: "900"
+  }
 });
 
 const overlayStyles = StyleSheet.create({
@@ -2679,7 +2763,7 @@ const overlayStyles = StyleSheet.create({
     backgroundColor: "rgba(6,20,16,0.72)",
     alignItems: "center",
     justifyContent: "center",
-    padding: 32,
+    padding: 32
   },
   card: {
     width: "100%",
@@ -2689,6 +2773,16 @@ const overlayStyles = StyleSheet.create({
     padding: 28,
     alignItems: "center",
     gap: 14,
+    borderTopWidth: 6
+  },
+  cardProcessing: {
+    borderTopColor: "#E59A18"
+  },
+  cardCompleted: {
+    borderTopColor: COLOR.forestMid
+  },
+  cardFailed: {
+    borderTopColor: "#C93C37"
   },
   spinnerWrap: {
     width: 58,
@@ -2698,29 +2792,37 @@ const overlayStyles = StyleSheet.create({
     borderColor: COLOR.border,
     backgroundColor: COLOR.bgSubtle,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
   },
-  successIcon: {
+  statusIcon: {
     width: 58,
     height: 58,
     borderRadius: 20,
-    backgroundColor: COLOR.forestMid,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
+  },
+  statusIconProcessing: {
+    backgroundColor: "#E59A18"
+  },
+  statusIconCompleted: {
+    backgroundColor: COLOR.forestMid
+  },
+  statusIconFailed: {
+    backgroundColor: "#C93C37"
   },
   title: {
     color: COLOR.textBody,
     fontSize: 18,
     fontWeight: "900",
     textAlign: "center",
-    letterSpacing: -0.3,
+    letterSpacing: -0.3
   },
   sub: {
     color: COLOR.textMuted,
     fontSize: 13,
     fontWeight: "700",
     lineHeight: 20,
-    textAlign: "center",
+    textAlign: "center"
   },
   receiptBox: {
     alignSelf: "stretch",
@@ -2728,26 +2830,26 @@ const overlayStyles = StyleSheet.create({
     borderColor: COLOR.border,
     borderRadius: 16,
     borderWidth: 1,
-    overflow: "hidden",
+    overflow: "hidden"
   },
   receiptRow: {
     borderBottomColor: COLOR.border,
     borderBottomWidth: 1,
     gap: 3,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 10
   },
   receiptLabel: {
     color: COLOR.textFaint,
     fontSize: 10,
     fontWeight: "900",
     letterSpacing: 0.5,
-    textTransform: "uppercase",
+    textTransform: "uppercase"
   },
   receiptValue: {
     color: COLOR.textBody,
     fontSize: 12,
-    fontWeight: "900",
+    fontWeight: "900"
   },
   doneBtn: {
     alignSelf: "stretch",
@@ -2756,19 +2858,19 @@ const overlayStyles = StyleSheet.create({
     backgroundColor: COLOR.forestDeep,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 4,
+    marginTop: 4
   },
   doneBtnText: {
     color: "#FFF",
     fontSize: 15,
-    fontWeight: "900",
-  },
+    fontWeight: "900"
+  }
 });
 
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    justifyContent: "flex-end",
+    justifyContent: "flex-end"
   },
   sheet: {
     maxHeight: "94%",
@@ -2777,7 +2879,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 32,
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: Platform.OS === "ios" ? 40 : 24,
+    paddingBottom: Platform.OS === "ios" ? 40 : 24
   },
   handle: {
     width: 40,
@@ -2785,13 +2887,13 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: COLOR.border,
     alignSelf: "center",
-    marginBottom: 18,
+    marginBottom: 18
   },
   sheetHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 20,
+    marginBottom: 20
   },
   navButton: {
     width: 38,
@@ -2801,17 +2903,17 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: COLOR.border,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "center"
   },
   sheetTitle: {
     fontSize: 15,
     fontWeight: "900",
     color: COLOR.textBody,
-    letterSpacing: -0.2,
+    letterSpacing: -0.2
   },
   content: {
     paddingBottom: 16,
-    gap: 0,
+    gap: 0
   },
   cta: {
     height: 56,
@@ -2826,16 +2928,16 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.25,
     shadowRadius: 14,
-    elevation: 6,
+    elevation: 6
   },
   ctaDisabled: {
-    opacity: 0.38,
+    opacity: 0.38
   },
   ctaText: {
     color: "#FFF",
     fontSize: 15,
-    fontWeight: "900",
-  },
+    fontWeight: "900"
+  }
 });
 
 export default WithdrawalModal;

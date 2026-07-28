@@ -87,6 +87,7 @@ export const useCancelPlan = (planId: string) => {
       queryClient.invalidateQueries({ queryKey: planKeys.all });
       queryClient.invalidateQueries({ queryKey: planKeys.detail(planId) });
       queryClient.invalidateQueries({ queryKey: walletKeys.wallet });
+      queryClient.invalidateQueries({ queryKey: walletKeys.ledger });
     },
   });
 };

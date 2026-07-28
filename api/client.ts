@@ -2,12 +2,14 @@ import type { InternalAxiosRequestConfig } from "axios";
 import axios from "axios";
 import * as SecureStore from "expo-secure-store";
 import { jwtDecode } from "jwt-decode";
+import { apiErrorPayload, publishGlobalError } from "@/lib/global-error";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 // const BACKEND_URL = "http://localhost:8080/api/v1/";
 // const BACKEND_URL = "https://apixavault.kuipid.com/api/v1/";
-const BACKEND_URL = "http://10.236.123.66:8080/api/v1/";
+const BACKEND_URL =
+  process.env.EXPO_PUBLIC_API_URL ?? "http://192.168.1.118:8080/api/v1/";
 // const BACKEND_URL = "http://192.168.1.118:8080/api/v1/";
 
 export const ACCESS_TOKEN_KEY = "access_token";
@@ -30,6 +32,7 @@ type RefreshResponse = {
 
 type RetryableRequestConfig = InternalAxiosRequestConfig & {
   _retry?: boolean;
+  suppressGlobalErrorModal?: boolean;
 };
 
 // ─── Logging ──────────────────────────────────────────────────────────────────
@@ -120,11 +123,13 @@ export const clearAuthTokens = async (
 // authApi is intentionally interceptor-free so refresh calls don't loop
 export const authApi = axios.create({
   baseURL: BACKEND_URL,
+  timeout: 15_000,
   headers: { "Content-Type": "application/json" },
 });
 
 export const api = axios.create({
   baseURL: BACKEND_URL,
+  timeout: 15_000,
   headers: { "Content-Type": "application/json" },
 });
 
@@ -195,6 +200,8 @@ export const refreshAuthTokens = async (flag?:boolean): Promise<string | null> =
 
 api.interceptors.request.use(
   async (config) => {
+    config.headers["X-Request-ID"] =
+      `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     let token = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
     if (token && isTokenExpired(token)) {
       token = await refreshAuthTokens();
@@ -223,7 +230,7 @@ api.interceptors.response.use(
     const url = error.config?.url;
     const originalRequest = error.config as RetryableRequestConfig | undefined;
 
-    log.error(`API error [${status}] on ${url}:`, error.response?.data ?? error.message);
+    log.error(`API error [${status}] on ${url}:`, error.message);
 
     if (status === 401 && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true;
@@ -244,6 +251,10 @@ api.interceptors.response.use(
         log.error("Refresh failed during 401 recovery:", refreshErr);
         // triggerLogout already called inside refreshAuthTokens on throw
       }
+    }
+
+    if (!originalRequest?.suppressGlobalErrorModal && !axios.isCancel(error)) {
+      publishGlobalError(apiErrorPayload(error));
     }
 
     return Promise.reject(error);

@@ -26,6 +26,7 @@ type ErrorModalProps = {
   message: string;
   title?: string;
   actionLabel?: string;
+  supportReference?: string;
   onClose: () => void;
 };
 
@@ -34,6 +35,7 @@ export function ErrorModal({
   title,
   message,
   actionLabel = "OK",
+  supportReference,
   onClose,
 }: ErrorModalProps) {
   return (
@@ -55,6 +57,12 @@ export function ErrorModal({
 
           {title ? <Text style={styles.title}>{title}</Text> : null}
           <Text style={styles.message}>{message}</Text>
+          {supportReference ? (
+            <View style={styles.referenceBox}>
+              <Text style={styles.referenceLabel}>Support reference</Text>
+              <Text selectable style={styles.referenceValue}>{supportReference}</Text>
+            </View>
+          ) : null}
 
           <TouchableOpacity
             activeOpacity={0.85}
@@ -139,6 +147,29 @@ const styles = StyleSheet.create({
     marginTop: 24,
     paddingVertical: 12,
     width: "100%",
+  },
+
+  referenceBox: {
+    alignItems: "center",
+    backgroundColor: COLORS.hash,
+    borderRadius: 10,
+    marginTop: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    width: "100%",
+  },
+  referenceLabel: {
+    color: COLORS.text,
+    fontSize: 10,
+    fontWeight: "600",
+    opacity: 0.65,
+    textTransform: "uppercase",
+  },
+  referenceValue: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 4,
   },
 
   actionText: {

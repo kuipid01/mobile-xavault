@@ -1,6 +1,7 @@
 import "react-native-gesture-handler";
 
 import GlobalDrawerHost from "@/components/GlobalDrawerHost";
+import { GlobalErrorModal } from "@/components/GlobalErrorModal";
 import { OnboardingProvider, useOnboarding } from "@/context/OnboardingContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -88,7 +89,6 @@ function RootLayoutContent() {
       isAuthenticated,
       pathname,
       rootSegment,
-      segments,
     });
 
     if (onboardingLoading || authLoading || !fontsLoaded) {
@@ -100,31 +100,33 @@ function RootLayoutContent() {
       return;
     }
 
+    let cancelled = false;
+
     const checkInitialRedirect = async () => {
       debugLog("redirect check started");
 
       try {
-        if (isFirstTime) {
-          debugLog("user is first time", { rootSegment });
+        if (isAuthenticated) {
+          debugLog("user is authenticated", { rootSegment });
 
-          if (rootSegment !== "(onboarding)") {
-            debugLog("redirecting to onboarding");
-            router.replace("/(onboarding)");
+          if (!cancelled && rootSegment !== "(app)") {
+            debugLog("redirecting to app home");
+            router.replace("/(app)/(tabs)/home");
           } else {
-            debugLog("already on onboarding");
+            debugLog("already in app group");
           }
 
           return;
         }
 
-        if (isAuthenticated) {
-          debugLog("user is authenticated", { rootSegment });
+        if (isFirstTime) {
+          debugLog("user is first time", { rootSegment });
 
-          if (rootSegment !== "(app)") {
-            debugLog("redirecting to app home");
-            router.replace("/(app)/(tabs)/home");
+          if (!cancelled && rootSegment !== "(onboarding)") {
+            debugLog("redirecting to onboarding");
+            router.replace("/(onboarding)");
           } else {
-            debugLog("already in app group");
+            debugLog("already on onboarding");
           }
 
           return;
@@ -225,7 +227,7 @@ function RootLayoutContent() {
               pathname,
             });
 
-            router.replace("/(auth)/initial");
+            router.replace("/(auth)/login");
           } else {
             debugLog("no redirect needed", {
               rootSegment,
@@ -238,11 +240,15 @@ function RootLayoutContent() {
         console.log("Failed to check pending auth flow:", error);
       } finally {
         debugLog("redirect check finished");
-        setIsRedirectChecking(false);
+        if (!cancelled) setIsRedirectChecking(false);
       }
     };
 
-    checkInitialRedirect();
+    void checkInitialRedirect();
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     onboardingLoading,
     authLoading,
@@ -251,7 +257,6 @@ function RootLayoutContent() {
     isAuthenticated,
     pathname,
     rootSegment,
-    segments,
   ]);
 
   useEffect(() => {
@@ -302,7 +307,6 @@ function RootLayoutContent() {
   debugLog("rendering app stack", {
     pathname,
     rootSegment,
-    segments,
   });
 
   return (
@@ -332,6 +336,7 @@ export default function RootLayout() {
                 <DepositVerificationWatcher />
                 <DepositPaymentModal />
                 <DepositVerificationBanner />
+                <GlobalErrorModal />
                 <Toast />
               </OnboardingProvider>
             </ModalProvider>

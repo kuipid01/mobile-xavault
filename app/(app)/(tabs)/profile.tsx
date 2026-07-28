@@ -128,7 +128,7 @@ export default function Profile() {
 
   const handleLogout = async () => {
     await logout();
-    router.replace("/(auth)/welcome");
+    router.replace("/(auth)/login");
   };
 
   return (
@@ -217,6 +217,12 @@ export default function Profile() {
             label="My Profile"
             sublabel="Account number, nickname, contact and address"
             onPress={() => router.push("/(app)/my-profile")}
+          />
+          <SettingRow
+            icon="receipt-outline"
+            label="Transactions"
+            sublabel="View deposits, withdrawals and transaction receipts"
+            onPress={() => router.push("/(app)/transactions")}
           />
           <SettingRow
             icon="card-outline"

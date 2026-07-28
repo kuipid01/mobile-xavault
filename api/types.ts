@@ -46,7 +46,9 @@ export type WalletLedger = {
   user_id: string;
   wallet_id: string;
   currency: string;
+	Currency?: string;
   reference: string;
+	Reference?: string;
   Type?: string;
   Source?: string;
   Amount?: number;
@@ -56,6 +58,8 @@ export type WalletLedger = {
   CreatedAt?: string;
   type?: string;
   source?: string;
+  source_id?: string;
+  SourceID?: string;
   amount?: number;
   balance_before?: number;
   balance_after?: number;
@@ -82,7 +86,10 @@ export type DepositVerificationResponse = {
 };
 
 export type PlanStatus = "draft" | "active" | "completed" | "cancelled" | "expired";
-export type UnboxedBalancePolicy = "flexible" | "locked_until_plan_ends" | "locked_until_parent_ends";
+export type UnboxedBalancePolicy =
+  | "flexible"
+  | "locked_until_plan_ends"
+  | "locked_until_parent_ends";
 
 export type Plan = {
   id: string;
@@ -97,6 +104,8 @@ export type Plan = {
   end_date: string;
   top_level_allocated: number;
   plan_unboxed_balance: number;
+  withdrawn_amount?: number;
+  pending_withdrawal_amount?: number;
   confirmed_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -120,6 +129,8 @@ export type Envelope = {
   end_date: string;
   allocated_to_children: number;
   unboxed_balance: number;
+  withdrawn_amount?: number;
+  pending_withdrawal_amount?: number;
   children?: Envelope[];
   created_at: string;
   updated_at: string;
@@ -133,13 +144,13 @@ export type PlanPreview = {
   top_level_allocated: number;
   plan_unboxed_balance: number;
   unboxed_policy: string;
-  validation_errors: Array<{
+  validation_errors: {
     code: string;
     message: string;
     field?: string;
     entity_id?: string;
     entity?: string;
     shortage?: number;
-  }>;
+  }[];
   envelope_tree: Envelope[];
 };

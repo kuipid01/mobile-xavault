@@ -213,6 +213,12 @@ export const resetPassword = async (data: ResetPasswordPayload) => {
 export const logoutUser = async (): Promise<void> => {
   log.info("Logging out user, clearing tokens");
   await disableBiometricLogin();
+  const refreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
+  try {
+    await api.post("/auth/logout", { refresh_token: refreshToken });
+  } catch (error) {
+    log.warn("Server logout failed; clearing the local session anyway", error);
+  }
   await clearAuthTokens({ clearBiometric: true });
 };
 

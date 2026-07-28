@@ -70,7 +70,7 @@ export default function ProfileDrawerContent({
   const handleLogout = async () => {
     onClose();
     await logout();
-    router.replace("/(auth)/welcome");
+    router.replace("/(auth)/login");
   };
 
   return (

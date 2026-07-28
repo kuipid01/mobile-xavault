@@ -17,6 +17,23 @@ const BIOMETRIC_DEVICE_ID_KEY = "biometric_device_id";
 const LOG_PREFIX = "[BiometricAuth]";
 const biometrics = new ReactNativeBiometrics({ allowDeviceCredentials: true });
 
+async function biometricKeysExist() {
+  try {
+    return await biometrics.biometricKeysExist();
+  } catch (error) {
+    console.warn(LOG_PREFIX, "native biometric key module is unavailable", error);
+    return { keysExist: false };
+  }
+}
+
+async function deleteBiometricKeys() {
+  try {
+    await biometrics.deleteKeys();
+  } catch (error) {
+    console.warn(LOG_PREFIX, "could not delete biometric keys", error);
+  }
+}
+
 type ChallengeResponse = {
   data: {
     challenge_id: string;
@@ -66,7 +83,7 @@ export async function getBiometricAvailability(): Promise<BiometricAvailability>
       SecureStore.getItemAsync(BIOMETRIC_DEVICE_ID_KEY),
       SecureStore.getItemAsync(ACCESS_TOKEN_KEY),
       SecureStore.getItemAsync(REFRESH_TOKEN_KEY),
-      biometrics.biometricKeysExist().catch(() => ({ keysExist: false })),
+      biometricKeysExist(),
     ]);
 
   const accessTokenValid = Boolean(accessToken && !isTokenExpired(accessToken));
@@ -106,8 +123,14 @@ export async function enrollBiometricLogin() {
   });
   if (!confirmation.success) return false;
 
-  await biometrics.deleteKeys().catch(() => undefined);
-  const { publicKey } = await biometrics.createKeys();
+  await deleteBiometricKeys();
+  let publicKey: string;
+  try {
+    ({ publicKey } = await biometrics.createKeys());
+  } catch (error) {
+    console.error(LOG_PREFIX, "could not create biometric keys", error);
+    throw new Error("Biometric signing requires a new development build");
+  }
   const deviceID = await getOrCreateDeviceID();
   try {
     await api.post("/auth/biometric/devices", {
@@ -120,7 +143,7 @@ export async function enrollBiometricLogin() {
     await setBiometricLoginEnabled(true);
     return true;
   } catch (error) {
-    await biometrics.deleteKeys().catch(() => undefined);
+    await deleteBiometricKeys();
     throw error;
   }
 }
@@ -138,7 +161,7 @@ export async function disableBiometricLogin() {
     });
   }
   await Promise.all([
-    biometrics.deleteKeys().catch(() => undefined),
+    deleteBiometricKeys(),
     SecureStore.deleteItemAsync(BIOMETRIC_LOGIN_KEY),
   ]);
 }
@@ -156,10 +179,16 @@ export async function unlockWithBiometrics(promptMessage = "Sign in with biometr
     device_id: deviceID,
   });
   const challenge = challengeResponse.data.data;
-  const signatureResult = await biometrics.createSignature({
-    promptMessage,
-    payload: challenge.signing_payload,
-  });
+  let signatureResult: Awaited<ReturnType<typeof biometrics.createSignature>>;
+  try {
+    signatureResult = await biometrics.createSignature({
+      promptMessage,
+      payload: challenge.signing_payload,
+    });
+  } catch (error) {
+    console.error(LOG_PREFIX, "could not sign biometric challenge", error);
+    throw new Error("Biometric signing requires a new development build");
+  }
   if (!signatureResult.success || !signatureResult.signature) {
     return { accessToken: null, reason: "authentication_failed" as const };
   }

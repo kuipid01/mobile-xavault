@@ -64,6 +64,8 @@ export const useDeleteEnvelope = (planId: string) => {
     mutationFn: (envelopeId: string) => deleteEnvelope(planId, envelopeId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: envelopeKeys.list(planId) });
+      queryClient.invalidateQueries({ queryKey: planKeys.all });
+      queryClient.invalidateQueries({ queryKey: planKeys.detail(planId) });
       queryClient.invalidateQueries({ queryKey: planKeys.preview(planId) });
     },
   });
