@@ -4,7 +4,13 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   BackHandler,
   KeyboardAvoidingView,
@@ -13,7 +19,6 @@ import {
   TouchableOpacity,
 } from "react-native";
 import Toast from "react-native-toast-message";
-import { ErrorModal } from "../ui/ErrorModal";
 import {
   clearRegistrationFlow,
   createRegistrationFlow,
@@ -60,10 +65,10 @@ const RegisterScreen = () => {
         const parsed = JSON.parse(savedDraft) as Partial<RegisterDraft>;
         const savedStep =
           forceDetails ||
-            parsed.step === "pin" ||
-            authFlow?.step === "pin" ||
-            authFlow?.step === "email_verified" ||
-            authFlow?.step === "details"
+          parsed.step === "pin" ||
+          authFlow?.step === "pin" ||
+          authFlow?.step === "email_verified" ||
+          authFlow?.step === "details"
             ? "details"
             : parsed.step || "email";
         setDraft({
@@ -79,9 +84,9 @@ const RegisterScreen = () => {
           username: authFlow.email.split("@")[0],
           step:
             forceDetails ||
-              authFlow.step === "email_verified" ||
-              authFlow.step === "details" ||
-              authFlow.step === "pin"
+            authFlow.step === "email_verified" ||
+            authFlow.step === "details" ||
+            authFlow.step === "pin"
               ? "details"
               : "email",
         });
@@ -338,15 +343,19 @@ const RegisterScreen = () => {
       <ScrollView
         contentContainerStyle={styles.container}
         ref={scrollRef}
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        {draft.step !== "pin" && <TouchableOpacity
-          onPress={closeFlow}
-          style={styles.closeButton}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="close" size={34} color={COLORS.primary} />
-        </TouchableOpacity>}
+        {draft.step !== "pin" && (
+          <TouchableOpacity
+            onPress={closeFlow}
+            style={styles.closeButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="close" size={34} color={COLORS.primary} />
+          </TouchableOpacity>
+        )}
 
         {draft.step === "email" && (
           <EmailStep
@@ -386,12 +395,6 @@ const RegisterScreen = () => {
             onEditDetails={goBackToDetails}
           />
         )}
-
-        <ErrorModal
-          visible={!!errorMessage}
-          message={errorMessage}
-          onClose={() => setErrorMessage("")}
-        />
       </ScrollView>
     </KeyboardAvoidingView>
   );

@@ -70,7 +70,7 @@ type RawUserSubscription = {
 };
 
 const normalizeUserSubscription = (
-  raw: RawUserSubscription
+  raw: RawUserSubscription,
 ): UserSubscription => ({
   id: raw.ID,
   user_id: raw.UserID,
@@ -124,7 +124,7 @@ export const FREE_SUBSCRIPTION: UserSubscription = {
 
 export const getSubscriptionPlans = async () => {
   const res = await api.get<ApiResponse<SubscriptionPlan[]>>(
-    "/subscriptions/plans"
+    "/subscriptions/plans",
   );
 
   return res.data.data || [];
@@ -137,7 +137,11 @@ type ActiveSubscriptionResponse = {
 export const getActiveSubscription = async (): Promise<UserSubscription> => {
   try {
     const res = await api.get<ApiResponse<ActiveSubscriptionResponse>>(
-      "/subscriptions/active"
+      "/subscriptions/active",
+      // A new/free user legitimately has no persisted paid subscription.
+      // The API expresses that state as 404; handle it locally instead of
+      // opening the application-wide failure modal.
+      { suppressGlobalErrorModal: true } as any,
     );
 
     const raw = res.data.data?.subscription;
@@ -153,11 +157,11 @@ export const getActiveSubscription = async (): Promise<UserSubscription> => {
 };
 
 export const createSubscription = async (
-  payload: CreateSubscriptionPayload
+  payload: CreateSubscriptionPayload,
 ) => {
   const res = await api.post<ApiResponse<CreateSubscriptionResponse>>(
     "/subscriptions",
-    payload
+    payload,
   );
 
   return res.data.data;

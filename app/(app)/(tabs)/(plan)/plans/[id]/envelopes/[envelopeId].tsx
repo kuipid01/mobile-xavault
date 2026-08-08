@@ -204,7 +204,10 @@ export default function EnvelopeDetailScreen() {
         </View>
 
         <View style={styles.cardWrap}>
-          <EnvelopeCard envelope={envelope} />
+          <EnvelopeCard
+            envelope={envelope}
+            inheritsPlanLock={plan?.unboxed_balance_policy === "locked_until_plan_ends"}
+          />
         </View>
       </ScrollView>
     </View>

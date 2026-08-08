@@ -6,10 +6,17 @@ import {
 import { COLORS, Radius } from "@/themes/colors";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Image } from 'expo-image';
+import { Image } from "expo-image";
 import { router } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ScrollView, Text, TouchableOpacity, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import Toast from "react-native-toast-message";
 import { useAuth } from "../../api/auth";
 import { FlatInput } from "../flatinput";
@@ -22,7 +29,7 @@ const LoginScreen = () => {
   const [email, setEmail] = useState("");
   const [rememberedName, setRememberedName] = useState("");
   const [title, setTitle] = useState("Welcome back");
-  const [mailAvailable, setMailAvailable] = useState(false)
+  const [mailAvailable, setMailAvailable] = useState(false);
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [showBiometricEntry, setShowBiometricEntry] = useState(false);
@@ -40,15 +47,15 @@ const LoginScreen = () => {
       const nameInStorage = await AsyncStorage.getItem("name");
       setRememberedName(nameInStorage ?? "");
       if (mailInStorage) {
-        setEmail(mailInStorage)
-        setMailAvailable(true)
+        setEmail(mailInStorage);
+        setMailAvailable(true);
         if (nameInStorage) {
-          setTitle(`Welcome back, ${nameInStorage}`)
+          setTitle(`Welcome back, ${nameInStorage}`);
         }
       }
-    }
+    };
     checkMail();
-  }, [])
+  }, []);
 
   const handleSwitchAccount = async () => {
     await logout();
@@ -107,7 +114,7 @@ const LoginScreen = () => {
 
   const canSubmit = useMemo(
     () => isEmailValid && isPasswordValid && !isPending && !isBiometricPending,
-    [isEmailValid, isPasswordValid, isPending, isBiometricPending]
+    [isEmailValid, isPasswordValid, isPending, isBiometricPending],
   );
 
   const emailErrorText =
@@ -160,7 +167,9 @@ const LoginScreen = () => {
     }
   };
 
-  const handleBiometricLogin = async (options: { automatic?: boolean } = {}) => {
+  const handleBiometricLogin = async (
+    options: { automatic?: boolean } = {},
+  ) => {
     try {
       console.log("[LoginScreen] biometric login pressed", options);
       setIsBiometricPending(true);
@@ -174,13 +183,13 @@ const LoginScreen = () => {
         const availability = await getBiometricAvailability();
         setShowBiometricEntry(
           availability.enabled &&
-          availability.deviceReady &&
-          availability.sessionRecoverable,
+            availability.deviceReady &&
+            availability.sessionRecoverable,
         );
         setBiometricCanAutoUnlock(
           availability.enabled &&
-          availability.deviceReady &&
-          availability.sessionRecoverable
+            availability.deviceReady &&
+            availability.sessionRecoverable,
         );
 
         if (result.reason === "authentication_failed") {
@@ -217,8 +226,8 @@ const LoginScreen = () => {
       const availability = await getBiometricAvailability();
       setShowBiometricEntry(
         availability.enabled &&
-        availability.deviceReady &&
-        availability.sessionRecoverable,
+          availability.deviceReady &&
+          availability.sessionRecoverable,
       );
       setBiometricCanAutoUnlock(false);
       Toast.show({
@@ -232,131 +241,137 @@ const LoginScreen = () => {
   };
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.container}
-      keyboardShouldPersistTaps="handled"
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={styles.keyboardAvoidingView}
     >
-
-
-      <View style={{ width: "100%", justifyContent: "center", alignItems: "center" }}>
-        <Image
-          source={require("@/assets/images/coin.svg")}
-          style={{ width: 250, height: 250, marginBottom: 3 }}
-          contentFit="contain"
-        />
-      </View>
-      <View style={styles.header}>
-        <Text style={styles.title}>{title}</Text>
-      </View>
-
-      <View style={styles.card}>
-
-        {!mailAvailable && (
-          <>
-            <FlatInput
-              label="Email"
-              placeholder="Enter your email"
-              value={email}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              onChangeText={handleEmailChange}
-              onBlur={() => setEmailTouched(true)}
-              onSubmitEditing={() => {
-                // let the return key move focus rather than submit;
-                // keeps the flow predictable when password isn't filled yet
-              }}
-            />
-            {!!emailErrorText && (
-              <Text style={styles.fieldError}>{emailErrorText}</Text>
-            )}
-          </>
-        )}
-        <FlatInput
-          label="Password"
-          placeholder="Enter your password"
-          value={password}
-          onChangeText={handlePasswordChange}
-          onBlur={() => setPasswordTouched(true)}
-          onSubmitEditing={canSubmit ? handleLogin : undefined}
-          returnKeyType="go"
-          secureTextEntry
-          viewPassword={viewPassword}
-          setViewPassword={setViewPassword}
-        />
-        {!!passwordErrorText && (
-          <Text style={styles.fieldError}>{passwordErrorText}</Text>
-        )}
-
-        <TouchableOpacity
-          onPress={() => router.push("/(auth)/forgot-password")}
-        >
-          <Text style={styles.forgotText}>Forgot password?</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.button, !canSubmit && styles.buttonDisabled]}
-          disabled={!canSubmit}
-          onPress={handleLogin}
-        >
-          <Text style={styles.buttonText}>
-            {isPending ? "Signing in..." : "Sign In"}
-          </Text>
-        </TouchableOpacity>
-
-        {showBiometricEntry ? (
-          <TouchableOpacity
-            style={[
-              styles.biometricIconButton,
-              isBiometricPending && styles.buttonDisabled,
-            ]}
-            disabled={isPending || isBiometricPending}
-            onPress={() => handleBiometricLogin()}
-            accessibilityRole="button"
-            accessibilityLabel="Use biometric login"
-          >
-            <Ionicons
-              name="finger-print-outline"
-              size={28}
-              color={COLORS.primary}
-            />
-          </TouchableOpacity>
-        ) : null}
-
-        <Text
-          onPress={() => void handleSwitchAccount()}
-          style={styles.footerText}
-        >
-          {rememberedName ? `Not ${rememberedName}? ` : ""}
-          <Text style={styles.link}>Switch Account</Text>
-        </Text>
-
-        {/* //this is just so the keyboard shows on click  */}
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <View
-          style={{ height: 100 }}
+          style={{
+            width: "100%",
+            justifyContent: "center",
+            alignItems: "center",
+          }}
         >
-
+          <Image
+            source={require("@/assets/images/coin.svg")}
+            style={{ width: 250, height: 250, marginBottom: 3 }}
+            contentFit="contain"
+          />
+        </View>
+        <View style={styles.header}>
+          <Text style={styles.title}>{title}</Text>
         </View>
 
+        <View style={styles.card}>
+          {!mailAvailable && (
+            <>
+              <FlatInput
+                label="Email"
+                placeholder="Enter your email"
+                value={email}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                onChangeText={handleEmailChange}
+                onBlur={() => setEmailTouched(true)}
+                onSubmitEditing={() => {
+                  // let the return key move focus rather than submit;
+                  // keeps the flow predictable when password isn't filled yet
+                }}
+              />
+              {!!emailErrorText && (
+                <Text style={styles.fieldError}>{emailErrorText}</Text>
+              )}
+            </>
+          )}
+          <FlatInput
+            label="Password"
+            placeholder="Enter your password"
+            value={password}
+            onChangeText={handlePasswordChange}
+            onBlur={() => setPasswordTouched(true)}
+            onSubmitEditing={canSubmit ? handleLogin : undefined}
+            returnKeyType="go"
+            secureTextEntry
+            viewPassword={viewPassword}
+            setViewPassword={setViewPassword}
+          />
+          {!!passwordErrorText && (
+            <Text style={styles.fieldError}>{passwordErrorText}</Text>
+          )}
 
+          <TouchableOpacity
+            onPress={() => router.push("/(auth)/forgot-password")}
+          >
+            <Text style={styles.forgotText}>Forgot password?</Text>
+          </TouchableOpacity>
 
-      </View>
-      {/* <ErrorModal
+          <TouchableOpacity
+            style={[styles.button, !canSubmit && styles.buttonDisabled]}
+            disabled={!canSubmit}
+            onPress={handleLogin}
+          >
+            <Text style={styles.buttonText}>
+              {isPending ? "Signing in..." : "Sign In"}
+            </Text>
+          </TouchableOpacity>
+
+          {showBiometricEntry ? (
+            <TouchableOpacity
+              style={[
+                styles.biometricIconButton,
+                isBiometricPending && styles.buttonDisabled,
+              ]}
+              disabled={isPending || isBiometricPending}
+              onPress={() => handleBiometricLogin()}
+              accessibilityRole="button"
+              accessibilityLabel="Use biometric login"
+            >
+              <Ionicons
+                name="finger-print-outline"
+                size={28}
+                color={COLORS.primary}
+              />
+            </TouchableOpacity>
+          ) : null}
+
+          <Text
+            onPress={() => void handleSwitchAccount()}
+            style={styles.footerText}
+          >
+            {rememberedName ? `Not ${rememberedName}? ` : ""}
+            <Text style={styles.link}>Switch Account</Text>
+          </Text>
+        </View>
+        {/* <ErrorModal
         visible={!!errorMessage}
         message={errorMessage}
         onClose={() => setErrorMessage("")}
       /> */}
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
 export default LoginScreen;
 
 const styles = {
+  keyboardAvoidingView: {
+    flex: 1,
+  },
+
   container: {
     backgroundColor: "#F6F7FB",
     flexGrow: 1,
     justifyContent: "center" as const,
+    paddingBottom: 32,
     paddingHorizontal: 24,
+    paddingTop: 24,
   },
 
   brand: {
@@ -412,7 +427,6 @@ const styles = {
   header: {
     alignItems: "flex-start" as const,
     marginVertical: 8,
-
   },
 
   title: {
@@ -428,11 +442,7 @@ const styles = {
     fontSize: 13,
   },
 
-  card: {
-
-
-
-  },
+  card: {},
 
   button: {
     alignItems: "center" as const,

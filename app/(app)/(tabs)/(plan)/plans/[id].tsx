@@ -352,6 +352,7 @@ export default function PlanDetailScreen() {
             <EnvelopeCard
               key={envelope.id}
               envelope={envelope}
+              inheritsPlanLock={plan.unboxed_balance_policy === "locked_until_plan_ends"}
               onPress={() =>
                 router.push({
                   pathname: "/(app)/(tabs)/(plan)/plans/[id]/envelopes/[envelopeId]",

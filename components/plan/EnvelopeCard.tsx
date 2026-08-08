@@ -5,10 +5,11 @@ import { Envelope } from "@/api/types";
 
 type Props = {
     envelope: Envelope;
+    inheritsPlanLock?: boolean;
     onPress?: () => void;
 };
 
-export function EnvelopeCard({ envelope, onPress }: Props) {
+export function EnvelopeCard({ envelope, inheritsPlanLock = false, onPress }: Props) {
     const isLocked = envelope.unboxed_balance_policy !== "flexible";
 
     return (
@@ -24,7 +25,7 @@ export function EnvelopeCard({ envelope, onPress }: Props) {
 
                         <View style={[styles.badge, isLocked ? styles.lockedBadge : styles.flexibleBadge]}>
                             <Text style={[styles.badgeText, isLocked ? styles.lockedText : styles.flexibleText]}>
-                                {isLocked ? "LOCKED" : "FLEXIBLE"}
+                                {inheritsPlanLock ? "PLAN LOCK" : isLocked ? "LOCKED" : "FLEXIBLE"}
                             </Text>
                         </View>
                     </View>

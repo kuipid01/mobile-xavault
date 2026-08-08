@@ -121,6 +121,12 @@ export default function CreateEnvelopeScreen() {
   const [policy, setPolicy] = useState<"flexible" | "locked_until_parent_ends">(
     "flexible"
   );
+  const inheritsPlanLock =
+    plan?.unboxed_balance_policy === "locked_until_plan_ends";
+
+  useEffect(() => {
+    if (inheritsPlanLock) setPolicy("locked_until_parent_ends");
+  }, [inheritsPlanLock]);
 
   const amountNumber = Number(amount || 0);
 
@@ -603,9 +609,29 @@ export default function CreateEnvelopeScreen() {
 
           <Text style={styles.sectionTitle}>Unboxed balance policy</Text>
           <Text style={styles.sectionHint}>
-            Choose how leftover money inside this envelope should behave.
+            {inheritsPlanLock
+              ? "This envelope follows the withdrawal lock on its plan."
+              : "Choose how leftover money inside this envelope should behave."}
           </Text>
 
+          {inheritsPlanLock ? (
+            <View style={styles.inheritedLockCard}>
+              <View style={styles.inheritedLockIcon}>
+                <Ionicons name="lock-closed" size={16} color="#946500" />
+              </View>
+              <View style={styles.inheritedLockCopy}>
+                <View style={styles.inheritedLockTitleRow}>
+                  <Text style={styles.inheritedLockTitle}>Locked</Text>
+                  <View style={styles.inheritedBadge}>
+                    <Text style={styles.inheritedBadgeText}>INHERITED FROM PLAN</Text>
+                  </View>
+                </View>
+                <Text style={styles.inheritedLockText}>
+                  Funds cannot be withdrawn until the parent plan ends.
+                </Text>
+              </View>
+            </View>
+          ) : (
           <View style={styles.policyRow}>
             <PolicyButton
               title="Flexible"
@@ -623,6 +649,7 @@ export default function CreateEnvelopeScreen() {
               onPress={() => setPolicy("locked_until_parent_ends")}
             />
           </View>
+          )}
 
           <TouchableOpacity
             disabled={disabled}
@@ -1235,6 +1262,48 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
     marginBottom: 24,
+  },
+
+  inheritedLockCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 24,
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#F1D99A",
+    backgroundColor: "#FFF9E8",
+  },
+  inheritedLockIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFF0BE",
+  },
+  inheritedLockCopy: { flex: 1 },
+  inheritedLockTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 7,
+  },
+  inheritedLockTitle: { color: "#5F4500", fontSize: 14, fontWeight: "900" },
+  inheritedBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "#F7E5AC",
+  },
+  inheritedBadgeText: { color: "#7A5900", fontSize: 8, fontWeight: "900" },
+  inheritedLockText: {
+    marginTop: 4,
+    color: "#7A641E",
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: "600",
   },
 
   policyButton: {

@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Linking,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -42,6 +43,7 @@ const VerifyMailScreen = () => {
   const [errorMessage, setErrorMessage] = useState("");
 
   const inputRef = useRef<TextInput>(null);
+  const scrollRef = useRef<ScrollView>(null);
 
   const { mutateAsync: verifyRegistrationMail, isPending } =
     useVerifyRegistrationMail();
@@ -80,7 +82,16 @@ const VerifyMailScreen = () => {
   const canSubmit =
     otp.length === OTP_LENGTH && !!normalizedEmail && !isPending;
 
-  const focusInput = () => inputRef.current?.focus();
+  const keepCodeInputVisible = () => {
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    });
+  };
+
+  const focusInput = () => {
+    inputRef.current?.focus();
+    keepCodeInputVisible();
+  };
 
   const handleVerify = async () => {
     try {
@@ -160,10 +171,17 @@ const VerifyMailScreen = () => {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.flex}
     >
-      <View style={styles.container}>
+      <ScrollView
+        ref={scrollRef}
+        automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+        contentContainerStyle={styles.container}
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         {/* Close */}
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="close" size={28} color={COLORS.primary} />
@@ -194,6 +212,7 @@ const VerifyMailScreen = () => {
               }
               keyboardType="number-pad"
               maxLength={OTP_LENGTH}
+              onFocus={keepCodeInputVisible}
               style={styles.otpInput}
             />
           </TouchableOpacity>
@@ -218,7 +237,6 @@ const VerifyMailScreen = () => {
 
           {/* START OVER */}
 
-
           {/* BUTTON */}
           <TouchableOpacity
             disabled={!canSubmit}
@@ -229,7 +247,14 @@ const VerifyMailScreen = () => {
               {isPending ? "Checking..." : "Continue"}
             </Text>
           </TouchableOpacity>
-          <View style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "center" }}>
+          <View
+            style={{
+              display: "flex",
+              width: "100%",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
             <TouchableOpacity onPress={handleStartOver} style={styles.linkBtn}>
               <Text style={[{ color: "black", opacity: 0.7 }]}>
                 Wrong email
@@ -239,7 +264,6 @@ const VerifyMailScreen = () => {
               </Text>
             </TouchableOpacity>
           </View>
-
         </View>
 
         <ErrorModal
@@ -247,7 +271,7 @@ const VerifyMailScreen = () => {
           message={errorMessage}
           onClose={() => setErrorMessage("")}
         />
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 };
@@ -258,7 +282,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
 
   container: {
-    flex: 1,
+    flexGrow: 1,
     backgroundColor: COLORS.white,
     paddingHorizontal: 24,
     paddingTop: 54,
@@ -308,7 +332,7 @@ const styles = StyleSheet.create({
     display: "flex",
     flexDirection: "row",
     justifyContent: "center",
-    gap: 4
+    gap: 4,
   },
 
   linkText: {

@@ -99,7 +99,7 @@ export const isTokenExpired = (token: string | null): boolean => {
 
 export const saveTokens = async (
   accessToken: string,
-  refreshToken?: string
+  refreshToken?: string,
 ): Promise<void> => {
   if (!accessToken) {
     log.error("saveTokens called without an access token");
@@ -120,7 +120,9 @@ export const saveTokens = async (
     accessTokenSaved: Boolean(storedAccessToken),
     refreshTokenSaved: Boolean(storedRefreshToken),
     accessTokenExpired: isTokenExpired(storedAccessToken),
-    refreshTokenExpired: storedRefreshToken ? isTokenExpired(storedRefreshToken) : null,
+    refreshTokenExpired: storedRefreshToken
+      ? isTokenExpired(storedRefreshToken)
+      : null,
   });
 };
 
@@ -152,7 +154,9 @@ export const api = axios.create({
 
 let refreshPromise: Promise<string | null> | null = null;
 
-export const refreshAuthTokens = async (flag?:boolean): Promise<string | null> => {
+export const refreshAuthTokens = async (
+  flag?: boolean,
+): Promise<string | null> => {
   if (refreshPromise) {
     log.info("Refresh already in progress, awaiting existing promise");
     return refreshPromise;
@@ -239,7 +243,7 @@ api.interceptors.request.use(
       error instanceof Error ? error.message : "Unknown error",
     );
     return Promise.reject(error);
-  }
+  },
 );
 
 // ─── Response interceptor: handle 401s with one retry ────────────────────────
@@ -251,7 +255,9 @@ api.interceptors.response.use(
     const url = error.config?.url;
     const originalRequest = error.config as RetryableRequestConfig | undefined;
 
-    log.error(`API error [${status}] on ${url}:`, error.message);
+    if (!originalRequest?.suppressGlobalErrorModal) {
+      log.error(`API error [${status}] on ${url}:`, error.message);
+    }
 
     if (status === 401 && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true;
@@ -275,10 +281,9 @@ api.interceptors.response.use(
     }
 
     if (!originalRequest?.suppressGlobalErrorModal && !axios.isCancel(error)) {
-
       publishGlobalError(apiErrorPayload(error));
     }
 
     return Promise.reject(error);
-  }
+  },
 );
