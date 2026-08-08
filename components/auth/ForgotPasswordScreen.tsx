@@ -194,14 +194,14 @@ const styles = StyleSheet.create({
 
   title: {
     color: COLORS.white,
-    fontFamily: "System",
+    fontFamily: "Lexend_400Regular",
     fontSize: 28,
     marginBottom: 8,
   },
 
   subtitle: {
     color: "#6B7280",
-    fontFamily: "System",
+    fontFamily: "Lexend_400Regular",
     fontSize: 14,
     lineHeight: 21,
   },
@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
 
   buttonText: {
     color: COLORS.primary,
-    fontFamily: "System",
+    fontFamily: "Lexend_400Regular",
     fontSize: 15,
     fontWeight: "bold",
   },

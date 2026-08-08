@@ -8,6 +8,14 @@ module.exports = {
   presets: [require("nativewind/preset")],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["Lexend_400Regular", "sans-serif"],
+        lexend: ["Lexend_400Regular", "sans-serif"],
+        "lexend-light": ["Lexend_300Light", "sans-serif"],
+        "lexend-medium": ["Lexend_500Medium", "sans-serif"],
+        "lexend-semibold": ["Lexend_600SemiBold", "sans-serif"],
+        "lexend-bold": ["Lexend_700Bold", "sans-serif"],
+      },
       colors: {
         primary: "#063B2E",
         secondary: "#0F6B4F",

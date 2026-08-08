@@ -131,7 +131,7 @@ export const loginUser = async (data: LoginPayload) => {
   } else {
     await AsyncStorage.removeItem("name");
   }
-  log.info("Login successful, tokens saved", response);
+  log.info("Login successful, tokens saved");
 
   return response;
 };
@@ -217,7 +217,10 @@ export const logoutUser = async (): Promise<void> => {
   try {
     await api.post("/auth/logout", { refresh_token: refreshToken });
   } catch (error) {
-    log.warn("Server logout failed; clearing the local session anyway", error);
+    log.warn(
+      "Server logout failed; clearing the local session anyway",
+      error instanceof Error ? error.message : "Unknown error",
+    );
   }
   await clearAuthTokens({ clearBiometric: true });
 };

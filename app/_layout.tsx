@@ -10,6 +10,14 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Text, TextInput, View } from "react-native";
 import Toast from "react-native-toast-message";
+import {
+  useFonts,
+  Lexend_300Light,
+  Lexend_400Regular,
+  Lexend_500Medium,
+  Lexend_600SemiBold,
+  Lexend_700Bold,
+} from "@expo-google-fonts/lexend";
 import { AuthProvider, useAuth } from "../api/auth";
 import { getBiometricAvailability } from "../lib/biometric-auth";
 import {
@@ -50,7 +58,13 @@ function RootLayoutContent() {
   const segments = useSegments();
   const { maybeShowSubscriptionPrompt } = useSubscriptionPrompt();
   const rootSegment = segments[0];
-  const fontsLoaded = true;
+  const [fontsLoaded] = useFonts({
+    Lexend_300Light,
+    Lexend_400Regular,
+    Lexend_500Medium,
+    Lexend_600SemiBold,
+    Lexend_700Bold,
+  });
 
   const [isRedirectChecking, setIsRedirectChecking] = useState(true);
 
@@ -65,14 +79,14 @@ function RootLayoutContent() {
     const defaultText = Text as unknown as ComponentWithDefaultProps;
     defaultText.defaultProps = defaultText.defaultProps || {};
     defaultText.defaultProps.style = [
-      { fontFamily: "System" },
+      { fontFamily: "Lexend_400Regular" },
       defaultText.defaultProps.style,
     ];
 
     const defaultTextInput = TextInput as unknown as ComponentWithDefaultProps;
     defaultTextInput.defaultProps = defaultTextInput.defaultProps || {};
     defaultTextInput.defaultProps.style = [
-      { fontFamily: "System" },
+      { fontFamily: "Lexend_400Regular" },
       defaultTextInput.defaultProps.style,
     ];
 

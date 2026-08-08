@@ -1,16 +1,31 @@
+import { apiErrorPayload, publishGlobalError } from "@/lib/global-error";
 import type { InternalAxiosRequestConfig } from "axios";
 import axios from "axios";
 import * as SecureStore from "expo-secure-store";
 import { jwtDecode } from "jwt-decode";
-import { apiErrorPayload, publishGlobalError } from "@/lib/global-error";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-// const BACKEND_URL = "http://localhost:8080/api/v1/";
-// const BACKEND_URL = "https://apixavault.kuipid.com/api/v1/";
-const BACKEND_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? "http://192.168.1.118:8080/api/v1/";
-// const BACKEND_URL = "http://192.168.1.118:8080/api/v1/";
+const configuredBackendURL = process.env.EXPO_PUBLIC_API_URL?.trim();
+
+if (!configuredBackendURL) {
+  throw new Error("EXPO_PUBLIC_API_URL is required");
+}
+
+let parsedBackendURL: URL;
+try {
+  parsedBackendURL = new URL(configuredBackendURL);
+} catch {
+  throw new Error("EXPO_PUBLIC_API_URL must be a valid absolute URL");
+}
+
+if (!__DEV__ && parsedBackendURL.protocol !== "https:") {
+  throw new Error("EXPO_PUBLIC_API_URL must use HTTPS outside development");
+}
+
+const BACKEND_URL = configuredBackendURL.endsWith("/")
+  ? configuredBackendURL
+  : `${configuredBackendURL}/`;
 
 export const ACCESS_TOKEN_KEY = "access_token";
 export const REFRESH_TOKEN_KEY = "refresh_token";
@@ -181,7 +196,10 @@ export const refreshAuthTokens = async (flag?:boolean): Promise<string | null> =
       log.info("Token refresh successful");
       return accessToken;
     } catch (err) {
-      log.error("Token refresh request failed:", err);
+      log.error("Token refresh request failed", {
+        status: axios.isAxiosError(err) ? err.response?.status : undefined,
+        message: err instanceof Error ? err.message : "Unknown error",
+      });
       const status = axios.isAxiosError(err) ? err.response?.status : undefined;
       if (status === 400 || status === 401 || status === 403) {
         await clearAuthTokens();
@@ -216,7 +234,10 @@ api.interceptors.request.use(
     return config;
   },
   (error) => {
-    log.error("Request interceptor error:", error);
+    log.error(
+      "Request interceptor error:",
+      error instanceof Error ? error.message : "Unknown error",
+    );
     return Promise.reject(error);
   }
 );
@@ -254,6 +275,7 @@ api.interceptors.response.use(
     }
 
     if (!originalRequest?.suppressGlobalErrorModal && !axios.isCancel(error)) {
+
       publishGlobalError(apiErrorPayload(error));
     }
 

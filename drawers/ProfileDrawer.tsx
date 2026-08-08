@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useProfile } from "../hooks/app/profile";
 import type { DrawerContentProps } from "./types";
 
 type JwtWithEmail = {
@@ -42,6 +43,7 @@ export default function ProfileDrawerContent({
   onClose,
 }: DrawerContentProps) {
   const insets = useSafeAreaInsets();
+  const { data: profile } = useProfile();
   const [email, setEmail] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const { logout } = useAuth();
@@ -83,12 +85,21 @@ export default function ProfileDrawerContent({
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.profileBlock}>
-          <Image
-            source={{
-              uri: "https://i.pinimg.com/1200x/31/02/62/3102629a406ed439592d5833f0faa979.jpg",
-            }}
-            style={styles.avatar}
-          />
+          {
+            profile?.profile_image_url ? <Image
+              source={{
+                uri: profile?.profile_image_url,
+              }}
+              style={styles.avatar}
+            />
+
+              : <Image
+                source={{
+                  uri: "https://i.pinimg.com/1200x/31/02/62/3102629a406ed439592d5833f0faa979.jpg",
+                }}
+                style={styles.avatar}
+              />
+          }
           <View style={styles.profileText}>
             <Text style={styles.name} numberOfLines={1}>
               {name || email || "Xacvault User"}

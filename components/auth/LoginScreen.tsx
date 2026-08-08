@@ -13,7 +13,6 @@ import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import Toast from "react-native-toast-message";
 import { useAuth } from "../../api/auth";
 import { FlatInput } from "../flatinput";
-import { ErrorModal } from "../ui/ErrorModal";
 import { clearRegistrationFlow } from "./authFlow";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -341,11 +340,11 @@ const LoginScreen = () => {
 
 
       </View>
-      <ErrorModal
+      {/* <ErrorModal
         visible={!!errorMessage}
         message={errorMessage}
         onClose={() => setErrorMessage("")}
-      />
+      /> */}
     </ScrollView>
   );
 };
@@ -362,7 +361,7 @@ const styles = {
 
   brand: {
     color: COLORS.primary,
-    fontFamily: "System",
+    fontFamily: "Lexend_400Regular",
     fontSize: 22,
     letterSpacing: 2,
     marginBottom: 18,
@@ -400,13 +399,13 @@ const styles = {
 
   segmentText: {
     color: "#9AA5A1",
-    fontFamily: "System",
+    fontFamily: "Lexend_400Regular",
     fontSize: 12,
   },
 
   segmentActiveText: {
     color: COLORS.primary,
-    fontFamily: "System",
+    fontFamily: "Lexend_400Regular",
     fontSize: 12,
   },
 
@@ -418,14 +417,14 @@ const styles = {
 
   title: {
     color: COLORS.primary,
-    fontFamily: "System",
+    fontFamily: "Lexend_400Regular",
     fontSize: 27,
     marginBottom: 6,
   },
 
   subtitle: {
     color: "#6B7280",
-    fontFamily: "System",
+    fontFamily: "Lexend_400Regular",
     fontSize: 13,
   },
 
@@ -446,7 +445,7 @@ const styles = {
 
   buttonText: {
     color: "white",
-    fontFamily: "System",
+    fontFamily: "Lexend_400Regular",
     fontSize: 13,
     letterSpacing: 1.2,
   },
@@ -457,7 +456,7 @@ const styles = {
 
   fieldError: {
     color: "#D14343",
-    fontFamily: "System",
+    fontFamily: "Lexend_400Regular",
     fontSize: 12,
     marginBottom: 10,
     marginTop: -6,
@@ -481,7 +480,7 @@ const styles = {
 
   forgotText: {
     color: COLORS.primary,
-    fontFamily: "System",
+    fontFamily: "Lexend_400Regular",
     fontSize: 14,
     marginBottom: 14,
     marginTop: -4,
@@ -490,7 +489,7 @@ const styles = {
 
   footerText: {
     color: "#6B7280",
-    fontFamily: "System",
+    fontFamily: "Lexend_400Regular",
     fontSize: 12,
     marginTop: 14,
     textAlign: "center" as const,
@@ -498,7 +497,7 @@ const styles = {
 
   link: {
     color: COLORS.primary,
-    fontFamily: "System",
+    fontFamily: "Lexend_400Regular",
   },
 
   brandMark: {
@@ -514,7 +513,7 @@ const styles = {
 
   brandMarkText: {
     color: COLORS.tertiary,
-    fontFamily: "System",
+    fontFamily: "Lexend_400Regular",
     fontSize: 20,
   },
 };

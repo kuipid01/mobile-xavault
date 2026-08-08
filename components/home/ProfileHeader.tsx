@@ -5,6 +5,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { jwtDecode } from "jwt-decode";
 import { useEffect, useState } from "react";
 import { Image, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useProfile } from "../../hooks/app/profile";
 import { COLORS } from "../../themes/colors";
 
 const getGreeting = (): string => {
@@ -20,7 +21,7 @@ const ProfileHeader = () => {
     const openDrawer = useDrawerStore((state) => state.openDrawer);
     const [email, setEmail] = useState<string | null>(null);
     const [name, setName] = useState<string | null>(null);
-
+    const { data: profile } = useProfile();
     useEffect(() => {
         getAccessToken().then((token) => {
             if (!token) return;
@@ -43,12 +44,17 @@ const ProfileHeader = () => {
                     onPress={() => openDrawer("profile")}
                     style={styles.avatarWrap}
                 >
-                    <Image
+                    {profile?.profile_image_url ? <Image
+                        source={{
+                            uri: profile?.profile_image_url,
+                        }}
+                        style={styles.avatar}
+                    /> : <Image
                         source={{
                             uri: "https://i.pinimg.com/1200x/31/02/62/3102629a406ed439592d5833f0faa979.jpg",
                         }}
                         style={styles.avatar}
-                    />
+                    />}
                 </Pressable>
 
                 <View style={styles.userText}>

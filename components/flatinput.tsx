@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
         color: COLORS.text,
         marginBottom: 8,
         fontWeight: "800",
-        fontFamily: "PlayfairDisplay_700Bold",
+        fontFamily: "Lexend_700Bold",
     },
 
     inputContainer: {
@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 2,
         fontSize: 15,
         fontWeight: "600",
-        fontFamily: "PlayfairDisplay_600SemiBold",
+        fontFamily: "Lexend_600SemiBold",
     },
 
     leftIcon: {

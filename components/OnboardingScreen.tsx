@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
 
   title: {
     color: "#080A0C",
-    fontFamily: "PlayfairDisplay_700Bold",
+    fontFamily: "Lexend_700Bold",
     fontSize: 23,
     lineHeight: 28,
     maxWidth: 270,
@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
 
   skip: {
     color: "#080A0C",
-    fontFamily: "PlayfairDisplay_700Bold",
+    fontFamily: "Lexend_700Bold",
     fontSize: 14,
   },
 

@@ -65,7 +65,7 @@ const styles = StyleSheet.create({
   title: {
     color: "#FFFFFF",
     fontSize: 46,
-    fontFamily: "PlayfairDisplay_700Bold",
+    fontFamily: "Lexend_700Bold",
     letterSpacing: 1,
     textAlign: "center",
   },
@@ -75,7 +75,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 12,
     letterSpacing: 1,
-    fontFamily: "PlayfairDisplay_500Medium",
+    fontFamily: "Lexend_500Medium",
   },
 
   footer: {
@@ -86,7 +86,7 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.4)",
     fontSize: 10,
     letterSpacing: 2,
-    fontFamily: "PlayfairDisplay_700Bold",
+    fontFamily: "Lexend_700Bold",
     textTransform: "uppercase",
   },
 
@@ -94,6 +94,6 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.2)",
     fontSize: 9,
     marginTop: 4,
-    fontFamily: "PlayfairDisplay_400Regular",
+    fontFamily: "Lexend_400Regular",
   },
 });

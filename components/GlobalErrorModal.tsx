@@ -12,7 +12,7 @@ export function GlobalErrorModal() {
       visible={error !== null}
       title={error?.title}
       message={error?.message || "Something went wrong."}
-      supportReference={error?.supportReference}
+      supportReference={undefined}
       onClose={() => setError(null)}
     />
   );

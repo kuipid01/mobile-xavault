@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
 
     title: {
         color: COLORS.primary,
-        fontFamily: "System",
+        fontFamily: "Lexend_400Regular",
         fontSize: 18,
         fontWeight: "700",
         marginBottom: 8,
@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
 
     message: {
         color: COLORS.text,
-        fontFamily: "System",
+        fontFamily: "Lexend_400Regular",
         fontSize: 15,
         lineHeight: 22,
         textAlign: "center",
@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
 
     actionText: {
         color: COLORS.white,
-        fontFamily: "System",
+        fontFamily: "Lexend_400Regular",
         fontSize: 16,
         fontWeight: "600",
         textAlign: "center",
