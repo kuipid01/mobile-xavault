@@ -46,7 +46,7 @@ export default function ChangeEmailScreen() {
   const [resendIn, setResendIn] = useState(0);
   const [otpError, setOtpError] = useState(false);
 
-  const otpRefs = useRef<Array<TextInput | null>>([]);
+  const otpRefs = useRef<(TextInput | null)[]>([]);
   const progress = useRef(new Animated.Value(0)).current;
 
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail.trim());

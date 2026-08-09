@@ -44,7 +44,6 @@ const RegisterScreen = () => {
   const [confirmPin, setConfirmPin] = useState("");
   const [viewPassword, setViewPassword] = useState(false);
   const [hasLoadedDraft, setHasLoadedDraft] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
   const { mutateAsync: register, isPending } = useRegister();
   const { mutateAsync: startRegistration, isPending: isStartingRegistration } =
     useStartRegistration();
@@ -183,7 +182,11 @@ const RegisterScreen = () => {
         params: { email: normalizedEmail },
       });
     } catch (error: any) {
-      setErrorMessage(getApiErrorMessage(error));
+      Toast.show({
+        type: "error",
+        text1: "Could not send verification code",
+        text2: getApiErrorMessage(error),
+      });
     }
   };
 

@@ -1,7 +1,6 @@
 import { Bank, BankAccount, CreateBankAccountPayload, ResolveAccountResponse } from "@/api/banking";
-import { getWithdrawal } from "@/api/withdrawals";
+import { getWithdrawal, WithdrawalPreview } from "@/api/withdrawals";
 import { formatMoney, koboToNaira, nairaToKobo } from "@/api/money";
-import { WithdrawalPreview } from "@/api/withdrawals";
 import { Envelope, Plan } from "@/api/types";
 import {
   useBankAccounts,
@@ -713,7 +712,8 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
   const [selectedPlanId, setSelectedPlanId] = useState<string>();
   const [selectedTargetId, setSelectedTargetId] = useState<string>();
   const [amount, setAmount] = useState("");
-  const [withdrawAll, setWithdrawAll] = useState(true);
+  const [withdrawAll, setWithdrawAll] = useState(false);
+	const [isCalculatingFullAmount, setIsCalculatingFullAmount] = useState(false);
   const [selectedDestinationKey, setSelectedDestinationKey] = useState<string>();
   const [withdrawalPin, setWithdrawalPin] = useState("");
   const [newWithdrawalPin, setNewWithdrawalPin] = useState("");
@@ -789,7 +789,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
   const selectedDestination = destinationOptions.find(
     (d) => `${d.type}:${d.id}` === selectedDestinationKey
   );
-  const amountInKobo = withdrawAll ? selectedTarget?.balance || 0 : nairaToKobo(amount);
+  const amountInKobo = nairaToKobo(amount);
   const amountIsValid =
     !!selectedTarget && amountInKobo > 0 && amountInKobo <= selectedTarget.balance;
   const hasWithdrawalPin = !!pinStatus?.has_pin;
@@ -829,7 +829,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
     setStep("plan");
     setAmount("");
     setWithdrawalQuote(undefined);
-    setWithdrawAll(true);
+    setWithdrawAll(false);
     setSelectedPlanId(undefined);
     setSelectedTargetId(undefined);
     setSelectedDestinationKey(undefined);
@@ -895,6 +895,68 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
       envelope_id: selectedTarget.type === "envelope" ? selectedTarget.id : undefined,
       amount: amountInKobo
     };
+  };
+
+  const handleWithdrawAll = async () => {
+    if (withdrawAll) {
+      setWithdrawAll(false);
+      setAmount("");
+      setWithdrawalQuote(undefined);
+      return;
+    }
+    if (!selectedPlan || !selectedTarget || selectedTarget.balance <= 0) return;
+
+    setIsCalculatingFullAmount(true);
+    setWithdrawalQuote(undefined);
+    try {
+      let candidate = selectedTarget.balance - (selectedTarget.balance % 100);
+	  let lowestWorkingAmount = 0;
+	  let highestPossibleAmount = candidate;
+      let finalQuote: WithdrawalPreview | undefined;
+
+      for (let attempt = 0; attempt < 12 && candidate > 0; attempt += 1) {
+        const quote = await previewWithdrawal({
+          planId: selectedPlan.id,
+          payload: {
+            source_type:
+              selectedTarget.type === "plan" ? "plan_unboxed" : "envelope",
+            envelope_id: selectedTarget.type === "envelope" ? selectedTarget.id : undefined,
+            amount: candidate,
+          },
+        });
+		if (!quote) throw new Error("The server did not return a withdrawal quote.");
+
+        if (quote.can_withdraw && quote.total_deduction <= selectedTarget.balance) {
+          finalQuote = quote;
+		  lowestWorkingAmount = candidate;
+		  if (candidate >= highestPossibleAmount) break;
+		  candidate = Math.floor((candidate + highestPossibleAmount + 100) / 200) * 100;
+		  continue;
+        }
+
+		highestPossibleAmount = candidate - 100;
+		if (highestPossibleAmount <= lowestWorkingAmount) break;
+		if (lowestWorkingAmount === 0) {
+		  const excess = Math.max(quote.total_deduction - selectedTarget.balance, 100);
+		  candidate = Math.floor((candidate - excess) / 100) * 100;
+		} else {
+		  candidate = Math.floor((lowestWorkingAmount + highestPossibleAmount + 100) / 200) * 100;
+		}
+      }
+
+      candidate = lowestWorkingAmount;
+      if (!finalQuote || !finalQuote.can_withdraw || candidate <= 0) {
+        throw new Error(finalQuote?.validation_errors?.[0] || "No withdrawable amount is available.");
+      }
+
+      setAmount(String(candidate / 100));
+      setWithdrawalQuote(finalQuote);
+      setWithdrawAll(true);
+    } catch (error: any) {
+      showError("Could not calculate full withdrawal", error, "Enter a smaller amount and try again.");
+    } finally {
+      setIsCalculatingFullAmount(false);
+    }
   };
 
   const handleContinue = async () => {
@@ -1183,10 +1245,9 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
                   setWithdrawAll(false);
                 }}
                 onWithdrawAll={() => {
-                  setWithdrawAll(!withdrawAll);
-                  setAmount("");
-                  setWithdrawalQuote(undefined);
+                  void handleWithdrawAll();
                 }}
+				isCalculatingFullAmount={isCalculatingFullAmount}
               />
             )}
 
@@ -1426,7 +1487,8 @@ const StepAmount = ({
   withdrawAll,
   amountInKobo,
   onChangeAmount,
-  onWithdrawAll
+  onWithdrawAll,
+  isCalculatingFullAmount
 }: {
   selectedTarget?: WithdrawalTarget;
   currency?: string;
@@ -1435,6 +1497,7 @@ const StepAmount = ({
   amountInKobo: number;
   onChangeAmount: (v: string) => void;
   onWithdrawAll: () => void;
+  isCalculatingFullAmount: boolean;
 }) => (
   <View style={stepStyles.wrap}>
     <StepHeading
@@ -1457,7 +1520,7 @@ const StepAmount = ({
       <TextInput
         value={
           withdrawAll
-            ? koboToNaira(selectedTarget?.balance || 0).toLocaleString("en-NG", {
+            ? koboToNaira(amountInKobo).toLocaleString("en-NG", {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })
@@ -1483,16 +1546,21 @@ const StepAmount = ({
     <TouchableOpacity
       activeOpacity={0.8}
       onPress={onWithdrawAll}
+	  disabled={isCalculatingFullAmount}
       style={[amountStyles.allRow, withdrawAll && amountStyles.allRowActive]}
     >
       <View style={[amountStyles.checkbox, withdrawAll && amountStyles.checkboxActive]}>
         {withdrawAll && <Ionicons name="checkmark" size={12} color="#FFF" />}
       </View>
       <Text style={[amountStyles.allLabel, withdrawAll && amountStyles.allLabelActive]}>
-        Withdraw full amount
+        {isCalculatingFullAmount
+          ? "Calculating maximum..."
+          : withdrawAll
+            ? "Maximum amount selected"
+            : "Withdraw full amount"}
       </Text>
       <Text style={amountStyles.allAmount}>
-        {formatMoney(selectedTarget?.balance || 0, currency)}
+        {withdrawAll ? formatMoney(amountInKobo, currency) : formatMoney(selectedTarget?.balance || 0, currency)}
       </Text>
     </TouchableOpacity>
 

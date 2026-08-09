@@ -5,9 +5,10 @@ import {
   useVerifyWithdrawalPin,
   useWithdrawalPinStatus,
 } from "@/hooks/app/withdrawal-pin";
+import { useActiveSubscription } from "@/hooks/app/subscription";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -40,7 +41,7 @@ const C = {
 const PIN_LENGTH = 4;
 const OTP_LENGTH = 6;
 
-type Mode = "menu" | "create" | "verify_current" | "new_pin" | "forgot";
+type Mode = "menu" | "create" | "verify_current" | "new_pin" | "forgot" | "fees";
 
 const cleanPin = (value: string) => value.replace(/\D/g, "").slice(0, PIN_LENGTH);
 const cleanOtp = (value: string) => value.replace(/\D/g, "").slice(0, OTP_LENGTH);
@@ -93,6 +94,7 @@ export default function PaymentSettingsScreen() {
     useForgotWithdrawalPin();
   const { mutateAsync: resetPaymentPin, isPending: isResetting } =
     useResetWithdrawalPin();
+	const { data: subscription } = useActiveSubscription({ enabled: true });
 
   const hasPin = !!pinStatus?.has_pin;
   const [mode, setMode] = useState<Mode>("menu");
@@ -104,13 +106,13 @@ export default function PaymentSettingsScreen() {
   const busy = isSaving || isChecking || isSendingOtp || isResetting;
 
   const handleBack = () => {
+	if (mode !== "menu") {
+	  resetForm("menu");
+	  return;
+	}
     if (router.canGoBack()) router.back();
     else router.replace("/(app)/(tabs)/profile");
   };
-
-  useEffect(() => {
-    if (!isLoading && !hasPin) setMode("create");
-  }, [hasPin, isLoading]);
 
   const resetForm = (nextMode: Mode = "menu") => {
     setCurrentPin("");
@@ -211,25 +213,68 @@ export default function PaymentSettingsScreen() {
 
     if (mode === "menu") {
       return (
-        <View style={styles.card}>
-          <ActionRow
-            icon="keypad-outline"
-            label="Change Payment PIN"
-            sublabel="Confirm your current PIN first"
-            onPress={() => resetForm("verify_current")}
-          />
-          <View style={styles.divider} />
-          <ActionRow
-            icon="mail-outline"
-            label="Forgot Payment PIN"
-            sublabel="Send an OTP to your email"
-            onPress={sendForgotOtp}
-            loading={isSendingOtp}
-            last
-          />
-        </View>
+		<View style={styles.settingsList}>
+		  <Text style={styles.sectionLabel}>PAYMENT SECURITY</Text>
+		  <View style={styles.card}>
+			<ActionRow
+			  icon="keypad-outline"
+			  label="Withdrawal PIN"
+			  sublabel={hasPin ? "Used to approve every withdrawal" : "Not set · required before your first withdrawal"}
+			  status={hasPin ? "Set" : "Not set"}
+			  onPress={() => resetForm(hasPin ? "verify_current" : "create")}
+			  last
+			/>
+		  </View>
+
+		  <Text style={styles.sectionLabel}>FEES AND PLAN</Text>
+		  <View style={styles.card}>
+			<ActionRow
+			  icon="receipt-outline"
+			  label="Fees and allowances"
+			  sublabel="Deposit charges and included withdrawals"
+			  onPress={() => setMode("fees")}
+			/>
+			<View style={styles.divider} />
+			<ActionRow
+			  icon="sparkles-outline"
+			  label="Subscription plan"
+			  sublabel="Review capacity and plan benefits"
+			  status={subscription?.plan?.Name || "Free"}
+			  onPress={() => router.push("/(app)/upgrade-plan")}
+			  last
+			/>
+		  </View>
+
+		  <Text style={styles.sectionLabel}>PAYMENT ACTIVITY</Text>
+		  <View style={styles.card}>
+			<ActionRow
+			  icon="time-outline"
+			  label="Transaction history"
+			  sublabel="Deposits, withdrawals and reversals"
+			  onPress={() => router.push("/(app)/transactions")}
+			  last
+			/>
+		  </View>
+		</View>
       );
     }
+
+	if (mode === "fees") {
+	  const included = subscription?.plan?.FreeWithdrawalsMonthly ?? 0;
+	  return (
+		<View style={styles.card}>
+		  <Text style={styles.cardTitle}>Fees and allowances</Text>
+		  <Text style={styles.cardSub}>The exact charge is always shown before you confirm.</Text>
+		  <FeeRow label="Current plan" value={subscription?.plan?.Name || "Free"} />
+		  <FeeRow label="Included withdrawals" value={`${included} per month`} />
+		  <View style={styles.feeDivider} />
+		  <FeeRow label="Paystack checkout" value="1.5% + NGN 100" note="NGN 100 waived below NGN 2,500 · capped at NGN 2,000" />
+		  <FeeRow label="Bank-transfer deposit" value="1%" note="Capped at NGN 300" />
+		  <FeeRow label="Withdrawal transfer" value="NGN 10 / 25 / 50" note="Based on transfer amount; applicable levy is quoted separately" />
+		  <PrimaryButton label="Review plans" onPress={() => router.push("/(app)/upgrade-plan")} />
+		</View>
+	  );
+	}
 
     if (mode === "verify_current") {
       return (
@@ -335,25 +380,24 @@ export default function PaymentSettingsScreen() {
             <TouchableOpacity style={styles.backButton} onPress={handleBack} activeOpacity={0.7}>
               <Ionicons name="arrow-back" size={20} color={C.forest} />
             </TouchableOpacity>
-            <View style={styles.headerIcon}>
-              <Ionicons name="card-outline" size={24} color={C.forest} />
-            </View>
             <Text style={styles.title}>Payment Settings</Text>
             <Text style={styles.subtitle}>
-              Manage the PIN used to approve payments and withdrawals.
+              Manage withdrawal security, fees, your plan and payment activity.
             </Text>
           </View>
 
           {renderBody()}
 
-          {hasPin && mode !== "menu" ? (
+		  {mode !== "menu" ? (
             <TouchableOpacity
               style={styles.cancelButton}
               onPress={() => resetForm("menu")}
               disabled={busy}
               activeOpacity={0.7}
             >
-              <Text style={styles.cancelText}>Cancel</Text>
+			  <Text style={styles.cancelText}>
+				{mode === "fees" ? "Back to payment settings" : "Cancel"}
+			  </Text>
             </TouchableOpacity>
           ) : null}
         </ScrollView>
@@ -368,6 +412,7 @@ function ActionRow({
   sublabel,
   onPress,
   loading,
+  status,
   last,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
@@ -375,6 +420,7 @@ function ActionRow({
   sublabel: string;
   onPress: () => void;
   loading?: boolean;
+  status?: string;
   last?: boolean;
 }) {
   return (
@@ -394,9 +440,24 @@ function ActionRow({
       {loading ? (
         <ActivityIndicator color={C.forest} />
       ) : (
-        <Ionicons name="chevron-forward" size={17} color={C.faint} />
+		<View style={styles.rowEnd}>
+		  {status ? <Text style={styles.rowStatus}>{status}</Text> : null}
+		  <Ionicons name="chevron-forward" size={17} color={C.faint} />
+		</View>
       )}
     </TouchableOpacity>
+  );
+}
+
+function FeeRow({ label, value, note }: { label: string; value: string; note?: string }) {
+  return (
+	<View style={styles.feeRow}>
+	  <View style={styles.feeRowTop}>
+		<Text style={styles.feeLabel}>{label}</Text>
+		<Text style={styles.feeValue}>{value}</Text>
+	  </View>
+	  {note ? <Text style={styles.feeNote}>{note}</Text> : null}
+	</View>
   );
 }
 
@@ -495,6 +556,15 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
   },
+	settingsList: { gap: 10 },
+	sectionLabel: {
+	  color: C.faint,
+	  fontSize: 11,
+	  fontWeight: "800",
+	  letterSpacing: 0.8,
+	  marginTop: 8,
+	  marginLeft: 4,
+	},
   loadingCard: {
     backgroundColor: C.surface,
     borderRadius: 20,
@@ -521,6 +591,14 @@ const styles = StyleSheet.create({
   rowText: { flex: 1 },
   rowLabel: { color: C.ink, fontSize: 14.5, fontWeight: "700" },
   rowSub: { color: C.muted, fontSize: 12, fontWeight: "500", marginTop: 2 },
+	rowEnd: { flexDirection: "row", alignItems: "center", gap: 6 },
+	rowStatus: { color: C.forestMid, fontSize: 12, fontWeight: "800" },
+	feeRow: { marginTop: 20 },
+	feeRowTop: { flexDirection: "row", justifyContent: "space-between", gap: 16 },
+	feeLabel: { flex: 1, color: C.ink, fontSize: 13.5, fontWeight: "700" },
+	feeValue: { color: C.forest, fontSize: 13.5, fontWeight: "800", textAlign: "right" },
+	feeNote: { color: C.muted, fontSize: 11.5, lineHeight: 17, marginTop: 4 },
+	feeDivider: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginTop: 20 },
   inputGroup: { marginTop: 20 },
   inputLabel: { color: C.ink, fontSize: 12.5, fontWeight: "700", marginBottom: 8 },
   input: {
@@ -566,5 +644,5 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     marginTop: 12,
   },
-  cancelText: { color: C.danger, fontSize: 13.5, fontWeight: "700" },
+	cancelText: { color: C.forestMid, fontSize: 13.5, fontWeight: "700" },
 });

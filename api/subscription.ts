@@ -24,6 +24,7 @@ export type SubscriptionPlan = {
 
   FreeFlexibleWithdrawalsMonthly: number;
   FreeEmergencyWithdrawalsMonthly: number;
+	FreeWithdrawalsMonthly?: number;
 
   HasSalarySplit: boolean;
   HasFullAnalytics: boolean;
@@ -115,6 +116,7 @@ export const FREE_SUBSCRIPTION: UserSubscription = {
     MaxEmergencyVaults: 1,
     FreeFlexibleWithdrawalsMonthly: 0,
     FreeEmergencyWithdrawalsMonthly: 0,
+	FreeWithdrawalsMonthly: 0,
     HasSalarySplit: false,
     HasFullAnalytics: false,
     HasSharedEnvelopes: false,

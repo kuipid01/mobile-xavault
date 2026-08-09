@@ -343,7 +343,7 @@ export default function CreateEnvelopeScreen() {
       Animated.timing(summaryAnim, { toValue: 1, duration: 380, useNativeDriver: true }),
       Animated.timing(formAnim, { toValue: 1, duration: 380, useNativeDriver: true }),
     ]).start();
-  }, []);
+  }, [formAnim, headerAnim, summaryAnim]);
 
   const enterStyle = (anim: Animated.Value) => ({
     opacity: anim,
