@@ -11,7 +11,7 @@ import React, {
 } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import Toast from "react-native-toast-message";
-import { useDismissDeposit, useInitiateDeposit, useVerifyDeposit } from "./app/wallet";
+import { useDismissDeposit, useInitiateDeposit, useQuoteDeposit, useVerifyDeposit } from "./app/wallet";
 import { trackEvent } from "@/lib/analytics";
 import * as WebBrowser from "expo-web-browser";
 
@@ -100,6 +100,7 @@ function useDepositVerificationState(): DepositVerificationContextValue {
   const { mutateAsync: verifyDeposit } = useVerifyDeposit();
   const { mutateAsync: dismissDeposit } = useDismissDeposit();
   const { mutateAsync: initiateDeposit } = useInitiateDeposit();
+  const { mutateAsync: quoteDeposit } = useQuoteDeposit();
   const appState = useRef(AppState.currentState);
   const isCheckingRef = useRef(false);
 
@@ -436,8 +437,11 @@ function useDepositVerificationState(): DepositVerificationContextValue {
     }
 
     const idempotencyKey = createIdempotencyKey();
+    const quote = await quoteDeposit(amount);
+    if (!quote?.quote_id) throw new Error("Could not refresh deposit fee quote");
     const response = await initiateDeposit({
       amount,
+      quote_id: quote.quote_id,
       idempotency_key: idempotencyKey,
     });
     const authorizationUrl =
@@ -477,6 +481,7 @@ function useDepositVerificationState(): DepositVerificationContextValue {
   }, [
     dismissDeposit,
     initiateDeposit,
+    quoteDeposit,
     pendingAmount,
     pendingReference,
     persistPendingDeposit,

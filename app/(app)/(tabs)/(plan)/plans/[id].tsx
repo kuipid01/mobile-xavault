@@ -6,18 +6,20 @@ import {
   PlanDetailSkeleton,
 } from "@/components/plan/PlanSkeletons";
 import { useEnvelopes } from "@/hooks/app/envelopes";
-import { useConfirmPlan, usePlan, usePreviewPlan } from "@/hooks/app/plans";
+import { useCancelPlan, useConfirmPlan, usePlan, usePreviewPlan } from "@/hooks/app/plans";
 import { useSubscriptionLimitModal } from "@/hooks/use-subscription-limit-modal";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   ActivityIndicator,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { useState } from "react";
 import Toast from "react-native-toast-message";
 
 export default function PlanDetailScreen() {
@@ -32,6 +34,8 @@ export default function PlanDetailScreen() {
   );
   const { mutateAsync: confirm, isPending: isConfirming } =
     useConfirmPlan(planId);
+  const { mutateAsync: deleteDraft, isPending: isDeletingDraft } = useCancelPlan(planId);
+  const [showDeleteDraft, setShowDeleteDraft] = useState(false);
   const { showSubscriptionLimitModal } = useSubscriptionLimitModal();
 
   const handleConfirm = async () => {
@@ -50,6 +54,21 @@ export default function PlanDetailScreen() {
           error?.response?.data?.message ||
           error?.message ||
           "Please try again.",
+      });
+    }
+  };
+
+  const handleDeleteDraft = async () => {
+    try {
+      await deleteDraft("Deleted draft plan");
+      setShowDeleteDraft(false);
+      Toast.show({ type: "success", text1: "Draft plan deleted" });
+      router.replace("/(app)/(tabs)/(plan)/plans");
+    } catch (error: any) {
+      Toast.show({
+        type: "error",
+        text1: "Could not delete draft",
+        text2: error?.response?.data?.message || error?.message || "Please try again.",
       });
     }
   };
@@ -314,6 +333,14 @@ export default function PlanDetailScreen() {
                 </>
               )}
             </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.deleteDraftButton}
+              onPress={() => setShowDeleteDraft(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="trash-outline" size={16} color="#B42318" />
+              <Text style={styles.deleteDraftText}>Delete draft</Text>
+            </TouchableOpacity>
           </View>
         ) : null}
 
@@ -359,6 +386,12 @@ export default function PlanDetailScreen() {
                   params: { id: plan.id, envelopeId: envelope.id },
                 })
               }
+              onChildPress={(child) =>
+                router.push({
+                  pathname: "/(app)/(tabs)/(plan)/plans/[id]/envelopes/[envelopeId]",
+                  params: { id: plan.id, envelopeId: child.id },
+                })
+              }
             />
           ))}
         </View>
@@ -372,6 +405,23 @@ export default function PlanDetailScreen() {
           }
         />
       </ScrollView>
+      <Modal visible={showDeleteDraft} transparent animationType="fade" onRequestClose={() => setShowDeleteDraft(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.deleteModal}>
+            <View style={styles.deleteModalIcon}><Ionicons name="trash-outline" size={22} color="#B42318" /></View>
+            <Text style={styles.deleteModalTitle}>Delete this draft?</Text>
+            <Text style={styles.deleteModalText}>The draft and its unconfirmed setup will be removed. No wallet funds are affected.</Text>
+            <View style={styles.deleteModalActions}>
+              <TouchableOpacity style={styles.modalCancelButton} onPress={() => setShowDeleteDraft(false)} disabled={isDeletingDraft}>
+                <Text style={styles.modalCancelText}>Keep draft</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalDeleteButton} onPress={handleDeleteDraft} disabled={isDeletingDraft}>
+                {isDeletingDraft ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Text style={styles.modalDeleteText}>Delete</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1065,4 +1115,38 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "900",
   },
+  deleteDraftButton: {
+    marginTop: 10,
+    minHeight: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#F2C7C3",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+  },
+  deleteDraftText: { color: "#B42318", fontSize: 13, fontWeight: "800" },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(3, 25, 19, 0.52)",
+    justifyContent: "flex-end",
+    padding: 18,
+  },
+  deleteModal: { backgroundColor: "#FFFFFF", borderRadius: 24, padding: 20 },
+  deleteModalIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 15,
+    backgroundColor: "#FEECEB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  deleteModalTitle: { marginTop: 14, color: "#063B2E", fontSize: 19, fontWeight: "900" },
+  deleteModalText: { marginTop: 7, color: "#66736E", fontSize: 13, lineHeight: 19, fontWeight: "600" },
+  deleteModalActions: { marginTop: 20, flexDirection: "row", gap: 10 },
+  modalCancelButton: { flex: 1, minHeight: 48, borderRadius: 15, backgroundColor: "#EDF2EF", alignItems: "center", justifyContent: "center" },
+  modalCancelText: { color: "#33443E", fontWeight: "800" },
+  modalDeleteButton: { flex: 1, minHeight: 48, borderRadius: 15, backgroundColor: "#B42318", alignItems: "center", justifyContent: "center" },
+  modalDeleteText: { color: "#FFFFFF", fontWeight: "900" },
 });

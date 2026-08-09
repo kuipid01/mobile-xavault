@@ -1,6 +1,7 @@
 import { Bank, BankAccount, CreateBankAccountPayload, ResolveAccountResponse } from "@/api/banking";
 import { getWithdrawal } from "@/api/withdrawals";
-import { formatMoney, nairaToKobo } from "@/api/money";
+import { formatMoney, koboToNaira, nairaToKobo } from "@/api/money";
+import { WithdrawalPreview } from "@/api/withdrawals";
 import { Envelope, Plan } from "@/api/types";
 import {
   useBankAccounts,
@@ -721,6 +722,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
   const [withdrawalAttemptKey, setWithdrawalAttemptKey] = useState(createWithdrawalAttemptKey);
   const [processingState, setProcessingState] = useState<WithdrawalProcessingState>();
   const [withdrawalReceipt, setWithdrawalReceipt] = useState<WithdrawalReceipt | null>(null);
+  const [withdrawalQuote, setWithdrawalQuote] = useState<WithdrawalPreview>();
   const [modalError, setModalError] = useState<{
     title: string;
     message: string;
@@ -826,6 +828,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
     withdrawalPollSession.current += 1;
     setStep("plan");
     setAmount("");
+    setWithdrawalQuote(undefined);
     setWithdrawAll(true);
     setSelectedPlanId(undefined);
     setSelectedTargetId(undefined);
@@ -937,6 +940,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
           });
           return;
         }
+        setWithdrawalQuote(preview);
         setStep("destination");
       } catch (error: any) {
         showError("Could not verify this balance", error, "Please try again.");
@@ -969,6 +973,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
 
     const previewPayload = buildPreviewPayload();
     if (!previewPayload) return;
+    let confirmedQuote = withdrawalQuote;
     try {
       const latest = await previewWithdrawal({
         planId: selectedPlan.id,
@@ -982,6 +987,8 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
         });
         return;
       }
+      setWithdrawalQuote(latest);
+      confirmedQuote = latest;
     } catch (error: any) {
       showError("Could not verify this balance", error, "Please try again.");
       return;
@@ -999,6 +1006,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
     }
 
     const payload = {
+      quote_id: confirmedQuote?.quote_id || "",
       source_type:
         selectedTarget.type === "plan" ? ("plan_unboxed" as const) : ("envelope" as const),
       envelope_id: selectedTarget.type === "envelope" ? selectedTarget.id : undefined,
@@ -1157,7 +1165,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
                 targetOptions={targetOptions}
                 isLoading={isEnvelopesLoading}
                 selectedTargetId={selectedTargetId}
-                onSelect={setSelectedTargetId}
+                onSelect={(id) => { setSelectedTargetId(id); setWithdrawalQuote(undefined); }}
                 currency={selectedPlan?.currency}
               />
             )}
@@ -1171,11 +1179,13 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
                 amountInKobo={amountInKobo}
                 onChangeAmount={(v) => {
                   setAmount(v.replace(/[^0-9]/g, ""));
+                  setWithdrawalQuote(undefined);
                   setWithdrawAll(false);
                 }}
                 onWithdrawAll={() => {
                   setWithdrawAll(!withdrawAll);
                   setAmount("");
+                  setWithdrawalQuote(undefined);
                 }}
               />
             )}
@@ -1213,6 +1223,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
                 selectedDestination={selectedDestination}
                 amountInKobo={amountInKobo}
                 withdrawAll={withdrawAll}
+                quote={withdrawalQuote}
               />
             )}
 
@@ -1223,6 +1234,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
                 selectedDestination={selectedDestination}
                 amountInKobo={amountInKobo}
                 withdrawAll={withdrawAll}
+                quote={withdrawalQuote}
                 hasWithdrawalPin={hasWithdrawalPin}
                 isPinStatusLoading={isPinStatusLoading}
                 pinMode={pinMode}
@@ -1445,7 +1457,10 @@ const StepAmount = ({
       <TextInput
         value={
           withdrawAll
-            ? formatMoney(selectedTarget?.balance || 0, currency).replace(/[^0-9]/g, "")
+            ? koboToNaira(selectedTarget?.balance || 0).toLocaleString("en-NG", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })
             : amount
         }
         onChangeText={(v) => {
@@ -1798,13 +1813,15 @@ const StepReview = ({
   selectedTarget,
   selectedDestination,
   amountInKobo,
-  withdrawAll
+  withdrawAll,
+  quote
 }: {
   selectedPlan?: Plan;
   selectedTarget?: WithdrawalTarget;
   selectedDestination?: DestinationSelection;
   amountInKobo: number;
   withdrawAll: boolean;
+  quote?: WithdrawalPreview;
 }) => (
   <View style={stepStyles.wrap}>
     <StepHeading
@@ -1821,6 +1838,11 @@ const StepReview = ({
     />
 
     <View style={reviewStyles.card}>
+      <ReviewRow label="Recipient gets" value={formatMoney(quote?.recipient_amount || amountInKobo)} />
+      <ReviewRow label="Provider fee" value={formatMoney(quote?.provider_transfer_fee || 0)} />
+      {quote?.government_levy ? <ReviewRow label="Government levy" value={formatMoney(quote.government_levy)} /> : null}
+      {quote?.allowance_applied ? <ReviewRow label="Covered by Xavault" value={`-${formatMoney(quote.xavault_subsidy)}`} /> : null}
+      <ReviewRow label="Total deducted" value={formatMoney(quote?.total_deduction || amountInKobo)} />
       <ReviewRow
         label="From"
         value={selectedTarget?.label || "Selected source"}
@@ -1932,6 +1954,7 @@ const StepPin = ({
   selectedDestination,
   amountInKobo,
   withdrawAll,
+  quote,
   hasWithdrawalPin,
   isPinStatusLoading,
   pinMode,
@@ -1952,6 +1975,7 @@ const StepPin = ({
   selectedDestination?: DestinationSelection;
   amountInKobo: number;
   withdrawAll: boolean;
+  quote?: WithdrawalPreview;
   hasWithdrawalPin: boolean;
   isPinStatusLoading: boolean;
   pinMode: "enter" | "reset";
@@ -1987,6 +2011,12 @@ const StepPin = ({
         amountInKobo={amountInKobo}
         withdrawAll={withdrawAll}
       />
+
+      <View style={reviewStyles.card}>
+        <ReviewRow label="Recipient gets" value={formatMoney(quote?.recipient_amount || amountInKobo)} />
+        <ReviewRow label="Fees you pay" value={formatMoney(quote?.user_fee || 0)} />
+        <ReviewRow label="Total deducted" value={formatMoney(quote?.total_deduction || amountInKobo)} last />
+      </View>
 
       {/* PIN card */}
       <View style={pinStyles.card}>

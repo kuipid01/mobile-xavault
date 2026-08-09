@@ -7,9 +7,10 @@ type Props = {
     envelope: Envelope;
     inheritsPlanLock?: boolean;
     onPress?: () => void;
+    onChildPress?: (envelope: Envelope) => void;
 };
 
-export function EnvelopeCard({ envelope, inheritsPlanLock = false, onPress }: Props) {
+export function EnvelopeCard({ envelope, inheritsPlanLock = false, onPress, onChildPress }: Props) {
     const isLocked = envelope.unboxed_balance_policy !== "flexible";
 
     return (
@@ -43,7 +44,11 @@ export function EnvelopeCard({ envelope, inheritsPlanLock = false, onPress }: Pr
 
                     <View style={styles.children}>
                         {envelope.children.map((child) => (
-                            <Pressable key={child.id} style={styles.childCard}>
+                            <Pressable
+                                key={child.id}
+                                style={styles.childCard}
+                                onPress={() => onChildPress?.(child)}
+                            >
                                 <View style={styles.childIcon}>
                                     <Ionicons name="cart-outline" size={16} color="#9CA3AF" />
                                 </View>

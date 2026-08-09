@@ -2,6 +2,7 @@ import { nairaToKobo } from "@/api/money";
 import {
   useEnsureDedicatedAccount,
   useInitiateDeposit,
+  useQuoteDeposit,
   useWallet,
 } from "@/hooks/app/wallet";
 import { useSubscriptionLimitModal } from "@/hooks/use-subscription-limit-modal";
@@ -26,6 +27,7 @@ export function useWalletActions() {
   } = useDepositVerificationContext();
   const { showSubscriptionLimitModal } = useSubscriptionLimitModal();
   const { mutateAsync: deposit, isPending: isDepositing } = useInitiateDeposit();
+  const { mutateAsync: quoteDeposit, isPending: isQuotingDeposit } = useQuoteDeposit();
   const {
     mutateAsync: ensureTransferAccount,
     isPending: isCreatingTransferAccount,
@@ -35,14 +37,20 @@ export function useWalletActions() {
     await refetchWallet();
   }, [refetchWallet]);
 
+  const handleDepositQuote = useCallback(
+    (amount: string) => quoteDeposit(nairaToKobo(amount)),
+    [quoteDeposit]
+  );
+
   const handleDeposit = useCallback(
-    async (amount: string) => {
+    async (amount: string, quoteId: string) => {
       const amountInKobo = nairaToKobo(amount);
 
       try {
         const idempotencyKey = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
         const response = await deposit({
           amount: amountInKobo,
+          quote_id: quoteId,
           idempotency_key: idempotencyKey,
         });
 
@@ -145,14 +153,16 @@ export function useWalletActions() {
   const walletActionModals = useMemo(
     () => (
       <>
-        <DepositModal
+      <DepositModal
           visible={depositVisible}
           onClose={() => setDepositVisible(false)}
-          onDeposit={handleDeposit}
+        onDeposit={handleDeposit}
+        onQuote={handleDepositQuote}
           onCreateTransferAccount={handleCreateTransferAccount}
           onTransferRefresh={handleTransferRefresh}
           wallet={wallet}
-          isPending={isDepositing}
+        isPending={isDepositing}
+        isQuoting={isQuotingDeposit}
           isCreatingTransferAccount={isCreatingTransferAccount}
         />
 
@@ -167,9 +177,11 @@ export function useWalletActions() {
       depositVisible,
       handleCreateTransferAccount,
       handleDeposit,
+      handleDepositQuote,
       handleTransferRefresh,
       isCreatingTransferAccount,
       isDepositing,
+      isQuotingDeposit,
       refreshWallet,
       wallet,
       withdrawalVisible,

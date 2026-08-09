@@ -2,6 +2,7 @@ import { api } from "./client";
 import { ApiResponse } from "./types";
 
 export type WithdrawPayload = {
+  quote_id: string;
   source_type: "plan_unboxed" | "envelope";
   envelope_id?: string;
   amount: number;
@@ -17,6 +18,16 @@ export type WithdrawalPreviewPayload = Pick<
 >;
 
 export type WithdrawalPreview = {
+  quote_id: string;
+  provider_transfer_fee: number;
+  government_levy: number;
+  xavault_subsidy: number;
+  user_fee: number;
+  total_deduction: number;
+  recipient_amount: number;
+  allowance_applied: boolean;
+  pricing_version: string;
+  expires_at: string;
   can_withdraw: boolean;
   source_type: WithdrawPayload["source_type"];
   plan_id: string;
@@ -29,6 +40,8 @@ export type WithdrawalPreview = {
 
 export type WithdrawalRecord = {
   id: string;
+  plan_id?: string;
+  envelope_id?: string;
   reference: string;
   amount: number;
   status: string;
@@ -92,4 +105,11 @@ export const getWithdrawals = async (page = 1) => {
     `/withdrawals/history?page=${page}&limit=50`
   );
   return res.data.data || { items: [], page, limit: 50, total: 0 };
+};
+
+export const getPlanWithdrawals = async (planId: string) => {
+  const res = await api.get<ApiResponse<WithdrawalHistoryPage>>(
+    `/withdrawals/${planId}/withdrawals`
+  );
+  return res.data.data?.items || [];
 };

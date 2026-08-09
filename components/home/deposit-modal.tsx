@@ -16,6 +16,8 @@ import {
   View,
 } from "react-native";
 import Toast from "react-native-toast-message";
+import { DepositFeeQuote } from "../../api/wallet";
+import { formatMoney } from "../../api/money";
 import { Wallet } from "../../api/types";
 import { COLORS } from "../../themes/colors";
 
@@ -25,11 +27,13 @@ const MAX_DEPOSIT_NAIRA = 5_000_000;
 type Props = {
   visible: boolean;
   onClose: () => void;
-  onDeposit: (amount: string) => Promise<void> | void;
+  onDeposit: (amount: string, quoteId: string) => Promise<void> | void;
+  onQuote: (amount: string) => Promise<DepositFeeQuote | undefined>;
   onCreateTransferAccount: () => Promise<void> | void;
   onTransferRefresh: () => Promise<void> | void;
   wallet?: Wallet;
   isPending?: boolean;
+  isQuoting?: boolean;
   isCreatingTransferAccount?: boolean;
 };
 
@@ -37,14 +41,17 @@ const DepositModal = ({
   visible,
   onClose,
   onDeposit,
+  onQuote,
   onCreateTransferAccount,
   onTransferRefresh,
   wallet,
   isPending,
+  isQuoting,
   isCreatingTransferAccount,
 }: Props) => {
   const [amount, setAmount] = useState("");
   const [amountError, setAmountError] = useState<string | null>(null);
+  const [quote, setQuote] = useState<DepositFeeQuote | undefined>();
   const sheetAnim = useRef(new Animated.Value(0)).current;
 
   const formattedAmount = amount
@@ -74,6 +81,17 @@ const DepositModal = ({
       friction: 10,
     }).start();
   }, [sheetAnim, visible]);
+
+  useEffect(() => {
+    setQuote(undefined);
+    if (!amount || validateAmount(Number(amount))) return;
+    const timer = setTimeout(() => {
+      void onQuote(amount)
+        .then(setQuote)
+        .catch(() => setQuote(undefined));
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [amount, onQuote]);
 
   const requestClose = () => {
     if (isPending || isCreatingTransferAccount) return;
@@ -115,7 +133,9 @@ const DepositModal = ({
       return;
     }
 
-    await onDeposit(amount);
+    const currentQuote = quote || await onQuote(amount);
+    if (!currentQuote) { setAmountError("Could not calculate processing fee. Try again."); return; }
+    await onDeposit(amount, currentQuote.quote_id);
     setAmount("");
     setAmountError(null);
     onClose();
@@ -194,6 +214,9 @@ const DepositModal = ({
                 <Text style={styles.transferName}>
                   {wallet.dedicated_account_name}
                 </Text>
+                <Text style={styles.transferHint}>
+                  Bank transfers are credited after a 1% processing fee, capped at NGN 300.
+                </Text>
                 <View style={styles.transferActions}>
                   <TouchableOpacity
                     activeOpacity={0.8}
@@ -248,6 +271,16 @@ const DepositModal = ({
           </View>
 
           <Text style={styles.preview}>Amount: NGN {formattedAmount}.00</Text>
+          {quote ? (
+            <View style={styles.feeCard}>
+              <View style={styles.feeRow}><Text style={styles.feeLabel}>Wallet credit</Text><Text style={styles.feeValue}>{formatMoney(quote.net_credit)}</Text></View>
+              <View style={styles.feeRow}><Text style={styles.feeLabel}>Processing fee</Text><Text style={styles.feeValue}>{formatMoney(quote.provider_fee)}</Text></View>
+              <View style={styles.feeDivider} />
+              <View style={styles.feeRow}><Text style={styles.feeTotalLabel}>You will pay</Text><Text style={styles.feeTotal}>{formatMoney(quote.gross_charge)}</Text></View>
+            </View>
+          ) : isQuoting ? (
+            <Text style={styles.limitText}>Calculating processing fee...</Text>
+          ) : null}
           {amountError ? (
             <Text style={styles.errorText}>{amountError}</Text>
           ) : (
@@ -261,14 +294,14 @@ const DepositModal = ({
             activeOpacity={0.8}
             style={[
               styles.button,
-              (!amount || Boolean(amountError) || isPending) &&
+              (!amount || Boolean(amountError) || isPending || isQuoting || !quote) &&
                 styles.buttonDisabled,
             ]}
             onPress={handleSubmit}
-            disabled={!amount || Boolean(amountError) || isPending}
+            disabled={!amount || Boolean(amountError) || isPending || isQuoting || !quote}
           >
             <Text style={styles.buttonText}>
-              {isPending ? "Processing..." : "Continue"}
+              {isPending ? "Processing..." : quote ? `Pay ${formatMoney(quote.gross_charge)}` : "Continue"}
             </Text>
           </TouchableOpacity>
 
@@ -287,6 +320,13 @@ const DepositModal = ({
 export default DepositModal;
 
 const styles = StyleSheet.create({
+  feeCard: { marginTop: 12, padding: 14, borderRadius: 14, backgroundColor: "#F4FAF7", gap: 7 },
+  feeRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  feeLabel: { color: "#66736E", fontSize: 12, fontWeight: "600" },
+  feeValue: { color: "#063B2E", fontSize: 12, fontWeight: "800" },
+  feeDivider: { height: 1, backgroundColor: "#DCE9E3", marginVertical: 2 },
+  feeTotalLabel: { color: "#063B2E", fontSize: 13, fontWeight: "900" },
+  feeTotal: { color: "#007A5A", fontSize: 14, fontWeight: "900" },
   overlay: {
     flex: 1,
     justifyContent: "flex-end",

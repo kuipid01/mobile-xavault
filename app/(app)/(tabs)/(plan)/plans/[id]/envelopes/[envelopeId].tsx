@@ -1,17 +1,22 @@
 import { formatMoney } from "@/api/money";
 import { EnvelopeCard } from "@/components/plan/EnvelopeCard";
 import { EnvelopeDetailSkeleton } from "@/components/plan/PlanSkeletons";
-import { useEnvelope } from "@/hooks/app/envelopes";
+import { useDeleteEnvelope, useEnvelope } from "@/hooks/app/envelopes";
 import { usePlan } from "@/hooks/app/plans";
+import { useEnvelopeWithdrawals } from "@/hooks/app/withdrawals";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import {
+  ActivityIndicator,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { useState } from "react";
+import Toast from "react-native-toast-message";
 
 export default function EnvelopeDetailScreen() {
   const { id, envelopeId } = useLocalSearchParams<{
@@ -24,6 +29,23 @@ export default function EnvelopeDetailScreen() {
 
   const { data: plan } = usePlan(planId);
   const { data: envelope, isLoading } = useEnvelope(planId, selectedEnvelopeId);
+  const { data: envelopeTransactions = [] } = useEnvelopeWithdrawals(planId, selectedEnvelopeId);
+  const { mutateAsync: deleteEnvelope, isPending: isDeleting } = useDeleteEnvelope(planId);
+  const [showDelete, setShowDelete] = useState(false);
+  const handleDelete = async () => {
+    try {
+      await deleteEnvelope(selectedEnvelopeId);
+      setShowDelete(false);
+      Toast.show({ type: "success", text1: "Envelope deleted" });
+      router.back();
+    } catch (error: any) {
+      Toast.show({
+        type: "error",
+        text1: "Could not delete envelope",
+        text2: error?.response?.data?.message || error?.message || "Please try again.",
+      });
+    }
+  };
 
   if (isLoading) {
     return (
@@ -209,7 +231,54 @@ export default function EnvelopeDetailScreen() {
             inheritsPlanLock={plan?.unboxed_balance_policy === "locked_until_plan_ends"}
           />
         </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Transactions</Text>
+          <Text style={styles.sectionSubtitle}>Withdrawals recorded against this envelope.</Text>
+        </View>
+        {envelopeTransactions.length === 0 ? (
+          <View style={styles.noTransactions}>
+            <Ionicons name="receipt-outline" size={20} color="#8A9892" />
+            <Text style={styles.noTransactionsText}>No transactions yet</Text>
+          </View>
+        ) : (
+          envelopeTransactions.map((item) => (
+            <View key={item.id} style={styles.transactionRow}>
+              <View style={styles.transactionIcon}><Ionicons name="arrow-up-outline" size={16} color="#B42318" /></View>
+              <View style={styles.transactionCopy}>
+                <Text style={styles.transactionTitle}>{item.description || "Envelope withdrawal"}</Text>
+                <Text style={styles.transactionMeta}>{item.status.replace(/_/g, " ")} · {item.created_at ? new Date(item.created_at).toLocaleDateString("en-NG") : ""}</Text>
+              </View>
+              <Text style={styles.transactionAmount}>-{formatMoney(item.amount, item.currency)}</Text>
+            </View>
+          ))
+        )}
+
+        <TouchableOpacity
+          style={[styles.deleteEnvelopeButton, envelopeTransactions.length > 0 && styles.deleteEnvelopeButtonDisabled]}
+          disabled={envelopeTransactions.length > 0}
+          onPress={() => setShowDelete(true)}
+        >
+          <Ionicons name="trash-outline" size={16} color={envelopeTransactions.length > 0 ? "#A7B0AC" : "#B42318"} />
+          <Text style={[styles.deleteEnvelopeText, envelopeTransactions.length > 0 && styles.deleteEnvelopeTextDisabled]}>
+            {envelopeTransactions.length > 0 ? "Cannot delete an envelope with transactions" : "Delete envelope"}
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
+      <Modal visible={showDelete} transparent animationType="fade" onRequestClose={() => setShowDelete(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.deleteModal}>
+            <Text style={styles.deleteModalTitle}>Delete this envelope?</Text>
+            <Text style={styles.deleteModalText}>Its allocation will return to the parent plan. This is only allowed while it has no transaction history.</Text>
+            <View style={styles.deleteModalActions}>
+              <TouchableOpacity style={styles.modalCancelButton} onPress={() => setShowDelete(false)} disabled={isDeleting}><Text style={styles.modalCancelText}>Keep it</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.modalDeleteButton} onPress={handleDelete} disabled={isDeleting}>
+                {isDeleting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.modalDeleteText}>Delete</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -254,6 +323,27 @@ const StatCell = ({
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  noTransactions: { padding: 18, borderRadius: 18, backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", gap: 9 },
+  noTransactionsText: { color: "#7A8580", fontSize: 13, fontWeight: "700" },
+  transactionRow: { marginBottom: 9, padding: 14, borderRadius: 16, backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", gap: 10 },
+  transactionIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: "#FEECEB", alignItems: "center", justifyContent: "center" },
+  transactionCopy: { flex: 1 },
+  transactionTitle: { color: "#063B2E", fontSize: 12, fontWeight: "800" },
+  transactionMeta: { marginTop: 3, color: "#89948F", fontSize: 10, fontWeight: "600", textTransform: "capitalize" },
+  transactionAmount: { color: "#B42318", fontSize: 12, fontWeight: "900" },
+  deleteEnvelopeButton: { marginTop: 22, minHeight: 50, borderRadius: 16, borderWidth: 1, borderColor: "#F2C7C3", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
+  deleteEnvelopeButtonDisabled: { borderColor: "#DDE3E0", backgroundColor: "#EEF1F0" },
+  deleteEnvelopeText: { color: "#B42318", fontSize: 12, fontWeight: "800" },
+  deleteEnvelopeTextDisabled: { color: "#89948F" },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(3,25,19,0.52)", justifyContent: "flex-end", padding: 18 },
+  deleteModal: { backgroundColor: "#FFFFFF", borderRadius: 24, padding: 20 },
+  deleteModalTitle: { color: "#063B2E", fontSize: 19, fontWeight: "900" },
+  deleteModalText: { marginTop: 7, color: "#66736E", fontSize: 13, lineHeight: 19, fontWeight: "600" },
+  deleteModalActions: { marginTop: 20, flexDirection: "row", gap: 10 },
+  modalCancelButton: { flex: 1, minHeight: 48, borderRadius: 15, backgroundColor: "#EDF2EF", alignItems: "center", justifyContent: "center" },
+  modalCancelText: { color: "#33443E", fontWeight: "800" },
+  modalDeleteButton: { flex: 1, minHeight: 48, borderRadius: 15, backgroundColor: "#B42318", alignItems: "center", justifyContent: "center" },
+  modalDeleteText: { color: "#FFFFFF", fontWeight: "900" },
   container: {
     flex: 1,
     backgroundColor: "#F0F4F2",

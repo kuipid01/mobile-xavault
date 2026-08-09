@@ -1,11 +1,12 @@
 import {
   getWithdrawals,
+  getPlanWithdrawals,
   previewWithdrawal,
   requestWithdrawal,
   WithdrawalPreviewPayload,
   WithdrawPayload
 } from "@/api/withdrawals";
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { envelopeKeys } from "./envelopes";
 import { planKeys } from "./plans";
 import { walletKeys } from "./wallet";
@@ -16,8 +17,19 @@ type WithdrawalRequest = {
 };
 
 export const withdrawalKeys = {
-  history: ["withdrawals", "history"] as const
+  history: ["withdrawals", "history"] as const,
+  plan: (planId: string) => ["withdrawals", "plan", planId] as const
 };
+
+export const useEnvelopeWithdrawals = (planId: string, envelopeId: string) =>
+  useQuery({
+    queryKey: [...withdrawalKeys.plan(planId), "envelope", envelopeId],
+    queryFn: async () => {
+      const items = await getPlanWithdrawals(planId);
+      return items.filter((item) => item.envelope_id === envelopeId);
+    },
+    enabled: !!planId && !!envelopeId,
+  });
 
 const isTerminalWithdrawal = (status?: string) =>
   ["paid", "success", "successful", "completed", "failed", "reversed", "cancelled", "canceled", "rejected"].includes(

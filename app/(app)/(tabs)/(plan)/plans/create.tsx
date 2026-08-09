@@ -1,5 +1,6 @@
-import { nairaToKobo } from "@/api/money";
+import { formatMoney, nairaToKobo } from "@/api/money";
 import { useCreatePlan } from "@/hooks/app/plans";
+import { useWallet } from "@/hooks/app/wallet";
 import { useSubscriptionLimitModal } from "@/hooks/use-subscription-limit-modal";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -83,7 +84,11 @@ export default function CreatePlanScreen() {
   );
 
   const { mutateAsync: create, isPending } = useCreatePlan();
+  const { data: wallet, isLoading: isWalletLoading } = useWallet();
   const { showSubscriptionLimitModal } = useSubscriptionLimitModal();
+  const availableBalance = wallet?.available_balance ?? 0;
+  const enteredAmountKobo = nairaToKobo(amount);
+  const amountExceedsBalance = enteredAmountKobo > availableBalance;
 
   const minimumEndDate = useMemo(() => {
     return normalizeDate(startDate);
@@ -94,7 +99,12 @@ export default function CreatePlanScreen() {
   const pickerMinimumDate = activePicker === "start" ? today : minimumEndDate;
 
   const disabled =
-    !name.trim() || !amount.trim() || Number(amount) <= 0 || isPending;
+    !name.trim() ||
+    !amount.trim() ||
+    Number(amount) <= 0 ||
+    amountExceedsBalance ||
+    isPending ||
+    isWalletLoading;
 
   const selectDurationPreset = (preset: DurationPreset) => {
     setDurationPreset(preset.key);
@@ -145,6 +155,15 @@ export default function CreatePlanScreen() {
         type: "error",
         text1: "Invalid amount",
         text2: "Please enter an amount greater than zero.",
+      });
+      return;
+    }
+
+    if (amountExceedsBalance) {
+      Toast.show({
+        type: "error",
+        text1: "Insufficient available balance",
+        text2: `You can create a plan of up to ${formatMoney(availableBalance)}.`,
       });
       return;
     }
@@ -271,6 +290,22 @@ export default function CreatePlanScreen() {
             icon="cash-outline"
             prefix="₦"
           />
+
+          <View style={styles.availableRow}>
+            <Ionicons
+              name={amountExceedsBalance ? "alert-circle-outline" : "wallet-outline"}
+              size={14}
+              color={amountExceedsBalance ? "#B42318" : "#007A5A"}
+            />
+            <Text
+              style={[
+                styles.availableText,
+                amountExceedsBalance && styles.availableTextError,
+              ]}
+            >
+              Available to plan: {isWalletLoading ? "Loading…" : formatMoney(availableBalance)}
+            </Text>
+          </View>
 
           <View style={styles.dateRow}>
             <DateButton
@@ -733,6 +768,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "800",
     paddingVertical: 0,
+  },
+
+  availableRow: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+
+  availableText: {
+    color: "#007A5A",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+
+  availableTextError: {
+    color: "#B42318",
   },
 
   dateRow: {

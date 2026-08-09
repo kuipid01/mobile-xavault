@@ -1,4 +1,4 @@
-import { dismissDeposit, ensureDedicatedAccount, getDeposits, getWallet, getWalletLedger, initiateDeposit, verifyDeposit } from "@/api/wallet";
+import { dismissDeposit, ensureDedicatedAccount, getDeposits, getWallet, getWalletLedger, initiateDeposit, quoteDeposit, verifyDeposit } from "@/api/wallet";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const walletKeys = {
@@ -39,6 +39,8 @@ export const useInitiateDeposit = () => {
     },
   });
 };
+
+export const useQuoteDeposit = () => useMutation({ mutationFn: quoteDeposit });
 
 export const useEnsureDedicatedAccount = () => {
   const queryClient = useQueryClient();
