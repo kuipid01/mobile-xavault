@@ -47,6 +47,7 @@ type RegisterPayload = {
   country: "NG" | "GH";
   phone_number: string;
   nickname?: string;
+	pin: string;
 };
 
 type StartRegistrationPayload = {

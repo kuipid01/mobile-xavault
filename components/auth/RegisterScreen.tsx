@@ -265,6 +265,7 @@ const RegisterScreen = () => {
         country: draft.country,
         phone_number: draft.phone,
         nickname: normalizeUsername(draft.username),
+		pin,
       });
 
       await clearRegistrationFlow();

@@ -137,27 +137,26 @@ export default function ProfileDrawerContent({
             </Pressable>
           ))}
         </View>
-        <View style={styles.divider} />
-        <View style={styles.referCard}>
-          <View style={styles.referIcon}>
-            <Ionicons name="gift-outline" size={20} color="#063B2E" />
-          </View>
-          <View style={styles.referText}>
-            <Text style={styles.referTitle}>Refer a friend</Text>
-            <Text style={styles.referBody}>
-              Invite someone to build better vault habits with you.
-            </Text>
-          </View>
-        </View>
-        <View style={styles.divider} />
-        <Pressable style={styles.logoutBtn} onPress={handleLogout}>
-          {({ pressed }) => (
-            <View style={[styles.logoutInner, pressed && styles.logoutPressed]}>
-              <Ionicons name="power-outline" size={20} color="rgba(226,232,240,0.86)" />
-              <Text style={styles.logoutText}>Sign Out</Text>
+        <View style={styles.drawerFooter}>
+          <View style={styles.securityBadge}>
+            <View style={styles.securityBadgeIcon}>
+              <Ionicons name="shield-checkmark" size={18} color="#063B2E" />
             </View>
-          )}
-        </Pressable>
+            <View>
+              <Text style={styles.securityBadgeTitle}>Protected payments</Text>
+              <Text style={styles.securityBadgeText}>PIN-secured withdrawals</Text>
+            </View>
+          </View>
+          <View style={styles.divider} />
+          <Pressable style={styles.logoutBtn} onPress={handleLogout}>
+            {({ pressed }) => (
+              <View style={[styles.logoutInner, pressed && styles.logoutPressed]}>
+                <Ionicons name="power-outline" size={20} color="rgba(226,232,240,0.86)" />
+                <Text style={styles.logoutText}>Sign Out</Text>
+              </View>
+            )}
+          </Pressable>
+        </View>
       </ScrollView>
 
     </View>
@@ -243,37 +242,39 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "800",
   },
-  referCard: {
+  drawerFooter: {
+    marginTop: "auto",
+    paddingTop: 36,
+  },
+  securityBadge: {
+    alignItems: "center",
+    backgroundColor: "rgba(214,168,79,0.12)",
+    borderColor: "rgba(214,168,79,0.28)",
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  securityBadgeIcon: {
     alignItems: "center",
     backgroundColor: "#D6A84F",
-    borderRadius: 20,
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 28,
-    padding: 16,
-  },
-  referIcon: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.55)",
-    borderRadius: 20,
-    height: 40,
+    borderRadius: 15,
+    height: 30,
     justifyContent: "center",
-    width: 40,
+    width: 30,
   },
-  referText: {
-    flex: 1,
-  },
-  referTitle: {
-    color: "#052B20",
-    fontSize: 15,
+  securityBadgeTitle: {
+    color: "#F8E7B8",
+    fontSize: 12.5,
     fontWeight: "900",
   },
-  referBody: {
-    color: "rgba(5,43,32,0.72)",
-    fontSize: 12,
+  securityBadgeText: {
+    color: "rgba(255,255,255,0.58)",
+    fontSize: 10.5,
     fontWeight: "700",
-    lineHeight: 17,
-    marginTop: 3,
+    marginTop: 2,
   },
   closeButton: {
     alignItems: "center",

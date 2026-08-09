@@ -6,7 +6,6 @@ import { useWithdrawalHistory } from "@/hooks/app/withdrawals";
 import { trackEvent } from "@/lib/analytics";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import { router } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Modal,
@@ -21,6 +20,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 import { COLORS, Padding, Radius } from "../../themes/colors";
+import { AppScreenHeader } from "@/components/ui/AppScreenHeader";
 
 
 
@@ -137,22 +137,10 @@ export default function TransactionsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          activeOpacity={0.75}
-          onPress={() => {
-            if (router.canGoBack()) router.back();
-            else router.replace("/(app)/(tabs)/home");
-          }}
-          style={styles.backButton}
-        >
-          <Ionicons name="arrow-back" size={18} color={COLORS.primary} />
-        </TouchableOpacity>
-        <View style={styles.headerCopy}>
-          <Text style={styles.title}>Transactions</Text>
-          <Text style={styles.subtitle}>Audit deposits, withdrawals and wallet movement.</Text>
-        </View>
-      </View>
+	  <AppScreenHeader
+		title="Transactions"
+		subtitle="Audit deposits, withdrawals and wallet movement."
+	  />
 
       <ScrollView
         showsVerticalScrollIndicator={false}

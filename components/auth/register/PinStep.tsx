@@ -27,14 +27,14 @@ export const PinStep = ({
   <View style={styles.pinBody}>
     <View style={styles.pinHeader}>
       <Ionicons name="lock-closed-outline" size={52} color={COLORS.primary} />
-      <Text style={styles.largeTitle}>Create PIN</Text>
+	  <Text style={styles.largeTitle}>Create withdrawal PIN</Text>
       <Text style={styles.pinSubtitle}>
-        Your PIN adds an extra layer of security.
+		This 4-digit PIN approves withdrawals and protects money leaving your vault.
       </Text>
     </View>
 
     <View style={styles.pinBlock}>
-      <PinField label="Enter your PIN" value={pin} onChangeText={onPinChange} />
+	  <PinField label="Withdrawal PIN" value={pin} onChangeText={onPinChange} />
       <PinField
         label="Confirm PIN"
         value={confirmPin}
