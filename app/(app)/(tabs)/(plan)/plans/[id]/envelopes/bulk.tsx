@@ -578,14 +578,19 @@ export default function CreateBulkEnvelopesScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
         style={{ flex: 1 }}
+        contentContainerStyle={{
+          padding: 20,
+          paddingBottom: 100,
+          flexGrow: 1,
+        }}
+        showsVerticalScrollIndicator
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         {/* Header */}
         <Animated.View style={[styles.header, enterStyle(headerAnim)]}>
@@ -1037,7 +1042,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   content: {
-    flex: 1,
     padding: 20,
     paddingBottom: 40,
   },
