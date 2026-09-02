@@ -1,5 +1,5 @@
 import { koboToNaira, nairaToKobo } from "@/api/money";
-import { useCreateEnvelope } from "@/hooks/app/envelopes";
+import { useCreateEnvelope, useEnvelopes } from "@/hooks/app/envelopes";
 import { usePlan } from "@/hooks/app/plans";
 import { useSubscriptionLimitModal } from "@/hooks/use-subscription-limit-modal";
 import { Ionicons } from "@expo/vector-icons";
@@ -84,7 +84,7 @@ const DURATION_PRESETS = [
 ] as const;
 
 type DurationPreset = (typeof DURATION_PRESETS)[number];
-type DurationKey = DurationPreset["key"] | "full" | "custom";
+type DurationKey = DurationPreset["key"] | "full" | "custom" | "continue";
 
 const addDuration = (date: Date, preset: DurationPreset) => {
   const next = new Date(date);
@@ -98,6 +98,7 @@ export default function CreateEnvelopeScreen() {
   const planId = typeof id === "string" ? id : "";
 
   const { data: plan, isLoading: isPlanLoading } = usePlan(planId);
+  const { data: existingEnvelopes = [] } = useEnvelopes(planId);
   const { mutateAsync: createEnvelope, isPending } = useCreateEnvelope(planId);
   const { showSubscriptionLimitModal } = useSubscriptionLimitModal();
 
@@ -112,12 +113,52 @@ export default function CreateEnvelopeScreen() {
     return today;
   }, [planStartDate]);
 
+  // ── Compute the latest-ending sibling envelope ──
+  const latestEnvelope = useMemo(() => {
+    if (!existingEnvelopes.length) return null;
+    return existingEnvelopes.reduce((latest, env) => {
+      const envEnd = parseApiDate(env.end_date);
+      const latestEnd = parseApiDate(latest.end_date);
+      return envEnd && latestEnd && envEnd > latestEnd ? env : latest;
+    });
+  }, [existingEnvelopes]);
+
+  // ── Compute the suggested "continue" date range ──
+  const continueSuggested = useMemo(() => {
+    if (!latestEnvelope || !planEndDate) return null;
+
+    const lastEnd = parseApiDate(latestEnvelope.end_date);
+    const lastStart = parseApiDate(latestEnvelope.start_date);
+    if (!lastEnd || !lastStart) return null;
+
+    const suggestedStart = normalizeDate(new Date(lastEnd.getTime() + 86400000));
+    if (suggestedStart > planEndDate) return null;
+
+    // Mirror the duration of the last envelope
+    const lastDurationMs = lastEnd.getTime() - lastStart.getTime();
+    let suggestedEnd = normalizeDate(new Date(suggestedStart.getTime() + lastDurationMs));
+    if (suggestedEnd > planEndDate) suggestedEnd = planEndDate;
+    if (suggestedEnd < suggestedStart) suggestedEnd = suggestedStart;
+
+    return { start: suggestedStart, end: suggestedEnd };
+  }, [latestEnvelope, planEndDate]);
+
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [startDate, setStartDate] = useState<Date>(minimumStartDate);
   const [endDate, setEndDate] = useState<Date | null>(planEndDate || null);
   const [durationPreset, setDurationPreset] = useState<DurationKey>("full");
   const [activePicker, setActivePicker] = useState<"start" | "end" | null>(null);
+
+  // ── Smart name placeholder (2.4): soft suggestion from latest envelope ──
+  const namePlaceholder = useMemo(() => {
+    if (!latestEnvelope || name.length > 0) return "Rent";
+    const match = latestEnvelope.name.match(/^(.*?)(\d+)\s*$/);
+    if (!match) return "Rent";
+    const prefix = match[1].trim();
+    const num = parseInt(match[2], 10);
+    return `${prefix} ${num + 1}`;
+  }, [latestEnvelope, name]);
   const [policy, setPolicy] = useState<"flexible" | "locked_until_parent_ends">(
     "flexible"
   );
@@ -172,6 +213,14 @@ export default function CreateEnvelopeScreen() {
 
   const selectDurationPreset = (key: DurationKey) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+
+    if (key === "continue" && continueSuggested) {
+      setStartDate(continueSuggested.start);
+      setEndDate(continueSuggested.end);
+      setDurationPreset("continue");
+      return;
+    }
+
     setDurationPreset(key);
   };
 
@@ -293,8 +342,13 @@ export default function CreateEnvelopeScreen() {
     isPending ||
     isPlanLoading;
 
-  const pickerValue =
-    activePicker === "start" ? startDate : endDate || minimumEndDate;
+  // ── Smarter picker default (2.5): open on suggested continuation date ──
+  const pickerValue = (() => {
+    if (activePicker === "start") {
+      return continueSuggested ? continueSuggested.start : startDate;
+    }
+    return endDate || continueSuggested?.end || minimumEndDate;
+  })();
 
   const pickerMinimumDate =
     activePicker === "start" ? minimumStartDate : minimumEndDate;
@@ -405,7 +459,7 @@ export default function CreateEnvelopeScreen() {
             label="Envelope name"
             value={name}
             onChangeText={setName}
-            placeholder="Rent"
+            placeholder={namePlaceholder}
             icon="file-tray-full-outline"
           />
 
@@ -485,6 +539,33 @@ export default function CreateEnvelopeScreen() {
 
           <Text style={styles.presetLabel}>How long should this envelope run?</Text>
           <View style={styles.presetRow}>
+            {continueSuggested ? (
+              <TouchableOpacity
+                onPress={() => selectDurationPreset("continue")}
+                activeOpacity={0.8}
+                style={[
+                  styles.presetPill,
+                  styles.presetPillContinue,
+                  durationPreset === "continue" && styles.presetPillActive,
+                ]}
+              >
+                <Ionicons
+                  name="arrow-forward-outline"
+                  size={13}
+                  color={durationPreset === "continue" ? "#FFFFFF" : "#106B4F"}
+                  style={styles.presetPillIcon}
+                />
+                <Text
+                  style={[
+                    styles.presetPillText,
+                    durationPreset === "continue" && styles.presetPillTextActive,
+                  ]}
+                >
+                  Continue
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
             {DURATION_PRESETS.map((preset) => {
               const active = durationPreset === preset.key;
               const available = isPresetAvailable(preset);
@@ -594,6 +675,35 @@ export default function CreateEnvelopeScreen() {
                     },
                   ]}
                 />
+              </View>
+            ) : null}
+
+            {/* 2.6 — Visual occupied-range indicator for sibling envelopes */}
+            {existingEnvelopes.length > 0 && planStartDate && planEndDate ? (
+              <View style={styles.occupiedTrack}>
+                {existingEnvelopes.map((env) => {
+                  const envStart = parseApiDate(env.start_date);
+                  const envEnd = parseApiDate(env.end_date);
+                  if (!envStart || !envEnd) return null;
+                  const totalMs = planEndDate.getTime() - planStartDate.getTime();
+                  if (totalMs <= 0) return null;
+                  const left = clamp(
+                    ((envStart.getTime() - planStartDate.getTime()) / totalMs) * 100,
+                    0,
+                    100
+                  );
+                  const width = clamp(
+                    ((envEnd.getTime() - envStart.getTime()) / totalMs) * 100,
+                    0,
+                    100 - left
+                  );
+                  return (
+                    <View
+                      key={env.id}
+                      style={[styles.occupiedSlice, { left: `${left}%`, width: `${Math.max(width, 1)}%` }]}
+                    />
+                  );
+                })}
               </View>
             ) : null}
 
@@ -1250,6 +1360,28 @@ const styles = StyleSheet.create({
     color: "#946500",
     fontSize: 11,
     fontWeight: "800",
+  },
+
+  occupiedTrack: {
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(148, 101, 0, 0.08)",
+    overflow: "hidden",
+    position: "relative",
+    marginTop: 6,
+  },
+
+  occupiedSlice: {
+    position: "absolute",
+    top: 0,
+    height: "100%",
+    backgroundColor: "rgba(148, 101, 0, 0.28)",
+    borderRadius: 999,
+  },
+
+  presetPillContinue: {
+    borderColor: "#CDEDE0",
+    backgroundColor: "#EAF7F1",
   },
 
   divider: {

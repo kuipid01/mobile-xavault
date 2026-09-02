@@ -404,6 +404,20 @@ export default function PlanDetailScreen() {
             })
           }
         />
+
+        <TouchableOpacity
+          activeOpacity={0.82}
+          onPress={() =>
+            router.push({
+              pathname: "/(app)/(tabs)/(plan)/plans/[id]/envelopes/bulk",
+              params: { id: plan.id },
+            })
+          }
+          style={styles.bulkButton}
+        >
+          <Ionicons name="layers-outline" size={18} color="#106B4F" />
+          <Text style={styles.bulkButtonText}>Bulk envelopes</Text>
+        </TouchableOpacity>
       </ScrollView>
       <Modal visible={showDeleteDraft} transparent animationType="fade" onRequestClose={() => setShowDeleteDraft(false)}>
         <View style={styles.modalBackdrop}>
@@ -1127,6 +1141,19 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   deleteDraftText: { color: "#B42318", fontSize: 13, fontWeight: "800" },
+  bulkButton: {
+    marginTop: 10,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: "#EAF7F1",
+    borderWidth: 1,
+    borderColor: "#CDEDE0",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  bulkButtonText: { color: "#106B4F", fontSize: 14, fontWeight: "900" },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(3, 25, 19, 0.52)",
