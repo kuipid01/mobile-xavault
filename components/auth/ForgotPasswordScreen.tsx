@@ -6,7 +6,7 @@ import React, { useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import Toast from "react-native-toast-message";
 import { FlatInput } from "../flatinput";
-import { ErrorModal } from "../ui/ErrorModal";
+import { PasswordValidationUI } from "./register/DetailsStep";
 
 const getApiErrorMessage = (error: any) => {
   const data = error?.response?.data;
@@ -75,6 +75,8 @@ export default function ForgotPasswordScreen() {
   };
 
   const isPending = isRequesting || isResetting;
+  const sendingOtpDisabled = isPending || !email || !email.includes("@")
+  const resettingPasswordDisabled = isPending || otp.length !== 6 || !password || !confirmPassword || password !== confirmPassword
 
   return (
     <ScrollView
@@ -105,8 +107,8 @@ export default function ForgotPasswordScreen() {
               textColor={COLORS.white} // Custom text color
             />
             <TouchableOpacity
-              style={[styles.button, isPending && styles.buttonDisabled]}
-              disabled={isPending}
+              style={[styles.button, sendingOtpDisabled && styles.buttonDisabled]}
+              disabled={sendingOtpDisabled}
               onPress={handleRequestReset}
             >
               <Text style={styles.buttonText}>
@@ -135,8 +137,9 @@ export default function ForgotPasswordScreen() {
               viewPassword={viewPassword}
               setViewPassword={setViewPassword}
               onChangeText={setPassword}
-              iconColor={COLORS.white}
-              textColor={COLORS.white}
+              iconColor={otp.length === 6 ? COLORS.white : "#6B7280"}
+              textColor={otp.length === 6 ? COLORS.white : "#6B7280"}
+              editable={otp.length === 6}
             />
             <FlatInput
               label="Confirm Password"
@@ -146,12 +149,17 @@ export default function ForgotPasswordScreen() {
               viewPassword={viewPassword}
               setViewPassword={setViewPassword}
               onChangeText={setConfirmPassword}
-              iconColor={COLORS.white}
-              textColor={COLORS.white}
+              iconColor={otp.length === 6 ? COLORS.white : "#6B7280"}
+              textColor={otp.length === 6 ? COLORS.white : "#6B7280"}
+              editable={otp.length === 6}
             />
+            <PasswordValidationUI password={password} textColor="#fff" />
             <TouchableOpacity
-              style={[styles.button, isPending && styles.buttonDisabled]}
-              disabled={isPending}
+              style={[
+                styles.button,
+                (isPending || otp.length !== 6 || !password || !confirmPassword || password !== confirmPassword) && styles.buttonDisabled
+              ]}
+              disabled={isPending || otp.length !== 6 || !password || !confirmPassword}
               onPress={handleResetPassword}
             >
               <Text style={styles.buttonText}>
@@ -161,11 +169,11 @@ export default function ForgotPasswordScreen() {
           </>
         )}
       </View>
-      <ErrorModal
+      {/* <ErrorModal
         visible={!!errorMessage}
         message={errorMessage}
         onClose={() => setErrorMessage("")}
-      />
+      /> */}
     </ScrollView>
   );
 }

@@ -66,14 +66,9 @@ export function useWalletActions() {
             idempotencyKey
           );
         }
-
-        Toast.show({
-          type: "success",
-          text1: "Deposit ready",
-          text2: authorizationUrl
-            ? "Continue payment from the secure checkout modal."
-            : "Check your wallet shortly.",
-        });
+        // Toast removed: the deposit modal appears immediately after,
+        // which is sufficient feedback. Showing a second toast here
+        // causes a double-toast on successful deposit.
       } catch (error: any) {
         const requiredVaultCapacityKobo =
           (wallet?.available_balance || 0) +

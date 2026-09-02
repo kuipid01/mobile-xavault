@@ -47,7 +47,7 @@ type RegisterPayload = {
   country: "NG" | "GH";
   phone_number: string;
   nickname?: string;
-	pin: string;
+  pin: string;
 };
 
 type StartRegistrationPayload = {
@@ -216,7 +216,8 @@ export const logoutUser = async (): Promise<void> => {
   await disableBiometricLogin();
   const refreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
   try {
-    await api.post("/auth/logout", { refresh_token: refreshToken });
+    const response = await api.post("/auth/logout", { refresh_token: refreshToken });
+    console.log("RESPONSE JOOR IUK")
   } catch (error) {
     log.warn(
       "Server logout failed; clearing the local session anyway",

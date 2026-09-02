@@ -9,5 +9,7 @@ export type RegisterDraft = {
   username: string;
   country: SupportedCountry;
   phone: string;
+  gender: string;
+  dob: string;
   makeHalal: boolean;
 };

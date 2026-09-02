@@ -28,7 +28,7 @@ import {
   saveAuthFlow,
 } from "./authFlow";
 import { countryMeta, initialDraft } from "./register/constants";
-import { DetailsStep } from "./register/DetailsStep";
+import { DetailsStep, RegHeader } from "./register/DetailsStep";
 import { EmailStep } from "./register/EmailStep";
 import { PinStep } from "./register/PinStep";
 import { styles } from "./register/styles";
@@ -64,10 +64,10 @@ const RegisterScreen = () => {
         const parsed = JSON.parse(savedDraft) as Partial<RegisterDraft>;
         const savedStep =
           forceDetails ||
-          parsed.step === "pin" ||
-          authFlow?.step === "pin" ||
-          authFlow?.step === "email_verified" ||
-          authFlow?.step === "details"
+            parsed.step === "pin" ||
+            authFlow?.step === "pin" ||
+            authFlow?.step === "email_verified" ||
+            authFlow?.step === "details"
             ? "details"
             : parsed.step || "email";
         setDraft({
@@ -83,9 +83,9 @@ const RegisterScreen = () => {
           username: authFlow.email.split("@")[0],
           step:
             forceDetails ||
-            authFlow.step === "email_verified" ||
-            authFlow.step === "details" ||
-            authFlow.step === "pin"
+              authFlow.step === "email_verified" ||
+              authFlow.step === "details" ||
+              authFlow.step === "pin"
               ? "details"
               : "email",
         });
@@ -265,7 +265,7 @@ const RegisterScreen = () => {
         country: draft.country,
         phone_number: draft.phone,
         nickname: normalizeUsername(draft.username),
-		pin,
+        pin,
       });
 
       await clearRegistrationFlow();
@@ -344,6 +344,9 @@ const RegisterScreen = () => {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.flex}
     >
+      {
+        draft.step === "details" && <RegHeader closeFlow={closeFlow} />
+      }
       <ScrollView
         contentContainerStyle={styles.container}
         ref={scrollRef}
@@ -351,7 +354,7 @@ const RegisterScreen = () => {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {draft.step !== "pin" && (
+        {draft.step !== "pin" && draft.step !== "details" && (
           <TouchableOpacity
             onPress={closeFlow}
             style={styles.closeButton}

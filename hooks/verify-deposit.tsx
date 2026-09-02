@@ -164,6 +164,16 @@ function useDepositVerificationState(): DepositVerificationContextValue {
         return;
       }
 
+      // Bug fix: If the app was killed during a verify call, status is stuck
+      // as "verifying". Recover by resetting to the last known checkout state
+      // so the modal / AppState listener can handle it normally.
+      if (parsed.status === "verifying") {
+        const recoveredPayload = { ...parsed, status: "checkout_opened" as const };
+        logDebug("Recovering stuck 'verifying' status to 'checkout_opened'", recoveredPayload);
+        await persistPendingDeposit(recoveredPayload);
+        return;
+      }
+
       logDebug("Loaded pending deposit", parsed);
       setPendingReference(parsed.reference);
       setPendingAmount(parsed.amount || null);
@@ -203,7 +213,6 @@ function useDepositVerificationState(): DepositVerificationContextValue {
         initiatedAt,
         status,
         lastCheckedAt: Date.now(),
-        verificationAttempts: (storedPending?.verificationAttempts || 0) + 1,
         ...extra,
       };
 
@@ -243,6 +252,8 @@ function useDepositVerificationState(): DepositVerificationContextValue {
         amount,
         reference,
       });
+      // Bug fix: clear any stale receipt from a previous deposit.
+      setConfirmedReceipt(null);
       await persistPendingDeposit(payload);
     },
     [persistPendingDeposit]
@@ -264,6 +275,9 @@ function useDepositVerificationState(): DepositVerificationContextValue {
       }
     }
 
+    // Bug fix: clear any stale receipt from a previous deposit so it
+    // doesn't flash alongside the next deposit's modal.
+    setConfirmedReceipt(null);
     await clearPendingDeposit();
   }, [
     clearPendingDeposit,
@@ -296,10 +310,23 @@ function useDepositVerificationState(): DepositVerificationContextValue {
     isCheckingRef.current = true;
     setIsChecking(true);
     setPendingStatus("verifying");
+    // Bug fix: increment verificationAttempts here (actual API call)
+    // rather than inside updatePendingStatus which fires on every
+    // status transition.
+    const prevAttempts = (storedPending?.verificationAttempts || 0) + 1;
     try {
       logDebug("Verifying pending deposit", activeReference);
       const result = await verifyDeposit(activeReference);
       const verifiedAmount = result.data?.deposit?.amount || activeAmount;
+
+      // Bug fix: persist verificationAttempts correctly before clearing.
+      const storedAfterCheck = await readStoredPendingDeposit();
+      if (storedAfterCheck) {
+        await persistPendingDeposit({
+          ...storedAfterCheck,
+          verificationAttempts: prevAttempts,
+        });
+      }
 
       setPendingStatus("confirmed");
       setConfirmedReceipt({
@@ -336,41 +363,60 @@ function useDepositVerificationState(): DepositVerificationContextValue {
           reference: activeReference,
         }
       );
-      await updatePendingStatus(isStillProcessing ? "needs_action" : "failed");
+      await updatePendingStatus(isStillProcessing ? "needs_action" : "failed", {
+        verificationAttempts: prevAttempts,
+      });
       return false;
     } finally {
       isCheckingRef.current = false;
       setIsChecking(false);
     }
-  }, [
+  },    [
     clearPendingDeposit,
+    persistPendingDeposit,
     pendingInitiatedAt,
     pendingAmount,
     pendingReference,
     readStoredPendingDeposit,
     verifyDeposit,
     updatePendingStatus,
-  ]);
+  ]
+  );
 
   const verifyPendingDeposit = useCallback(
     async (options: { bounded?: boolean } = {}) => {
       const confirmed = await verifyPendingDepositOnce();
       if (confirmed || !options.bounded) return confirmed;
 
+      // Give the payment time to propagate on the backend.
+      // Typical Paystack webhooks take 5-30s after the user completes payment.
       const startedAt = Date.now();
-      const maxDurationMs = 18000;
-      const intervalMs = 2500;
+      const maxDurationMs = 60000;
+      const intervalMs = 4000;
 
       while (Date.now() - startedAt < maxDurationMs) {
         await new Promise((resolve) => setTimeout(resolve, intervalMs));
+
+        // Bug fix: if the user dismissed while we were retrying, bail out
+        // early instead of burning cycles on a null reference.
+        if (!pendingReference) {
+          const stored = await readStoredPendingDeposit();
+          if (!stored?.reference) {
+            logDebug("Pending deposit cleared during bounded retry; stopping");
+            return false;
+          }
+        }
+
         const retryConfirmed = await verifyPendingDepositOnce();
         if (retryConfirmed) return true;
       }
 
-      await updatePendingStatus("needs_action");
+      // After the retry window, mark as still_processing rather than failed,
+      // so the user sees a non-alarming state and can manually verify again.
+      await updatePendingStatus("still_processing");
       return false;
     },
-    [updatePendingStatus, verifyPendingDepositOnce]
+    [pendingReference, readStoredPendingDeposit, updatePendingStatus, verifyPendingDepositOnce]
   );
 
   const continueDepositPayment = useCallback(async () => {
@@ -399,18 +445,22 @@ function useDepositVerificationState(): DepositVerificationContextValue {
       return;
     }
 
+    await WebBrowser.openBrowserAsync(authorizationUrl);
+
+    // Bug fix: set status to checkout_opened AFTER the browser opens
+    // successfully. Previously this ran before openBrowserAsync, so a
+    // browser failure left an orphaned checkout_opened status.
     await updatePendingStatus("checkout_opened", {
       lastOpenedAt: Date.now(),
     });
-
-    await WebBrowser.openBrowserAsync(authorizationUrl);
-    await verifyPendingDeposit({ bounded: true });
+    // Verification is handled by the AppState listener when the user returns to the app.
+    // We intentionally do NOT verify here to avoid a race condition where verification
+    // starts before the user has completed payment.
   }, [
     pendingAuthorizationUrl,
     pendingInitiatedAt,
     readStoredPendingDeposit,
     updatePendingStatus,
-    verifyPendingDeposit,
   ]);
 
   const startNewDepositPayment = useCallback(async () => {
@@ -477,7 +527,9 @@ function useDepositVerificationState(): DepositVerificationContextValue {
       reference,
     });
     await WebBrowser.openBrowserAsync(authorizationUrl);
-    await verifyPendingDeposit({ bounded: true });
+    // Verification is handled by the AppState listener when the user returns to the app.
+    // We intentionally do NOT verify here to avoid a race condition where verification
+    // starts before the user has completed payment.
   }, [
     dismissDeposit,
     initiateDeposit,
@@ -487,7 +539,6 @@ function useDepositVerificationState(): DepositVerificationContextValue {
     persistPendingDeposit,
     readStoredPendingDeposit,
     updatePendingStatus,
-    verifyPendingDeposit,
   ]);
 
   useEffect(() => {
@@ -501,7 +552,15 @@ function useDepositVerificationState(): DepositVerificationContextValue {
           void (async () => {
             await loadPendingDeposit();
             const storedPending = await readStoredPendingDeposit();
-            if (storedPending?.status === "checkout_opened") {
+            const status = storedPending?.status;
+            // Verify when returning from checkout, or if the user left during a
+            // still_processing / needs_action state (they may have gone back
+            // to complete payment).
+            if (
+              status === "checkout_opened" ||
+              status === "still_processing" ||
+              status === "needs_action"
+            ) {
               void verifyPendingDeposit({ bounded: true });
             }
           })();

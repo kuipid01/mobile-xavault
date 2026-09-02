@@ -26,5 +26,7 @@ export const initialDraft: RegisterDraft = {
   username: "",
   country: "NG",
   phone: "",
+  gender: "",
+  dob: "",
   makeHalal: false,
 };

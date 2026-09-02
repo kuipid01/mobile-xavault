@@ -63,6 +63,9 @@ export default function MyProfileScreen() {
     isLoading: profileLoading,
     refetch: refetchProfile,
   } = useProfile();
+
+
+  // console.log(profile)
   const { mutateAsync: updateProfile, isPending: isSaving } = useUpdateProfile();
   const { mutateAsync: checkNickname } = useCheckNickname();
   const { mutateAsync: uploadProfileImage, isPending: isUploadingImage } =

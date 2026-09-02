@@ -26,7 +26,7 @@ if (!__DEV__ && parsedBackendURL.protocol !== "https:") {
 const BACKEND_URL = configuredBackendURL.endsWith("/")
   ? configuredBackendURL
   : `${configuredBackendURL}/`;
-
+console.warn("BACKEND URKKDKDLKDJKEJKDJKDJDFHJFJ ODL", BACKEND_URL)
 export const ACCESS_TOKEN_KEY = "access_token";
 export const REFRESH_TOKEN_KEY = "refresh_token";
 const BIOMETRIC_LOGIN_KEY = "biometric_enabled";

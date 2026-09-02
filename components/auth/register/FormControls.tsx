@@ -20,27 +20,31 @@ export const AuthField = ({
   icon,
   onIconPress,
   style,
+  editable = true,
   ...props
 }: AuthFieldProps) => {
   const [isFocused, setIsFocused] = useState(false);
   const isActive = isFocused || !!props.value;
 
   return (
-    <View style={styles.fieldWrap}>
-      <View style={styles.fieldRow}>
+    <View className="mb-4 w-full">
+      <View 
+        className={`relative w-full h-16 rounded-xl px-4 justify-center ${editable ? 'bg-[#EEF2F0]' : 'bg-gray-200 opacity-60'} ${isFocused ? 'border border-[#063B2E]' : 'border border-transparent'}`}
+      >
         <Text
-          style={[
-            styles.floatingLabel,
-            isActive && styles.floatingLabelActive,
-          ]}
+          className={`absolute left-4 ${
+            isActive ? "top-2 text-xs text-gray-500" : "top-5 text-base text-gray-500"
+          }`}
         >
           {label}
         </Text>
 
         <TextInput
           {...props}
+          editable={editable}
           placeholder=""
-          style={[styles.fieldInput, style]}
+          className={`text-base font-semibold pt-5 pb-1 w-full h-full ${editable ? 'text-[#063B2E]' : 'text-gray-500'}`}
+          style={style}
           onFocus={(event) => {
             setIsFocused(true);
             props.onFocus?.(event);
@@ -52,7 +56,7 @@ export const AuthField = ({
         />
 
         {icon && (
-          <TouchableOpacity onPress={onIconPress} style={styles.fieldIcon}>
+          <TouchableOpacity onPress={onIconPress} className="absolute right-4 top-0 bottom-0 z-10 justify-center">
             <Ionicons name={icon} size={22} color="#AAB1C0" />
           </TouchableOpacity>
         )}

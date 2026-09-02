@@ -16,9 +16,9 @@ import {
   View,
 } from "react-native";
 import Toast from "react-native-toast-message";
-import { DepositFeeQuote } from "../../api/wallet";
 import { formatMoney } from "../../api/money";
 import { Wallet } from "../../api/types";
+import { DepositFeeQuote } from "../../api/wallet";
 import { COLORS } from "../../themes/colors";
 
 const MIN_DEPOSIT_NAIRA = 500;
@@ -134,6 +134,7 @@ const DepositModal = ({
     }
 
     const currentQuote = quote || await onQuote(amount);
+
     if (!currentQuote) { setAmountError("Could not calculate processing fee. Try again."); return; }
     await onDeposit(amount, currentQuote.quote_id);
     setAmount("");
@@ -295,7 +296,7 @@ const DepositModal = ({
             style={[
               styles.button,
               (!amount || Boolean(amountError) || isPending || isQuoting || !quote) &&
-                styles.buttonDisabled,
+              styles.buttonDisabled,
             ]}
             onPress={handleSubmit}
             disabled={!amount || Boolean(amountError) || isPending || isQuoting || !quote}

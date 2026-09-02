@@ -32,10 +32,10 @@ export function DepositPaymentModal() {
   const isReady = pendingStatus === "ready";
   const isExpired = pendingStatus === "expired";
   const isVerifying = pendingStatus === "verifying" || isVerifyingDeposit;
+  const isProcessing = pendingStatus === "still_processing";
   const needsAction =
     pendingStatus === "needs_action" ||
-    pendingStatus === "failed" ||
-    pendingStatus === "still_processing";
+    pendingStatus === "failed";
 
   const title = isReady
     ? "Ready to pay"
@@ -43,6 +43,8 @@ export function DepositPaymentModal() {
       ? "Payment link expired"
     : isVerifying
       ? "Checking payment"
+    : isProcessing
+      ? "Payment still processing"
       : "Payment not confirmed";
 
   const body = isReady
@@ -51,6 +53,8 @@ export function DepositPaymentModal() {
       ? "Paystack checkout links stay active for 24 hours. Start a new payment to keep funding this wallet."
     : isVerifying
       ? "We are checking Paystack briefly. This will stop if the payment is not confirmed."
+    : isProcessing
+      ? "Your payment may still be processing on Paystack's end. You can check again or continue the same payment."
       : "If you completed checkout, verify it now. If you closed checkout, continue the same payment or dismiss this prompt.";
 
   return (
@@ -78,13 +82,13 @@ export function DepositPaymentModal() {
           </View>
 
           <View style={styles.actions}>
-            {needsAction ? (
+            {needsAction || isProcessing ? (
               <Pressable
                 disabled={isVerifying}
-                onPress={() => void verifyPendingDeposit({ bounded: false })}
+                onPress={() => void verifyPendingDeposit({ bounded: !isProcessing })}
                 style={[styles.secondaryButton, isVerifying && styles.disabled]}
               >
-                <Text style={styles.secondaryText}>Verify again</Text>
+                <Text style={styles.secondaryText}>Check again</Text>
               </Pressable>
             ) : null}
 

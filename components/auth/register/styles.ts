@@ -11,7 +11,7 @@ export const styles = StyleSheet.create({
     flexGrow: 1,
     paddingBottom: 32,
     paddingHorizontal: 24,
-    paddingTop: 54,
+    // paddingTop: 54,
   },
 
   closeButton: {
@@ -49,11 +49,11 @@ export const styles = StyleSheet.create({
   //   paddingBottom: 30,
   //   paddingTop: 100,
   // },
-pinBody: {
-  flex: 1,
-  paddingBottom: 30,
-  paddingTop: 100,
-},
+  pinBody: {
+    flex: 1,
+    paddingBottom: 30,
+    paddingTop: 100,
+  },
   pinHeader: {
     alignItems: "flex-start",
     marginTop: 20,

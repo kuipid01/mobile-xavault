@@ -101,15 +101,18 @@ function getNextAction({
       pendingDeposit.amount && pendingDeposit.amount > 0
         ? `${formatMoney(pendingDeposit.amount)} `
         : "";
+    const isStillProcessing = pendingDeposit.status === "still_processing";
     return {
       icon: "refresh-circle-outline",
-      title:
-        pendingDeposit.status === "needs_action" ||
-        pendingDeposit.status === "failed" ||
-        pendingDeposit.status === "still_processing"
+      title: isStillProcessing
+        ? "Deposit still processing"
+        : pendingDeposit.status === "needs_action" ||
+          pendingDeposit.status === "failed"
           ? "Payment not confirmed"
           : "Deposit needs confirmation",
-      body: `${amount}Ref ${pendingDeposit.reference}. Continue payment or verify if Paystack has completed it.`,
+      body: isStillProcessing
+        ? `${amount}Ref ${pendingDeposit.reference}. Your payment may still be processing. Tap to check again.`
+        : `${amount}Ref ${pendingDeposit.reference}. Continue payment or verify if Paystack has completed it.`,
       cta: "Check status",
       tone: "alert",
       onPress: pendingDeposit.onPress,
