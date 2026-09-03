@@ -1,3 +1,4 @@
+import Coin from "@/assets/images/coin.svg";
 import { useLogin } from "@/hooks/auth/auth";
 import {
   getBiometricAvailability,
@@ -6,10 +7,10 @@ import {
 import { COLORS, Radius } from "@/themes/colors";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Image } from "expo-image";
 import { router } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Button,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -183,13 +184,13 @@ const LoginScreen = () => {
         const availability = await getBiometricAvailability();
         setShowBiometricEntry(
           availability.enabled &&
-            availability.deviceReady &&
-            availability.sessionRecoverable,
+          availability.deviceReady &&
+          availability.sessionRecoverable,
         );
         setBiometricCanAutoUnlock(
           availability.enabled &&
-            availability.deviceReady &&
-            availability.sessionRecoverable,
+          availability.deviceReady &&
+          availability.sessionRecoverable,
         );
 
         if (result.reason === "authentication_failed") {
@@ -226,8 +227,8 @@ const LoginScreen = () => {
       const availability = await getBiometricAvailability();
       setShowBiometricEntry(
         availability.enabled &&
-          availability.deviceReady &&
-          availability.sessionRecoverable,
+        availability.deviceReady &&
+        availability.sessionRecoverable,
       );
       setBiometricCanAutoUnlock(false);
       Toast.show({
@@ -258,11 +259,9 @@ const LoginScreen = () => {
             alignItems: "center",
           }}
         >
-          <Image
-            source={require("@/assets/images/coin.svg")}
-            style={{ width: 250, height: 250, marginBottom: 3 }}
-            contentFit="contain"
-          />
+
+          <Coin width={250}
+            height={250} />
         </View>
         <View style={styles.header}>
           <Text style={styles.title}>{title}</Text>
@@ -347,6 +346,12 @@ const LoginScreen = () => {
             {rememberedName ? `Not ${rememberedName}? ` : ""}
             <Text style={styles.link}>Switch Account</Text>
           </Text>
+          <Button
+            title="Clear Storage"
+            onPress={async () => {
+              await AsyncStorage.clear();
+            }}
+          />
         </View>
         {/* <ErrorModal
         visible={!!errorMessage}

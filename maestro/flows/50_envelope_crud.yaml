@@ -1,0 +1,33 @@
+appId: ${APP_ID}
+name: Envelopes — create on an active plan (G1)
+---
+# Tier 2: requires an active confirmed plan (QA_PLAN_NAME). Opens the plan,
+# goes to envelope create, fills the form and saves.
+- runFlow: 00_bootstrap_login.yaml
+- tapOn: "Plan"
+- tapOn: "Active"
+- extendedWaitUntil:
+    visible: ${QA_PLAN_NAME}
+    timeout: 10000
+- tapOn: ${QA_PLAN_NAME}
+# TUNE: plan detail exposes envelopes — adjust the tap target
+- runFlow:
+    when:
+      visible: "Envelopes|Add Envelope|View envelopes"
+    commands:
+      - tapOn: "Envelopes|Add Envelope|View envelopes"
+- runFlow:
+    when:
+      visible: "Add Envelope"
+    commands:
+      - tapOn: "Add Envelope"
+- assertVisible: "Envelope details"
+- tapOn: ${QA_ENVELOPE_NAME_INPUT}    # TUNE
+- inputText: ${QA_ENVELOPE_NAME}
+- tapOn: ${QA_ENVELOPE_AMOUNT_INPUT}  # TUNE
+- inputText: ${QA_ENVELOPE_AMOUNT}
+- extendedWaitUntil:
+    visible: "Create Envelope|Done"
+    timeout: 15000
+- tapOn: "Create Envelope|Done"
+- assertVisible: ${QA_ENVELOPE_NAME}

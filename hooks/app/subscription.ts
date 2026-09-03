@@ -1,6 +1,6 @@
 
 import { useMutation, useQuery, useQueryClient, UseQueryOptions, } from "@tanstack/react-query";
-import { createSubscription, getActiveSubscription, getSubscriptionPlans, UserSubscription } from "../../api/subscription";
+import { createSubscription, dismissSubscriptionPayment, getActiveSubscription, getSubscriptionPlans, UserSubscription } from "../../api/subscription";
 
 
 export const subscriptionKeys = {
@@ -24,6 +24,19 @@ export function useActiveSubscription(
     mutationFn: createSubscription,
     onSuccess: async () => {
       await queryClient.invalidateQueries({
+        queryKey: subscriptionKeys.active,
+      });
+    },
+  });
+};
+
+export const useDismissSubscriptionPayment = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: dismissSubscriptionPayment,
+    onSuccess: () => {
+      queryClient.invalidateQueries({
         queryKey: subscriptionKeys.active,
       });
     },

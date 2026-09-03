@@ -1,0 +1,23 @@
+appId: ${APP_ID}
+name: Deposit — completion via simulated webhook (C8)
+---
+# Tier 2: run AFTER scripts/webhook-sim.sh posted charge.success for the row
+# this flow initiates. The run-suite orchestrates: initiate here → simulate →
+# return here to verify the ledger/transactions view.
+- runFlow: 00_bootstrap_login.yaml
+- tapOn: "Save"
+- assertVisible: "Deposit Money"
+- tapOn: "0"
+- inputText: "5000"
+- extendedWaitUntil:
+    visible: "Pay.*"
+    timeout: 10000
+- tapOn:
+    id: "deposit-submit"
+- extendedWaitUntil:
+    visible: "Ready to pay"
+    timeout: 15000
+# Pause here — the script posts charge.success for the newest pending deposit
+# while this modal is open. The wallet is credited server-side.
+# (Leave the app idle: mark-up below verifies the result.)
+- assertVisible: "Cancel payment"

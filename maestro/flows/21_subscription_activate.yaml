@@ -1,0 +1,36 @@
+appId: ${APP_ID}
+name: Subscription — canceled-then-paid still activates (J5)
+---
+# Tier 2 (orchestrated): initiate upgrade → CANCEL the payment (backend row
+# becomes 'canceled') → run-suite posts charge.success for that reference →
+# relaunch → the webhook must have activated the subscription anyway; no stuck
+# watcher, no "already final" errors.
+- runFlow: 00_bootstrap_login.yaml
+- tapOn: "Me"
+- scrollUntilVisible:
+    element:
+      text: "Upgrade Plan"
+    direction: DOWN
+- tapOn: "Upgrade Plan"
+- extendedWaitUntil:
+    visible:
+      id: "upgrade-primary-cta"
+    timeout: 15000
+- tapOn:
+    id: "upgrade-primary-cta"
+- extendedWaitUntil:
+    visible: "Ready to upgrade"
+    timeout: 20000
+- tapOn:
+    id: "subscription-cancel"
+- extendedWaitUntil:
+    notVisible: "Ready to upgrade"
+    timeout: 10000
+# Script posts charge.success here. Relaunch and confirm no watcher resurfaces
+# and the app is healthy on Home.
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "Save"
+    timeout: 30000
+- assertNotVisible: "Ready to upgrade"

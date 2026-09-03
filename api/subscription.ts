@@ -168,3 +168,11 @@ export const createSubscription = async (
 
   return res.data.data;
 };
+
+export const dismissSubscriptionPayment = async (reference: string) => {
+  const res = await api.post<ApiResponse<unknown>>(
+    `/subscriptions/payment/${reference}/dismiss`,
+  );
+
+  return res.data.data;
+};

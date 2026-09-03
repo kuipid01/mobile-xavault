@@ -1,0 +1,27 @@
+appId: ${APP_ID}
+name: Deposit — cancel-on-dismiss regression (J1/J2)
+---
+# Initiate a card deposit, then press "Cancel payment". The dismissal must
+# hide the modal instantly and the backend row must become 'dismissed' (the
+# run-suite script asserts the DB + that polling stopped).
+- runFlow: 00_bootstrap_login.yaml
+- tapOn: "Save"
+- assertVisible: "Deposit Money"
+- tapOn: "0"                     # amount TextInput (placeholder)
+- inputText: "5000"
+- extendedWaitUntil:
+    visible: "Pay.*"
+    timeout: 10000
+- tapOn:
+    id: "deposit-submit"
+- extendedWaitUntil:
+    visible: "Ready to pay"
+    timeout: 15000
+- assertVisible: "Cancel payment"
+# Regression: cancel must work even though nothing is verifying yet.
+- tapOn:
+    id: "deposit-cancel"
+- extendedWaitUntil:
+    notVisible: "Ready to pay"
+    timeout: 10000
+- assertNotVisible: "Deposit Money"

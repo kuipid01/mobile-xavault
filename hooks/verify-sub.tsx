@@ -11,7 +11,7 @@ import React, {
   useState,
 } from "react";
 import { AppState, AppStateStatus } from "react-native";
-import { useActiveSubscription, useCreateSubscription } from "./app/subscription";
+import { useActiveSubscription, useCreateSubscription, useDismissSubscriptionPayment } from "./app/subscription";
 import { trackEvent } from "../lib/analytics";
 
 const DEBUG = true;
@@ -79,9 +79,11 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
   const [hasLoaded, setHasLoaded] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const isCheckingRef = useRef(false);
+  const isDismissingRef = useRef(false);
   const appState = useRef(AppState.currentState);
   const { refetch } = useActiveSubscription({ enabled: false });
   const { mutateAsync: createSubscription } = useCreateSubscription();
+  const { mutateAsync: dismissSubscription } = useDismissSubscriptionPayment();
 
   const readPending = useCallback(async () => {
     const raw = await AsyncStorage.getItem(PENDING_SUBSCRIPTION_KEY);
@@ -116,6 +118,22 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
         return;
       }
 
+      // Bug fix: the app was killed while a dismissal was in flight, so the
+      // backend may never have been told to cancel the payment. Retry the
+      // backend dismissal now, then clean up local state.
+      if (parsed.status === "dismissed") {
+        logDebug("Completing interrupted subscription dismissal", parsed);
+        if (parsed.paymentReference) {
+          try {
+            await dismissSubscription(parsed.paymentReference);
+          } catch (error) {
+            logDebug("Could not complete interrupted dismissal on backend", error);
+          }
+        }
+        await clearVerification();
+        return;
+      }
+
       if (isCheckoutExpired(parsed.initiatedAt)) {
         await persistPending({ ...parsed, status: "expired" });
         trackEvent("subscription_verification_timeout", {
@@ -136,7 +154,7 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
     } finally {
       setHasLoaded(true);
     }
-  }, [clearVerification, persistPending, readPending]);
+  }, [clearVerification, dismissSubscription, persistPending, readPending]);
 
   useEffect(() => {
     void loadPending();
@@ -203,6 +221,9 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
 
   const checkStatusOnce = useCallback(async () => {
     if (isCheckingRef.current) return false;
+    // Bug fix: never fire a check while the user is dismissing; the payment
+    // has been (or is being) cancelled.
+    if (isDismissingRef.current) return false;
 
     const stored = pendingPlanId ? null : await readPending();
     const activePlanId = pendingPlanId || stored?.planId || null;
@@ -265,6 +286,18 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
 
       while (Date.now() - startedAt < maxDurationMs) {
         await new Promise((resolve) => setTimeout(resolve, intervalMs));
+
+        // Bug fix: if the user dismissed while we were retrying, bail out
+        // early instead of keeping the subscription check running.
+        if (isDismissingRef.current) {
+          logDebug("Dismissed during bounded retry; stopping");
+          return false;
+        }
+        const stored = await readPending();
+        if (!stored?.planId) {
+          logDebug("Pending subscription cleared during bounded retry; stopping");
+          return false;
+        }
         const retryConfirmed = await checkStatusOnce();
         if (retryConfirmed) return true;
       }
@@ -272,7 +305,7 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
       await updatePendingStatus("needs_action");
       return false;
     },
-    [checkStatusOnce, updatePendingStatus]
+    [checkStatusOnce, readPending, updatePendingStatus]
   );
 
   const continuePayment = useCallback(async () => {
@@ -345,12 +378,39 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
 
   const dismissPayment = useCallback(async () => {
     const stored = await readPending();
+    const planId = pendingPlanId || stored?.planId || null;
+    const reference =
+      pendingPaymentReference || stored?.paymentReference || null;
     trackEvent("subscription_prompt_skipped", {
       trigger: "subscription_payment",
-      plan_id: pendingPlanId || stored?.planId || null,
+      plan_id: planId,
     });
+
+    if (planId && reference) {
+      isDismissingRef.current = true;
+      // Bug fix: persist the "dismissed" marker FIRST so the modal hides
+      // immediately and a crash or network failure mid-dismiss never leaves
+      // a pending payment that keeps being checked. If the backend call
+      // fails, loadPending retries it on the next launch.
+      await updatePendingStatus("dismissed");
+      try {
+        await dismissSubscription(reference);
+      } catch (error) {
+        logDebug("Could not dismiss subscription payment on backend; will retry on next launch", error);
+      } finally {
+        isDismissingRef.current = false;
+      }
+    }
+
     await clearVerification();
-  }, [clearVerification, pendingPlanId, readPending]);
+  }, [
+    clearVerification,
+    dismissSubscription,
+    pendingPaymentReference,
+    pendingPlanId,
+    readPending,
+    updatePendingStatus,
+  ]);
 
   useEffect(() => {
     const sub = AppState.addEventListener(

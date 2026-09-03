@@ -1352,6 +1352,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
           <TouchableOpacity
             style={[styles.cta, isCTADisabled && styles.ctaDisabled]}
             onPress={handleContinue}
+            testID="withdraw-cta"
             disabled={isCTADisabled}
             activeOpacity={0.85}
           >

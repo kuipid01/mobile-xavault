@@ -299,6 +299,7 @@ const DepositModal = ({
               styles.buttonDisabled,
             ]}
             onPress={handleSubmit}
+            testID="deposit-submit"
             disabled={!amount || Boolean(amountError) || isPending || isQuoting || !quote}
           >
             <Text style={styles.buttonText}>

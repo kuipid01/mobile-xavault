@@ -3,12 +3,14 @@ import { useDepositVerificationContext } from "@/hooks/verify-deposit";
 import { COLORS } from "@/themes/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { PaystackCheckoutLayer } from "./paystack-checkout-layer";
 
 const formatAmount = (amount: number | null) =>
   `NGN ${koboToNaira(amount || 0).toLocaleString("en-NG")}`;
 
 export function DepositPaymentModal() {
   const {
+    checkoutUrl,
     continueDepositPayment,
     dismissPendingDeposit,
     isVerifyingDeposit,
@@ -27,7 +29,12 @@ export function DepositPaymentModal() {
       pendingStatus !== "dismissed"
   );
 
-  if (!visible) return null;
+  if (!visible && !checkoutUrl) return null;
+
+  // The Paystack checkout is open: render the in-app WebView layer instead
+  // of the prompt card. The prompt reappears when the user closes the
+  // checkout (or the deposit reaches a terminal state and the layer unmounts).
+  if (checkoutUrl) return <PaystackCheckoutLayer />;
 
   const isReady = pendingStatus === "ready";
   const isExpired = pendingStatus === "expired";
@@ -85,6 +92,7 @@ export function DepositPaymentModal() {
             {needsAction || isProcessing ? (
               <Pressable
                 disabled={isVerifying}
+                testID="deposit-check-again"
                 onPress={() => void verifyPendingDeposit({ bounded: !isProcessing })}
                 style={[styles.secondaryButton, isVerifying && styles.disabled]}
               >
@@ -94,6 +102,7 @@ export function DepositPaymentModal() {
 
             <Pressable
               disabled={(!pendingAuthorizationUrl && !isExpired) || isVerifying}
+              testID="deposit-primary"
               onPress={() =>
                 void (isExpired
                   ? startNewDepositPayment()
@@ -114,12 +123,16 @@ export function DepositPaymentModal() {
               </Text>
             </Pressable>
 
+            {/* Bug fix: dismissal must always be available - even while a
+                verification is in flight - so the user can cancel an
+                initiated payment at any time. Cancelling propagates to the
+                backend and stops all polling for this reference. */}
             <Pressable
-              disabled={isVerifying}
               onPress={() => void dismissPendingDeposit()}
-              style={[styles.dismissButton, isVerifying && styles.disabled]}
+              testID="deposit-cancel"
+              style={styles.dismissButton}
             >
-              <Text style={styles.dismissText}>Dismiss</Text>
+              <Text style={styles.dismissText}>Cancel payment</Text>
             </Pressable>
           </View>
         </View>

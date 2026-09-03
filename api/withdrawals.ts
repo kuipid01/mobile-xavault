@@ -93,6 +93,15 @@ export const getWithdrawal = async (withdrawalId: string) => {
   return res.data.data;
 };
 
+export const cancelWithdrawal = async (withdrawalId: string, reason?: string) => {
+  const res = await api.post<ApiResponse<WithdrawalRecord>>(
+    `/withdrawals/${withdrawalId}/cancel`,
+    { reason: reason || "" },
+    { suppressGlobalErrorModal: true } as any
+  );
+  return res.data.data;
+};
+
 export type WithdrawalHistoryPage = {
   items: WithdrawalRecord[];
   page: number;

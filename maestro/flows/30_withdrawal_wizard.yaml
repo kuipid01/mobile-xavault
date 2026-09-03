@@ -1,0 +1,44 @@
+appId: ${APP_ID}
+name: Withdrawal — 6-step wizard (E1-E8)
+---
+# Tier 2: requires seeded data (plan name, destination name, PIN digits) — see
+# TUNE comments and scripts/common.sh. Provider success is simulated afterwards
+# by run-suite (transfer.success), then 31 verifies the UI flipped to Completed.
+- runFlow: 00_bootstrap_login.yaml
+# Home's Next Action card shows "Withdraw" ONLY when all of: no pending
+# deposit, plans exist, no draft plan, and available_balance > 0. Seed the QA
+# wallet with available funds (e.g. via a completed deposit) before this flow.
+- tapOn: "Withdraw"
+- assertVisible: "Withdraw"          # wizard sheet title
+# Step 1 — Plan
+- tapOn: ${QA_PLAN_NAME}             # TUNE: seeded plan name
+- tapOn:
+    id: "withdraw-cta"               # "Continue"
+# Step 2 — Source
+- tapOn: ${QA_SOURCE_LABEL}          # TUNE: e.g. plan row or envelope name
+- tapOn:
+    id: "withdraw-cta"
+# Step 3 — Amount
+- tapOn: ${QA_AMOUNT_HINT}           # TUNE: amount field hint/"0"
+- inputText: ${QA_WITHDRAW_AMOUNT}
+- waitForAnimationToEnd
+- tapOn:
+    id: "withdraw-cta"               # still "Continue" until Review
+# Step 4 — Destination
+- tapOn: ${QA_DESTINATION_NAME}      # TUNE: saved account/beneficiary
+- tapOn:
+    id: "withdraw-cta"
+# Step 5 — Review ("Approve with PIN" CTA proves we are on Review)
+- extendedWaitUntil:
+    visible: "Approve with PIN"
+    timeout: 10000
+- tapOn:
+    id: "withdraw-cta"               # "Approve with PIN"
+# Step 6 — PIN
+- tapOn: ${QA_PIN_HINT}              # TUNE: PIN field
+- inputText: ${QA_WITHDRAW_PIN}
+- tapOn:
+    id: "withdraw-cta"               # "Submit withdrawal"
+- extendedWaitUntil:
+    notVisible: "Withdraw"
+    timeout: 20000

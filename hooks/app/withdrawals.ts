@@ -1,4 +1,5 @@
 import {
+  cancelWithdrawal,
   getWithdrawals,
   getPlanWithdrawals,
   previewWithdrawal,
@@ -87,3 +88,17 @@ export const usePreviewWithdrawal = () =>
     mutationFn: ({ planId, payload }: { planId: string; payload: WithdrawalPreviewPayload }) =>
       previewWithdrawal(planId, payload)
   });
+
+export const useCancelWithdrawal = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (withdrawalId: string) => cancelWithdrawal(withdrawalId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: withdrawalKeys.history });
+      queryClient.invalidateQueries({ queryKey: planKeys.all });
+      queryClient.invalidateQueries({ queryKey: walletKeys.wallet });
+      queryClient.invalidateQueries({ queryKey: walletKeys.ledger });
+    },
+  });
+};

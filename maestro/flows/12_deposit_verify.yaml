@@ -1,0 +1,26 @@
+appId: ${APP_ID}
+name: Deposit — verify completed row on Transactions (C8 tail)
+---
+# Tier 2: run after run-suite simulated charge.success for the deposit
+# initiated in 11_deposit_complete.yaml. Confirms the UI reflects the credit.
+- runFlow: 00_bootstrap_login.yaml
+# If the old verification modal survived the relaunch, clear it.
+- runFlow:
+    when:
+      visible: "Ready to pay"
+    commands:
+      - tapOn:
+          id: "deposit-cancel"
+- extendedWaitUntil:
+    notVisible: "Ready to pay"
+    timeout: 10000
+- tapOn: "Me"
+- scrollUntilVisible:
+    element:
+      text: "Transactions"
+    direction: DOWN
+- tapOn: "Transactions"
+- extendedWaitUntil:
+    visible: "Completed"
+    timeout: 20000
+- assertVisible: "Completed"

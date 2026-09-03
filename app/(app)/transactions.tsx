@@ -2,14 +2,16 @@ import { formatMoney } from "@/api/money";
 import { WalletLedger } from "@/api/types";
 import { WithdrawalRecord } from "@/api/withdrawals";
 import { useWalletLedger } from "@/hooks/app/wallet";
-import { useWithdrawalHistory } from "@/hooks/app/withdrawals";
+import { useCancelWithdrawal, useWithdrawalHistory } from "@/hooks/app/withdrawals";
 import { trackEvent } from "@/lib/analytics";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   Modal,
   Platform,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -220,7 +222,11 @@ export default function TransactionsScreen() {
         </View>
       </ScrollView>
 
-      <TransactionDetailModal item={selected} onClose={() => setSelected(null)} />
+      <TransactionDetailModal
+        item={selected}
+        onClose={() => setSelected(null)}
+        onWithdrawalCancelled={() => void refetchWithdrawals()}
+      />
     </SafeAreaView>
   );
 }
@@ -298,10 +304,15 @@ function TransactionRow({
 function TransactionDetailModal({
   item,
   onClose,
+  onWithdrawalCancelled,
 }: {
   item: TransactionItem | null;
   onClose: () => void;
+  onWithdrawalCancelled?: () => void;
 }) {
+  const { mutateAsync: cancelWithdrawal, isPending: isCancellingWithdrawal } =
+    useCancelWithdrawal();
+
   if (!item) return null;
 
   const reference = getReference(item);
@@ -309,6 +320,44 @@ function TransactionDetailModal({
   const isCredit = direction === "credit";
   const amount = Math.abs(getAmount(item));
   const status = getTransactionStatus(item);
+  const canCancelWithdrawal =
+    Boolean(item.withdrawal_id) && formatStatus(status) === "Processing";
+
+  const handleCancelWithdrawal = () => {
+    if (!item.withdrawal_id) return;
+
+    Alert.alert(
+      "Cancel withdrawal?",
+      "This stops all checks for this pending withdrawal and releases the reserved funds. A transfer already sent to your bank cannot be cancelled.",
+      [
+        { text: "Keep it", style: "cancel" },
+        {
+          text: "Cancel withdrawal",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await cancelWithdrawal(item.withdrawal_id as string);
+              Toast.show({
+                type: "success",
+                text1: "Withdrawal cancelled",
+                text2: "It will no longer be checked.",
+              });
+              onWithdrawalCancelled?.();
+            } catch (error: any) {
+              Toast.show({
+                type: "error",
+                text1: "Could not cancel",
+                text2:
+                  error?.response?.data?.message ||
+                  error?.message ||
+                  "Please try again.",
+              });
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const copyReference = async () => {
     if (!reference) return;
@@ -383,6 +432,22 @@ function TransactionDetailModal({
                 <Ionicons name="copy-outline" size={15} color={COLORS.white} />
                 <Text style={styles.copyButtonText}>Copy reference</Text>
               </TouchableOpacity>
+            ) : null}
+
+            {canCancelWithdrawal ? (
+              <Pressable
+                disabled={isCancellingWithdrawal}
+                onPress={handleCancelWithdrawal}
+                testID="cancel-withdrawal"
+                style={[
+                  styles.cancelWithdrawalButton,
+                  isCancellingWithdrawal && styles.disabled,
+                ]}
+              >
+                <Text style={styles.cancelWithdrawalText}>
+                  {isCancellingWithdrawal ? "Cancelling..." : "Cancel withdrawal"}
+                </Text>
+              </Pressable>
             ) : null}
 
             <Text style={styles.receiptFooter}>Keep this for your records</Text>
@@ -1035,6 +1100,23 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 14,
     fontWeight: "900",
+  },
+  cancelWithdrawalButton: {
+    alignItems: "center",
+    borderColor: "rgba(180, 35, 24, 0.4)",
+    borderRadius: Radius.large + 4,
+    borderWidth: 1,
+    height: 52,
+    justifyContent: "center",
+    marginTop: 12,
+  },
+  cancelWithdrawalText: {
+    color: "#B42318",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  disabled: {
+    opacity: 0.55,
   },
   receiptFooter: {
     color: COLORS.text,

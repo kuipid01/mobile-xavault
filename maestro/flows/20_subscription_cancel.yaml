@@ -1,0 +1,31 @@
+appId: ${APP_ID}
+name: Subscription — cancel-on-dismiss regression (J4)
+---
+# Upgrade → initiate subscription payment → "Cancel payment". The dismissal
+# must hide the watcher instantly; DB row must become 'canceled' and app-side
+# checks must stop (run-suite asserts).
+- runFlow: 00_bootstrap_login.yaml
+- tapOn: "Me"
+- scrollUntilVisible:
+    element:
+      text: "Upgrade Plan"
+    direction: DOWN
+- tapOn: "Upgrade Plan"
+- extendedWaitUntil:
+    visible: "Upgrade Plan"
+    timeout: 15000
+- assertVisible:
+    id: "upgrade-primary-cta"
+# The CTA label is dynamic (e.g. "Upgrade to Premium") — tap by testID.
+- tapOn:
+    id: "upgrade-primary-cta"
+- extendedWaitUntil:
+    visible: "Ready to upgrade"
+    timeout: 20000
+- assertVisible: "Cancel payment"
+- tapOn:
+    id: "subscription-cancel"
+- extendedWaitUntil:
+    notVisible: "Ready to upgrade"
+    timeout: 10000
+- assertNotVisible: "Ready to upgrade"

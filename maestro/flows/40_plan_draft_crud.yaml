@@ -1,0 +1,36 @@
+appId: ${APP_ID}
+name: Plans — list & draft create navigation (F1-F2)
+---
+# Tier 2: structure flow. Fills the create-wizard form fields and saves a
+# draft; then cancels it from the Draft tab. Field selectors need one tuning
+# pass against the current create wizard (see TUNE).
+- runFlow: 00_bootstrap_login.yaml
+- tapOn: "Plan"                       # Home header nav button
+- assertVisible: "Active"
+- assertVisible: "Draft"
+- assertVisible: "Cancelled"
+# If no plans exist the home card offers "Create plan" directly; from the list
+# use the create entry on this screen instead if present.
+- runFlow:
+    when:
+      visible: "Create.*"
+    commands:
+      - tapOn: "Create.*"
+# TUNE: create wizard is multi-step with date pickers. Expected save CTA text
+# is on the final step — adjust the labels below to the wizard's actual copy.
+- tapOn: ${QA_PLAN_NAME_INPUT}        # TUNE
+- inputText: ${QA_PLAN_NAME}
+- tapOn: ${QA_PLAN_AMOUNT_INPUT}      # TUNE
+- inputText: ${QA_PLAN_AMOUNT}
+# Dates + policy segments: TUNE (date picker confirm buttons, Flexible /
+# Locked-until-end chips)
+- extendedWaitUntil:
+    visible: "Done|Create Plan"
+    timeout: 15000
+- tapOn: "Done|Create Plan"
+# Back to list → new draft appears under the Draft tab.
+- tapOn: "Draft"
+- extendedWaitUntil:
+    visible: ${QA_PLAN_NAME}
+    timeout: 10000
+- assertVisible: ${QA_PLAN_NAME}

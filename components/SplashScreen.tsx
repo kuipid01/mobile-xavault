@@ -1,8 +1,8 @@
 import { useOnboarding } from "@/context/OnboardingContext";
 import { COLORS } from "@/themes/colors";
-import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { LogoWhiteBG } from "./general/logo";
 
 export function SplashScreen() {
   const { setStep } = useOnboarding();
@@ -16,18 +16,7 @@ export function SplashScreen() {
       <View />
 
       <View style={styles.centerContent}>
-        <View>
-          <Ionicons
-            style={{
-              fontSize: 100,
-              color: "white",
-              marginBottom: 10,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-            name="wallet-sharp"
-          />
-        </View>
+        <LogoWhiteBG />
         <Text style={styles.title}>XAVAULT</Text>
       </View>
       <View />

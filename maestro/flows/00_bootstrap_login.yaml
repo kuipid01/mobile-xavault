@@ -1,0 +1,26 @@
+appId: ${APP_ID}
+name: Bootstrap & login (idempotent)
+---
+# Launch the app. If a session is already stored we land on Home and skip login.
+- stopApp
+- launchApp
+- runFlow:
+    # Not logged in → we land on the auth index ("Login" / "Sign Up").
+    when:
+      visible: "Login"
+    commands:
+      - tapOn: "Login"
+      - assertVisible: "Sign In"
+- runFlow:
+    when:
+      visible: "Sign In"
+    commands:
+      - tapOn: "Enter your email"
+      - inputText: ${QA_EMAIL}
+      - tapOn: "Enter your password"
+      - inputText: ${QA_PASSWORD}
+      - tapOn: "Sign In"
+- extendedWaitUntil:
+    visible: "Save"
+    timeout: 30000
+- assertVisible: "Save"

@@ -1,0 +1,33 @@
+appId: ${APP_ID}
+name: Withdrawal — verify completion + cancel guard (E9/E12/J6)
+---
+# Run AFTER run-suite simulated transfer.success for the row requested in
+# 30_withdrawal_wizard.yaml. If the row were still pending/processing the
+# receipt shows "Cancel withdrawal" — pressing it must be refused server-side
+# for rows already at the provider (409), never a silent fake cancel.
+- runFlow: 00_bootstrap_login.yaml
+- tapOn: "Me"
+- scrollUntilVisible:
+    element:
+      text: "Transactions"
+    direction: DOWN
+- tapOn: "Transactions"
+- extendedWaitUntil:
+    visible: "Completed"
+    timeout: 20000
+- tapOn: "Completed"                  # newest withdrawal receipt (TUNE if >1)
+- assertVisible: "Transaction receipt"
+# Guard: cancel is only offered on non-terminal rows.
+- runFlow:
+    when:
+      visible:
+        id: "cancel-withdrawal"
+    commands:
+      - tapOn:
+          id: "cancel-withdrawal"
+      - assertVisible: "Cancel withdrawal?"
+      # Row is already at the provider → backend returns 409; assert error toast.
+      - extendedWaitUntil:
+          visible: ".*already processing.*|.*cannot be cancelled.*|Could not cancel.*"
+          timeout: 10000
+- assertVisible: "Transaction receipt"

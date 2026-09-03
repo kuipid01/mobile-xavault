@@ -94,6 +94,7 @@ export function PaymentVerificationWatcher() {
             {needsAction ? (
               <Pressable
                 disabled={isChecking}
+                testID="subscription-check-again"
                 onPress={() => void handleVerify()}
                 style={[styles.secondaryButton, isChecking && styles.disabled]}
               >
@@ -103,6 +104,7 @@ export function PaymentVerificationWatcher() {
 
             <Pressable
               disabled={(isChecking || !pendingPaymentUrl) && !isExpired}
+              testID="subscription-primary"
               onPress={() =>
                 void (isExpired ? handleStartNew() : handleContinue())
               }
@@ -121,12 +123,16 @@ export function PaymentVerificationWatcher() {
               </Text>
             </Pressable>
 
+            {/* Bug fix: dismissal must always be available - even while a
+                check is in flight - so the user can cancel an initiated
+                payment at any time. Cancelling propagates to the backend and
+                stops all checking for this reference. */}
             <Pressable
-              disabled={isChecking}
               onPress={() => void dismissPayment()}
-              style={[styles.dismissButton, isChecking && styles.disabled]}
+              testID="subscription-cancel"
+              style={styles.dismissButton}
             >
-              <Text style={styles.dismissText}>Dismiss</Text>
+              <Text style={styles.dismissText}>Cancel payment</Text>
             </Pressable>
           </View>
         </View>

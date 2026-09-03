@@ -13,7 +13,6 @@ import { AppState, AppStateStatus } from "react-native";
 import Toast from "react-native-toast-message";
 import { useDismissDeposit, useInitiateDeposit, useQuoteDeposit, useVerifyDeposit } from "./app/wallet";
 import { trackEvent } from "@/lib/analytics";
-import * as WebBrowser from "expo-web-browser";
 
 const PENDING_DEPOSIT_KEY = "pending_deposit_verification";
 const CHECKOUT_LINK_TTL_MS = 24 * 60 * 60 * 1000;
@@ -56,6 +55,8 @@ type DepositVerificationContextValue = {
   pendingStatus: DepositVerificationStatus;
   lastCheckedAt: number | null;
   confirmedReceipt: ConfirmedDepositReceipt | null;
+  checkoutUrl: string | null;
+  closeCheckout: () => void;
   isVerifyingDeposit: boolean;
   startDepositVerification: (
     reference: string,
@@ -90,6 +91,10 @@ function useDepositVerificationState(): DepositVerificationContextValue {
   const [pendingAmount, setPendingAmount] = useState<number | null>(null);
   const [pendingAuthorizationUrl, setPendingAuthorizationUrl] =
     useState<string | null>(null);
+  // URL of the Paystack checkout currently shown in the in-app WebView.
+  // Null when no checkout is open. Deliberately NOT persisted: after a
+  // relaunch the checkout is re-opened from the stored authorizationUrl.
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [pendingInitiatedAt, setPendingInitiatedAt] = useState<number | null>(null);
   const [pendingStatus, setPendingStatus] =
     useState<DepositVerificationStatus>("idle");
@@ -103,6 +108,7 @@ function useDepositVerificationState(): DepositVerificationContextValue {
   const { mutateAsync: quoteDeposit } = useQuoteDeposit();
   const appState = useRef(AppState.currentState);
   const isCheckingRef = useRef(false);
+  const isDismissingRef = useRef(false);
 
   const persistPendingDeposit = useCallback(async (payload: PendingDeposit) => {
     await AsyncStorage.setItem(PENDING_DEPOSIT_KEY, JSON.stringify(payload));
@@ -155,6 +161,22 @@ function useDepositVerificationState(): DepositVerificationContextValue {
       }
 
       const parsed: PendingDeposit = JSON.parse(raw);
+
+      // Bug fix: the app was killed while a dismissal was in flight, so the
+      // backend may never have been told to cancel the deposit and would keep
+      // polling Paystack for an abandoned payment. Retry the backend dismissal
+      // now, then clean up local state.
+      if (parsed.status === "dismissed") {
+        logDebug("Completing interrupted deposit dismissal", parsed);
+        try {
+          await dismissDeposit(parsed.reference);
+        } catch (error) {
+          logDebug("Could not complete interrupted dismissal on backend", error);
+        }
+        await clearPendingDeposit();
+        return;
+      }
+
       const isExpired = isCheckoutExpired(parsed.initiatedAt);
 
       if (isExpired) {
@@ -185,7 +207,7 @@ function useDepositVerificationState(): DepositVerificationContextValue {
       logDebug("Could not load pending deposit; clearing", error);
       await clearDepositVerification();
     }
-  }, [clearDepositVerification, persistPendingDeposit]);
+  }, [clearDepositVerification, dismissDeposit, persistPendingDeposit]);
 
   useEffect(() => {
     void loadPendingDeposit();
@@ -228,6 +250,24 @@ function useDepositVerificationState(): DepositVerificationContextValue {
     ]
   );
 
+  const closeCheckout = useCallback(() => {
+    setCheckoutUrl(null);
+  }, []);
+
+  // Close the in-app checkout whenever the deposit reaches a terminal state
+  // (confirmed / dismissed / expired) or the pending deposit is cleared, so
+  // the checkout never lingers over a completed payment.
+  useEffect(() => {
+    if (
+      pendingStatus === "confirmed" ||
+      pendingStatus === "dismissed" ||
+      pendingStatus === "expired" ||
+      pendingReference === null
+    ) {
+      setCheckoutUrl(null);
+    }
+  }, [pendingReference, pendingStatus]);
+
   const startDepositVerification = useCallback(
     async (
       reference: string,
@@ -268,10 +308,18 @@ function useDepositVerificationState(): DepositVerificationContextValue {
     });
 
     if (reference) {
+      isDismissingRef.current = true;
+      // Bug fix: persist the "dismissed" marker FIRST so the modal hides
+      // immediately and a crash or network failure mid-dismiss never leaves
+      // a pending deposit that keeps being polled. If the backend call fails,
+      // loadPendingDeposit retries it on the next launch.
+      await updatePendingStatus("dismissed");
       try {
         await dismissDeposit(reference);
       } catch (error) {
-        logDebug("Could not dismiss deposit on backend", error);
+        logDebug("Could not dismiss deposit on backend; will retry on next launch", error);
+      } finally {
+        isDismissingRef.current = false;
       }
     }
 
@@ -285,10 +333,14 @@ function useDepositVerificationState(): DepositVerificationContextValue {
     pendingAmount,
     pendingReference,
     readStoredPendingDeposit,
+    updatePendingStatus,
   ]);
 
   const verifyPendingDepositOnce = useCallback(async () => {
     if (isCheckingRef.current) return false;
+    // Bug fix: never fire a verification while the user is dismissing; the
+    // payment has been (or is being) cancelled.
+    if (isDismissingRef.current) return false;
 
     const storedPending = pendingReference
       ? null
@@ -399,6 +451,10 @@ function useDepositVerificationState(): DepositVerificationContextValue {
 
         // Bug fix: if the user dismissed while we were retrying, bail out
         // early instead of burning cycles on a null reference.
+        if (isDismissingRef.current) {
+          logDebug("Dismissed during bounded retry; stopping");
+          return false;
+        }
         if (!pendingReference) {
           const stored = await readStoredPendingDeposit();
           if (!stored?.reference) {
@@ -445,17 +501,19 @@ function useDepositVerificationState(): DepositVerificationContextValue {
       return;
     }
 
-    await WebBrowser.openBrowserAsync(authorizationUrl);
-
-    // Bug fix: set status to checkout_opened AFTER the browser opens
-    // successfully. Previously this ran before openBrowserAsync, so a
-    // browser failure left an orphaned checkout_opened status.
+    // Open the Paystack checkout inside the app instead of in an external
+    // browser tab. A custom tab belongs to Chrome's process and the OS can
+    // destroy it while the user is away paying (e.g. bank transfer via Opay),
+    // which made the checkout page "disappear". The in-app WebView lives in
+    // this app's process, so it survives backgrounding and the same checkout
+    // can be reopened at any time.
     await updatePendingStatus("checkout_opened", {
       lastOpenedAt: Date.now(),
     });
-    // Verification is handled by the AppState listener when the user returns to the app.
-    // We intentionally do NOT verify here to avoid a race condition where verification
-    // starts before the user has completed payment.
+    setCheckoutUrl(authorizationUrl);
+    // Completion is detected by the checkout WebView redirecting to our
+    // callback URL; verification also runs when the user returns from a
+    // banking app (AppState listener) or taps "Check again".
   }, [
     pendingAuthorizationUrl,
     pendingInitiatedAt,
@@ -526,10 +584,10 @@ function useDepositVerificationState(): DepositVerificationContextValue {
       old_reference: oldReference,
       reference,
     });
-    await WebBrowser.openBrowserAsync(authorizationUrl);
-    // Verification is handled by the AppState listener when the user returns to the app.
-    // We intentionally do NOT verify here to avoid a race condition where verification
-    // starts before the user has completed payment.
+    // Show the new checkout in the in-app WebView (see continueDepositPayment).
+    setCheckoutUrl(authorizationUrl);
+    // Completion is detected by the checkout WebView redirecting to our
+    // callback URL, or when the user returns from a banking app.
   }, [
     dismissDeposit,
     initiateDeposit,
@@ -581,6 +639,8 @@ function useDepositVerificationState(): DepositVerificationContextValue {
       pendingStatus,
       lastCheckedAt,
       confirmedReceipt,
+      checkoutUrl,
+      closeCheckout,
       isVerifyingDeposit: isChecking,
       startDepositVerification,
       continueDepositPayment,
@@ -592,6 +652,8 @@ function useDepositVerificationState(): DepositVerificationContextValue {
     }),
     [
       clearDepositVerification,
+      checkoutUrl,
+      closeCheckout,
       confirmedReceipt,
       continueDepositPayment,
       dismissDepositReceipt,

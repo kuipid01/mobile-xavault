@@ -451,6 +451,7 @@ export default function UpgradePlan() {
           ]}
           activeOpacity={0.85}
           disabled={isPrimaryButtonDisabled}
+          testID="upgrade-primary-cta"
           onPress={handleSubscribe}
         >
           <Text style={styles.primaryButtonText}>{primaryButtonLabel}</Text>
