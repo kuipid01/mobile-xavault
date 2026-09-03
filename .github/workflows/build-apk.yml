@@ -5,6 +5,7 @@ on:
 
 env:
   ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: "true"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
   # Gradle memory
   GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=1g"
@@ -15,62 +16,68 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # --------------------------------------------------
+      # ---------------------------------------------
       # Checkout
-      # --------------------------------------------------
+      # ---------------------------------------------
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      # --------------------------------------------------
+      # ---------------------------------------------
+      # Node 22
+      # ---------------------------------------------
+      - name: Setup Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # ---------------------------------------------
+      # Enable Yarn
+      # ---------------------------------------------
+      - name: Setup Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+
+          echo "Node:"
+          node --version
+
+          echo "Yarn:"
+          yarn --version
+
+      # ---------------------------------------------
+      # Java 17
+      # ---------------------------------------------
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # ---------------------------------------------
+      # Android SDK
+      # ---------------------------------------------
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      # ---------------------------------------------
       # Free disk space
-      # GitHub runners have limited usable disk space.
-      # EAS + Android/Gradle builds can consume a lot of it.
-      # --------------------------------------------------
+      # ---------------------------------------------
       - name: Free disk space
         run: |
           echo "Disk space before cleanup:"
           df -h
 
-          echo "Removing unnecessary preinstalled software..."
-
           sudo rm -rf /usr/share/dotnet || true
           sudo rm -rf /opt/ghc || true
           sudo rm -rf /usr/local/share/powershell || true
-          sudo rm -rf /usr/local/lib/node_modules || true
-
-          echo "Cleaning Docker..."
           sudo docker system prune -af || true
 
           echo "Disk space after cleanup:"
           df -h
 
-      # --------------------------------------------------
-      # Node 22
-      # EAS CLI now requires Node 22+
-      # --------------------------------------------------
-      - name: Setup Node 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      # --------------------------------------------------
-      # Java 17
-      # --------------------------------------------------
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      # --------------------------------------------------
-      # Android SDK
-      # --------------------------------------------------
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      # --------------------------------------------------
+      # ---------------------------------------------
       # Expo + EAS
-      # --------------------------------------------------
+      # ---------------------------------------------
       - name: Setup Expo & EAS
         uses: expo/expo-github-action@v8
         with:
@@ -78,15 +85,15 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
           packager: yarn
 
-      # --------------------------------------------------
+      # ---------------------------------------------
       # Install project dependencies
-      # --------------------------------------------------
+      # ---------------------------------------------
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      # --------------------------------------------------
+      # ---------------------------------------------
       # Configure Gradle
-      # --------------------------------------------------
+      # ---------------------------------------------
       - name: Configure Gradle
         run: |
           mkdir -p ~/.gradle
@@ -98,39 +105,34 @@ jobs:
           org.gradle.caching=false
           EOF
 
-      # --------------------------------------------------
-      # Check environment and disk
-      # --------------------------------------------------
+      # ---------------------------------------------
+      # Verify environment
+      # ---------------------------------------------
       - name: Verify build environment
         run: |
           echo "=============================="
           echo "Node"
-          echo "=============================="
           node --version
 
           echo "=============================="
           echo "Yarn"
-          echo "=============================="
           yarn --version
 
           echo "=============================="
           echo "Java"
-          echo "=============================="
           java -version
 
           echo "=============================="
-          echo "Gradle configuration"
-          echo "=============================="
+          echo "Gradle"
           cat ~/.gradle/gradle.properties
 
           echo "=============================="
-          echo "Disk space"
-          echo "=============================="
+          echo "Disk"
           df -h
 
-      # --------------------------------------------------
-      # Build test APK
-      # --------------------------------------------------
+      # ---------------------------------------------
+      # Build APK
+      # ---------------------------------------------
       - name: Build Android Preview APK
         run: |
           eas build \
@@ -140,25 +142,25 @@ jobs:
             --non-interactive \
             --output=./app-release.apk
 
-      # --------------------------------------------------
+      # ---------------------------------------------
       # Verify APK
-      # --------------------------------------------------
+      # ---------------------------------------------
       - name: Verify APK
         run: |
           echo "APK:"
           ls -lh ./app-release.apk
 
           echo ""
-          echo "File type:"
+          echo "File:"
           file ./app-release.apk
 
           echo ""
           echo "Final disk space:"
           df -h
 
-      # --------------------------------------------------
+      # ---------------------------------------------
       # Upload APK
-      # --------------------------------------------------
+      # ---------------------------------------------
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
