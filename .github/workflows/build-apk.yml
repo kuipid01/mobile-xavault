@@ -16,10 +16,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node 20
+      - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -43,19 +43,25 @@ jobs:
       - name: Configure Gradle
         run: |
           mkdir -p ~/.gradle
+
           cat > ~/.gradle/gradle.properties <<'EOF'
           org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g
           org.gradle.daemon=false
           EOF
 
-      - name: Verify Gradle configuration
+      - name: Verify environment
         run: |
+          echo "Node:"
+          node --version
+
+          echo "Yarn:"
+          yarn --version
+
+          echo "Java:"
+          java -version
+
           echo "Gradle configuration:"
           cat ~/.gradle/gradle.properties
-
-          echo ""
-          echo "Java version:"
-          java -version
 
       - name: Build Android Preview APK Locally on GitHub
         run: |
