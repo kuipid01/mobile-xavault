@@ -53,16 +53,7 @@
       ],
       "@react-native-community/datetimepicker",
       "expo-font",
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "gradleArgs": [
-              "-org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
-            ]
-          }
-        }
-      ]
+      "expo-build-properties"
     ],
     "experiments": {
       "typedRoutes": true,
