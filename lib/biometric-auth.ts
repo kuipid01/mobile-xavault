@@ -32,6 +32,9 @@ async function deleteBiometricKeys() {
   } catch (error) {
     console.warn(LOG_PREFIX, "could not delete biometric keys", error);
   }
+  // Keys gone => credentialReady changes; keep the availability cache honest
+  // (covers the enroll-failure path too, not just explicit toggles).
+  invalidateBiometricHardwareCache();
 }
 
 type ChallengeResponse = {
@@ -74,30 +77,81 @@ async function getOrCreateDeviceID() {
   return deviceID;
 }
 
+// ─── Availability cache ──────────────────────────────────────────────────────
+// getBiometricAvailability() used to run 2 native auth checks + a native
+// key-module probe + 7 SecureStore reads on EVERY call. The root-layout
+// redirect and LoginScreen both call it within milliseconds of each other,
+// and LoginScreen asks again after every failed unlock — each round trip
+// delaying the login form.
+//
+// Split by mutability:
+// - Hardware snapshot (deviceReady/enabled/credentialReady) only changes when
+//   the user enrolls or disables biometrics — cached for the app session and
+//   invalidated by the in-app toggles below. OS-level changes are picked up
+//   on the next app launch.
+// - Token fields (hasAccessToken/accessTokenValid/...) change on every
+//   login/logout/refresh, so they are ALWAYS recomputed from fresh SecureStore
+//   reads (two fast local reads + local JWT decode). No stale sessions.
+type BiometricHardwareSnapshot = Pick<
+  BiometricAvailability,
+  "deviceReady" | "enabled" | "credentialReady"
+>;
+
+/** Cached hardware snapshot; the promise doubles as an in-flight dedupe so
+ * concurrent callers (startup redirect + login screen) share one probe. */
+let hardwareSnapshotPromise: Promise<BiometricHardwareSnapshot> | null = null;
+
+async function loadBiometricHardwareSnapshot(): Promise<BiometricHardwareSnapshot> {
+  const [hardware, enrolled, enabledValue, deviceID, keyState] = await Promise.all([
+    LocalAuthentication.hasHardwareAsync(),
+    LocalAuthentication.isEnrolledAsync(),
+    SecureStore.getItemAsync(BIOMETRIC_LOGIN_KEY),
+    SecureStore.getItemAsync(BIOMETRIC_DEVICE_ID_KEY),
+    biometricKeysExist(),
+  ]);
+
+  return {
+    deviceReady: hardware && enrolled,
+    enabled: enabledValue === "true",
+    credentialReady: Boolean(deviceID && keyState.keysExist),
+  };
+}
+
+/** Get the hardware snapshot, probing native only once per app session. */
+function getBiometricHardwareSnapshot() {
+  if (!hardwareSnapshotPromise) {
+    hardwareSnapshotPromise = loadBiometricHardwareSnapshot().catch((error) => {
+      // Never cache a failure — let the next caller retry the probe.
+      hardwareSnapshotPromise = null;
+      throw error;
+    });
+  }
+
+  return hardwareSnapshotPromise;
+}
+
+/** Drop the cached hardware snapshot. Called by the in-app enrollment
+ * toggles below; exportable for future callers that change biometric state. */
+export function invalidateBiometricHardwareCache() {
+  hardwareSnapshotPromise = null;
+}
+
 export async function getBiometricAvailability(): Promise<BiometricAvailability> {
-  const [hardware, enrolled, enabledValue, deviceID, accessToken, refreshToken, keyState] =
-    await Promise.all([
-      LocalAuthentication.hasHardwareAsync(),
-      LocalAuthentication.isEnrolledAsync(),
-      SecureStore.getItemAsync(BIOMETRIC_LOGIN_KEY),
-      SecureStore.getItemAsync(BIOMETRIC_DEVICE_ID_KEY),
-      SecureStore.getItemAsync(ACCESS_TOKEN_KEY),
-      SecureStore.getItemAsync(REFRESH_TOKEN_KEY),
-      biometricKeysExist(),
-    ]);
+  const [snapshot, accessToken, refreshToken] = await Promise.all([
+    getBiometricHardwareSnapshot(),
+    SecureStore.getItemAsync(ACCESS_TOKEN_KEY),
+    SecureStore.getItemAsync(REFRESH_TOKEN_KEY),
+  ]);
 
   const accessTokenValid = Boolean(accessToken && !isTokenExpired(accessToken));
   const refreshTokenValid = Boolean(refreshToken && !isTokenExpired(refreshToken));
-  const credentialReady = Boolean(deviceID && keyState.keysExist);
-  const availability = {
-    deviceReady: hardware && enrolled,
-    enabled: enabledValue === "true",
-    credentialReady,
+  const availability: BiometricAvailability = {
+    ...snapshot,
     hasAccessToken: Boolean(accessToken),
     accessTokenValid,
     hasRefreshToken: Boolean(refreshToken),
     refreshTokenValid,
-    sessionRecoverable: credentialReady,
+    sessionRecoverable: snapshot.credentialReady,
   };
 
   console.log(LOG_PREFIX, "availability", availability);
@@ -107,6 +161,9 @@ export async function getBiometricAvailability(): Promise<BiometricAvailability>
 export async function setBiometricLoginEnabled(enabled: boolean) {
   if (enabled) await SecureStore.setItemAsync(BIOMETRIC_LOGIN_KEY, "true");
   else await SecureStore.deleteItemAsync(BIOMETRIC_LOGIN_KEY);
+
+  // `enabled` is part of the cached snapshot — keep the cache honest.
+  invalidateBiometricHardwareCache();
 }
 
 export async function enrollBiometricLogin() {
@@ -132,6 +189,9 @@ export async function enrollBiometricLogin() {
     throw new Error("Biometric signing requires a new development build");
   }
   const deviceID = await getOrCreateDeviceID();
+
+  // New keys + device row change the snapshot's credentialReady.
+  invalidateBiometricHardwareCache();
   try {
     await api.post("/auth/biometric/devices", {
       device_id: deviceID,
@@ -164,6 +224,9 @@ export async function disableBiometricLogin() {
     deleteBiometricKeys(),
     SecureStore.deleteItemAsync(BIOMETRIC_LOGIN_KEY),
   ]);
+
+  // Keys + the enabled flag were just wiped — invalidate the snapshot.
+  invalidateBiometricHardwareCache();
 }
 
 export async function unlockWithBiometrics(promptMessage = "Sign in with biometrics") {

@@ -207,6 +207,36 @@ const RegisterScreen = () => {
       return;
     }
 
+    // Belt-and-braces: the details form gates on these, but a restored draft
+    // could still arrive incomplete. Registration requires gender + DOB, and
+    // users must be at least 18 (KYC).
+    if (!draft.gender) {
+      Toast.show({ type: "error", text1: "Select your gender" });
+      return;
+    }
+
+    if (!draft.dob) {
+      Toast.show({ type: "error", text1: "Select your date of birth" });
+      return;
+    }
+
+    const birthDate = new Date(`${draft.dob}T00:00:00`);
+    const now = new Date();
+    let age = now.getFullYear() - birthDate.getFullYear();
+    const monthDiff = now.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birthDate.getDate())) {
+      age -= 1;
+    }
+
+    if (Number.isNaN(birthDate.getTime()) || age < 18) {
+      Toast.show({
+        type: "error",
+        text1: "You must be at least 18 to register",
+        text2: "Check the selected date of birth.",
+      });
+      return;
+    }
+
     if (!validLength) {
       Toast.show({
         type: "error",
@@ -264,6 +294,9 @@ const RegisterScreen = () => {
         last_name: draft.lastName.trim(),
         country: draft.country,
         phone_number: draft.phone,
+        // Collected in the details step (both are required to reach here).
+        gender: draft.gender,
+        date_of_birth: draft.dob,
         nickname: normalizeUsername(draft.username),
         pin,
       });

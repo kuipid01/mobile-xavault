@@ -30,6 +30,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
+import { countryMeta } from "@/components/auth/register/constants";
+import type { SupportedCountry } from "@/components/auth/register/types";
 import { COLORS } from "../../themes/colors";
 
 const C = {
@@ -74,10 +76,20 @@ export default function MyProfileScreen() {
   const [email, setEmail] = useState("");
   const [nickname, setNickname] = useState("");
   const [nicknameState, setNicknameState] = useState<NicknameState>("idle");
+  const [gender, setGender] = useState("");
+  // Baseline of what we know is persisted. The server may not echo `gender`
+  // back on refetch yet, so the baseline is: server value when present,
+  // otherwise whatever we last saved. Keeps the UI from clobbering a just-
+  // made selection and keeps the dirty-check honest.
+  const [lastSavedGender, setLastSavedGender] = useState("");
+  const [showGenderPicker, setShowGenderPicker] = useState(false);
   const [dob, setDob] = useState("");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [tempDate, setTempDate] = useState<Date | null>(null);
   const [address, setAddress] = useState("");
+  const [country, setCountry] = useState<SupportedCountry>("NG");
+  const [phone, setPhone] = useState("");
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
@@ -88,8 +100,17 @@ export default function MyProfileScreen() {
     if (!profile) return;
     setEmail(profile.email || "");
     setNickname(profile.nickname || "");
+
+    // Adopt the server's gender only when it actually returns one; a refetch
+    // that omits the field must never wipe the user's current selection.
+    const serverGender = profile.gender || "";
+    if (serverGender) setLastSavedGender(serverGender);
+    setGender((current) => serverGender || current);
+
     setDob(profile.date_of_birth ? String(profile.date_of_birth).slice(0, 10) : "");
     setAddress(profile.address || "");
+    setCountry((profile.country as SupportedCountry) || "NG");
+    setPhone(profile.phone_number || "");
   }, [profile]);
 
   useEffect(() => {
@@ -115,10 +136,13 @@ export default function MyProfileScreen() {
     if (!profile) return;
     const changed =
       nickname !== (profile.nickname || "") ||
+      gender !== lastSavedGender ||
       dob !== (profile.date_of_birth ? String(profile.date_of_birth).slice(0, 10) : "") ||
-      address !== (profile.address || "");
+      address !== (profile.address || "") ||
+      phone !== (profile.phone_number || "") ||
+      country !== ((profile.country as SupportedCountry) || "NG");
     setIsDirty(changed);
-  }, [nickname, dob, address, profile]);
+  }, [nickname, gender, lastSavedGender, dob, address, phone, country, profile]);
 
   const accountNumber = wallet?.dedicated_account_number;
   const accountTitle = wallet?.dedicated_account_name || "Dedicated account";
@@ -133,12 +157,21 @@ export default function MyProfileScreen() {
 
   const dateValue = dob ? new Date(`${dob}T00:00:00`) : new Date(2000, 0, 1);
 
+  /** Digits-only length must match the selected country's rules. */
+  const isPhoneValid = useMemo(() => {
+    const meta = countryMeta[country];
+    return (
+      phone.length === meta.maxLength || phone.length === meta.alternateLength
+    );
+  }, [country, phone]);
+
   const saveDisabled =
     isSaving ||
     profileLoading ||
     !isDirty ||
     nicknameState === "checking" ||
-    nicknameState === "taken";
+    nicknameState === "taken" ||
+    (phone !== (profile?.phone_number || "") && !isPhoneValid);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -209,7 +242,17 @@ export default function MyProfileScreen() {
       return;
     }
     try {
-      await updateProfile({ nickname, date_of_birth: dob, address });
+      // Phone travels as digits only, keyed to the selected country — same
+      // shape registration uses, so the backend stores one canonical format.
+      await updateProfile({
+        nickname,
+        gender: gender || undefined,
+        date_of_birth: dob,
+        address,
+        country,
+        phone_number: phone.replace(/\D/g, ""),
+      });
+      setLastSavedGender(gender);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => { });
       Toast.show({ type: "success", text1: "Profile updated" });
       setIsDirty(false);
@@ -340,6 +383,10 @@ export default function MyProfileScreen() {
 
           <View style={styles.divider} />
 
+          <GenderField value={gender} onPress={() => setShowGenderPicker(true)} focused={focusedField === "gender"} />
+
+          <View style={styles.divider} />
+
           <DateField value={dob} onPress={openDatePicker} focused={focusedField === "dob"} />
 
           <View style={styles.divider} />
@@ -368,11 +415,54 @@ export default function MyProfileScreen() {
 
         <SectionLabel icon="call-outline" text="Contact" />
         <View style={styles.card}>
-          <LockedRow
-            label="Mobile Number"
-            value="Change coming soon"
-            onPress={() => comingSoon("Mobile number")}
-          />
+          {/* Country + phone are editable here: registration already collects
+              them, so this screen edits rather than locks them. Phone is kept
+              digits-only and length-validated against the selected country. */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Mobile Number</Text>
+            <View
+              style={[
+                styles.inputWrap,
+                focusedField === "phone" && styles.inputWrapFocused,
+              ]}
+            >
+              <TouchableOpacity
+                style={styles.countryChip}
+                onPress={() => setShowCountryPicker(true)}
+                activeOpacity={0.7}
+              >
+                <Image
+                  source={country === "GH" ? require("@/assets/images/gh-flag.png") : require("@/assets/images/ng-flag.png")}
+                  style={styles.countryFlag}
+                />
+                <Text style={styles.countryCode}>
+                  {COUNTRY_DIAL_CODES[country]}
+                </Text>
+                <Ionicons name="chevron-down" size={14} color={C.faint} />
+              </TouchableOpacity>
+              <TextInput
+                value={phone}
+                onChangeText={(value) => setPhone(value.replace(/\D/g, ""))}
+                placeholder={country === "GH" ? "e.g. 241234567" : "e.g. 8012345678"}
+                placeholderTextColor={C.faint}
+                keyboardType="phone-pad"
+                maxLength={countryMeta[country].maxLength}
+                style={styles.input}
+                onFocus={() => setFocusedField("phone")}
+                onBlur={() => setFocusedField(null)}
+              />
+            </View>
+            <Text
+              style={[
+                styles.hint,
+                !isPhoneValid && phone.length > 0 && { color: C.danger },
+              ]}
+            >
+              {isPhoneValid || !phone
+                ? countryMeta[country].hint
+                : `Wrong length for ${countryMeta[country].label}.`}
+            </Text>
+          </View>
         </View>
 
         <View style={{ height: 8 }} />
@@ -396,6 +486,118 @@ export default function MyProfileScreen() {
           )}
         </TouchableOpacity>
       </View>
+
+      {/* Country picker: same two-country list as registration */}
+      {showCountryPicker && (
+        <Modal
+          visible
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowCountryPicker(false)}
+        >
+          <Pressable style={styles.modalBackdrop} onPress={() => setShowCountryPicker(false)}>
+            <Pressable style={styles.optionCard} onPress={() => { }}>
+              {([
+                { value: "NG" as SupportedCountry, flag: require("@/assets/images/ng-flag.png") },
+                { value: "GH" as SupportedCountry, flag: require("@/assets/images/gh-flag.png") },
+              ]).map(({ value, flag }) => (
+                <TouchableOpacity
+                  key={value}
+                  style={styles.optionRow}
+                  onPress={() => {
+                    setCountry(value);
+                    setPhone(""); // lengths differ per country; start fresh
+                    setShowCountryPicker(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                    <Image source={flag} style={styles.countryFlag} />
+                    <Text style={styles.optionText}>
+                      {countryMeta[value].label} ({COUNTRY_DIAL_CODES[value]})
+                    </Text>
+                  </View>
+                  {country === value ? (
+                    <Ionicons name="checkmark" size={20} color={C.forest} />
+                  ) : null}
+                </TouchableOpacity>
+              ))}
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
+
+      {/* Gender picker: bottom sheet list on iOS, plain modal list on Android */}
+      {showGenderPicker &&
+        (Platform.OS === "ios" ? (
+          <Modal
+            visible
+            transparent
+            animationType="slide"
+            onRequestClose={() => setShowGenderPicker(false)}
+          >
+            <Pressable style={styles.modalBackdrop} onPress={() => setShowGenderPicker(false)}>
+              <Pressable style={styles.sheet} onPress={() => { }}>
+                <View style={styles.sheetHandle} />
+                <View style={styles.sheetHeader}>
+                  <TouchableOpacity onPress={() => setShowGenderPicker(false)}>
+                    <Text style={styles.sheetCancel}>Cancel</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.sheetTitle}>Gender</Text>
+                  <View style={styles.backButton} />
+                </View>
+                {GENDER_OPTIONS.map((option) => (
+                  <TouchableOpacity
+                    key={option}
+                    style={styles.optionRow}
+                    onPress={() => {
+                      setGender(option);
+                      setShowGenderPicker(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.optionText, gender === option && styles.optionTextSelected]}>
+                      {option}
+                    </Text>
+                    {gender === option ? (
+                      <Ionicons name="checkmark" size={20} color={C.forest} />
+                    ) : null}
+                  </TouchableOpacity>
+                ))}
+              </Pressable>
+            </Pressable>
+          </Modal>
+        ) : (
+          <Modal
+            visible
+            transparent
+            animationType="fade"
+            onRequestClose={() => setShowGenderPicker(false)}
+          >
+            <Pressable style={styles.modalBackdrop} onPress={() => setShowGenderPicker(false)}>
+              <Pressable style={styles.optionCard} onPress={() => { }}>
+                {GENDER_OPTIONS.map((option) => (
+                  <TouchableOpacity
+                    key={option}
+                    style={styles.optionRow}
+                    onPress={() => {
+                      setGender(option);
+                      setShowGenderPicker(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.optionText, gender === option && styles.optionTextSelected]}>
+                      {option}
+                    </Text>
+                    {gender === option ? (
+                      <Ionicons name="checkmark" size={20} color={C.forest} />
+                    ) : null}
+                  </TouchableOpacity>
+                ))}
+              </Pressable>
+            </Pressable>
+          </Modal>
+        ))}
 
       {/* Date picker */}
       {Platform.OS === "ios" ? (
@@ -535,6 +737,42 @@ function Field({
         ) : null}
       </View>
       {hint ? <Text style={[styles.hint, { color: hintColor }]}>{hint}</Text> : null}
+    </View>
+  );
+}
+
+/** Gender options offered in the profile picker (mirrors registration). */
+const GENDER_OPTIONS = ["Male", "Female", "Other", "Prefer not to say"] as const;
+
+/** Dial codes for the countries registration supports. */
+const COUNTRY_DIAL_CODES: Record<SupportedCountry, string> = {
+  NG: "+234",
+  GH: "+233",
+};
+
+function GenderField({
+  value,
+  onPress,
+  focused,
+}: {
+  value: string;
+  onPress: () => void;
+  focused?: boolean;
+}) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>Gender</Text>
+      <TouchableOpacity
+        style={[styles.inputWrap, focused && styles.inputWrapFocused]}
+        onPress={onPress}
+        activeOpacity={0.75}
+      >
+        <Ionicons name="person-circle-outline" size={18} color={C.forest} style={{ marginRight: 10 }} />
+        <Text style={[styles.readonlyValue, !value && styles.placeholderText]}>
+          {value || "Select gender"}
+        </Text>
+        <Ionicons name="chevron-forward" size={18} color={C.faint} />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -825,6 +1063,18 @@ const styles = StyleSheet.create({
   readonlyValue: { flex: 1, color: C.forest, fontSize: 15, fontWeight: "700" },
   placeholderText: { color: C.faint, fontWeight: "500" },
   multilineInput: { minHeight: 76, textAlignVertical: "top" },
+  countryChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingRight: 10,
+    marginRight: 10,
+    borderRightWidth: 1,
+    borderRightColor: C.border,
+  },
+  countryFlag: { width: 24, height: 16, borderRadius: 3 },
+  countryCode: { color: C.forest, fontSize: 14, fontWeight: "800" },
+
   hint: { fontSize: 12, fontWeight: "700", marginTop: 6 },
 
   saveBar: {
@@ -899,6 +1149,25 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: C.border,
   },
+  optionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+  optionText: { color: C.forest, fontSize: 15, fontWeight: "700" },
+  optionTextSelected: { fontWeight: "900" },
+  optionCard: {
+    alignSelf: "stretch",
+    marginHorizontal: 40,
+    backgroundColor: C.surface,
+    borderRadius: 18,
+    overflow: "hidden",
+  },
+
   sheetCancel: { color: C.muted, fontSize: 15, fontWeight: "700" },
   sheetTitle: { color: C.forest, fontSize: 15, fontWeight: "900" },
   sheetDone: { color: C.forest, fontSize: 15, fontWeight: "900" },

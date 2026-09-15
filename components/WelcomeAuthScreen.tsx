@@ -1,16 +1,16 @@
-import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
-import { router } from "expo-router";
 import { COLORS } from "@/themes/colors";
-import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
+import React from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { clearRegistrationFlow } from "./auth/authFlow";
+import { LogoWhiteBG } from "./general/logo";
 
 export function WelcomeAuthScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.logoMark}>
-          <Ionicons name="shield-checkmark" size={26} color={COLORS.primary} />
+        <View style={{marginBottom:10}}>
+         <LogoWhiteBG/>
         </View>
         <Text style={styles.logo}>XAVAULT</Text>
 
@@ -46,7 +46,7 @@ export function WelcomeAuthScreen() {
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            BUILT FOR NIGERIA. FOCUSED ON YOU.
+            BUILT FOR ALL. FOCUSED ON YOU.
           </Text>
         </View>
       </View>

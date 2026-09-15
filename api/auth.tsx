@@ -46,6 +46,10 @@ type RegisterPayload = {
   last_name: string;
   country: "NG" | "GH";
   phone_number: string;
+  /** From the details step; one of the GenderUI options. */
+  gender?: string;
+  /** From the details step; "YYYY-MM-DD". */
+  date_of_birth?: string;
   nickname?: string;
   pin: string;
 };

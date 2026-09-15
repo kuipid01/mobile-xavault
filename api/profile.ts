@@ -6,6 +6,7 @@ export type UserProfile = {
   email: string;
   nickname?: string | null;
   date_of_birth?: string | null;
+  gender?: string | null;
   address?: string | null;
   profile_image_url?: string | null;
   country?: string;
@@ -21,7 +22,11 @@ export type UserProfile = {
 export type UpdateProfilePayload = {
   nickname?: string;
   date_of_birth?: string;
+  gender?: string;
   address?: string;
+  /** Digits only, interpreted against `country`. Omit to leave unchanged. */
+  phone_number?: string;
+  country?: "NG" | "GH";
 };
 
 export type NicknameAvailability = {
