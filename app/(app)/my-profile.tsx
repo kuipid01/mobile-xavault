@@ -198,10 +198,6 @@ export default function MyProfileScreen() {
     });
   };
 
-  const comingSoon = (label: string) => {
-    Toast.show({ type: "info", text1: label, text2: "This update is coming soon." });
-  };
-
   const handleBack = () => {
     if (router.canGoBack()) router.back();
     else router.replace("/(app)/(tabs)/profile");
@@ -845,23 +841,6 @@ function ReadonlyRow({
   );
 }
 
-function LockedRow({ label, value, onPress }: { label: string; value: string; onPress: () => void }) {
-  return (
-    <TouchableOpacity style={styles.lockedRow} onPress={onPress} activeOpacity={0.7}>
-      <View style={styles.lockedIconWrap}>
-        <Ionicons name="phone-portrait-outline" size={18} color={C.forest} />
-      </View>
-      <View style={{ flex: 1, marginLeft: 12 }}>
-        <Text style={styles.rowLabel}>{label}</Text>
-        <Text style={styles.rowSub}>{value}</Text>
-      </View>
-      <View style={styles.soonPill}>
-        <Text style={styles.soonText}>Upcoming</Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
 function ProfileSkeleton({ onBack }: { onBack: () => void }) {
   const pulse = useRef(new Animated.Value(0.4)).current;
 
@@ -1104,25 +1083,6 @@ const styles = StyleSheet.create({
   },
   primaryButtonDisabled: { opacity: 0.4, shadowOpacity: 0 },
   primaryText: { color: "#FFFFFF", fontSize: 15, fontWeight: "900" },
-
-  lockedRow: { flexDirection: "row", alignItems: "center" },
-  lockedIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: C.forestLight,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  rowLabel: { color: C.forest, fontSize: 15, fontWeight: "800" },
-  rowSub: { color: C.muted, fontSize: 12, fontWeight: "600", marginTop: 2 },
-  soonPill: {
-    backgroundColor: C.forestLight,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  soonText: { color: C.forest, fontSize: 11, fontWeight: "900" },
 
   modalBackdrop: { flex: 1, backgroundColor: "rgba(6,20,15,0.45)", justifyContent: "flex-end" },
   sheet: {

@@ -43,6 +43,12 @@ export function DepositPaymentModal() {
   const needsAction =
     pendingStatus === "needs_action" ||
     pendingStatus === "failed";
+  // checkout_opened means the user left the WebView before completion was
+  // detected — always offer a manual verify here. Previously this state fell
+  // into the generic "Payment not confirmed" branch with no Check again
+  // button, leaving paid users stuck.
+  const canCheckAgain =
+    needsAction || isProcessing || pendingStatus === "checkout_opened";
 
   const title = isReady
     ? "Ready to pay"
@@ -89,7 +95,7 @@ export function DepositPaymentModal() {
           </View>
 
           <View style={styles.actions}>
-            {needsAction || isProcessing ? (
+            {canCheckAgain ? (
               <Pressable
                 disabled={isVerifying}
                 testID="deposit-check-again"

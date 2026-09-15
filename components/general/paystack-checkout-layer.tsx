@@ -11,11 +11,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  ShouldStartLoadRequest,
-  WebView,
-  WebViewNavigation,
-} from "react-native-webview";
+import { WebView, WebViewNavigation } from "react-native-webview";
 
 // The Paystack checkout lives inside this app now (not in a Chrome Custom
 // Tab), so it survives the user backgrounding the app to pay with a bank
@@ -77,8 +73,10 @@ export function PaystackCheckoutLayer() {
     [closeCheckout, verifyPendingDeposit]
   );
 
+  // ShouldStartLoadRequest extends WebViewNavigation; the narrower type is
+  // not re-exported by react-native-webview's entry point.
   const handleShouldStart = useCallback(
-    (request: ShouldStartLoadRequest) => {
+    (request: WebViewNavigation) => {
       handleTerminalRedirect(request.url);
       return !isTerminalRedirect(request.url);
     },
@@ -98,13 +96,29 @@ export function PaystackCheckoutLayer() {
     webviewRef.current?.reload();
   }, []);
 
+  /**
+   * Manual close (X button / Android back). If the payment might already
+   * be completed, verify before returning to the prompt — the AppState
+   * listener only fires on background→active transitions, so a user who
+   * pays and closes the checkout without leaving the app would otherwise
+   * sit on "Payment not confirmed" forever. The terminal-redirect path
+   * already verifies (handledRef), so skip to avoid a duplicate call.
+   */
+  const handleClose = useCallback(() => {
+    const shouldVerify = !handledRef.current;
+    closeCheckout();
+    if (shouldVerify) {
+      void verifyPendingDeposit({ bounded: true });
+    }
+  }, [closeCheckout, verifyPendingDeposit]);
+
   if (!checkoutUrl) return null;
 
   return (
     <Modal
       visible
       animationType="slide"
-      onRequestClose={closeCheckout}
+      onRequestClose={handleClose}
       statusBarTranslucent={false}
     >
       <View style={styles.container}>
@@ -114,7 +128,7 @@ export function PaystackCheckoutLayer() {
           <Pressable
             accessibilityLabel="Close payment window"
             hitSlop={10}
-            onPress={closeCheckout}
+            onPress={handleClose}
             style={styles.headerSide}
             testID="checkout-close"
           >

@@ -1,8 +1,8 @@
 import Pigs from "@/assets/images/pg.svg";
+import { COLORS } from "@/themes/colors";
 import { router } from "expo-router";
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { COLORS } from "../../themes/colors";
 import { clearRegistrationFlow } from "./authFlow";
 
 // Map layout configuration for floating background elements cleanly
@@ -85,7 +85,7 @@ const styles = StyleSheet.create({
     brand: {
         fontSize: 30,
         fontWeight: "900",
-        color: "white",
+        color: COLORS.tertiary,
         textAlign: "center",
         letterSpacing: -0.5,
         marginTop: 10
@@ -119,14 +119,14 @@ const styles = StyleSheet.create({
         paddingVertical: 16,
         borderRadius: 12,
         borderWidth: 1.5,
-        borderColor: "white",
+        borderColor: COLORS.tertiary,
         flex: 1,
         justifyContent: "center",
     },
     signupButton: {
         paddingVertical: 16,
         borderRadius: 12,
-        backgroundColor: "white",
+        backgroundColor: COLORS.tertiary,
         flex: 1,
         justifyContent: "center",
     },
@@ -134,12 +134,12 @@ const styles = StyleSheet.create({
         textAlign: "center",
         fontSize: 16,
         fontWeight: "700",
-        color: "white",
+        color:  COLORS.tertiary,
     },
     signupText: {
         textAlign: "center",
         fontSize: 16,
-        fontWeight: "700",
+        fontWeight: "bold",
         color: COLORS.primary,
     },
 });
