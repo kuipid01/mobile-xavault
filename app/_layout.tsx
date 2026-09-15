@@ -3,23 +3,22 @@ import "react-native-gesture-handler";
 import GlobalDrawerHost from "@/components/GlobalDrawerHost";
 import { GlobalErrorModal } from "@/components/GlobalErrorModal";
 import { OnboardingProvider, useOnboarding } from "@/context/OnboardingContext";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { router, Stack, usePathname, useSegments } from "expo-router";
-import { StatusBar } from "expo-status-bar";
-import { useEffect, useState } from "react";
-import { ActivityIndicator, Text, TextInput, View } from "react-native";
-import Toast from "react-native-toast-message";
 import {
-  useFonts,
   Lexend_300Light,
   Lexend_400Regular,
   Lexend_500Medium,
   Lexend_600SemiBold,
   Lexend_700Bold,
+  useFonts,
 } from "@expo-google-fonts/lexend";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { router, Stack, usePathname, useSegments } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Text, TextInput, View } from "react-native";
+import Toast from "react-native-toast-message";
 import { AuthProvider, useAuth } from "../api/auth";
-import { getBiometricAvailability } from "../lib/biometric-auth";
 import {
   loadAuthFlow,
   PENDING_EMAIL_KEY,
@@ -28,13 +27,14 @@ import {
 import { DepositPaymentModal } from "../components/general/deposit-payment-modal";
 import { DepositVerificationBanner } from "../components/general/deposit-verification-banner";
 import { ModalProvider } from "../context/special-modal-context";
+import "../global.css";
 import { useSubscriptionPrompt } from "../hooks/use-subscription-prompt";
 import {
   DepositVerificationProvider,
   DepositVerificationWatcher,
 } from "../hooks/verify-deposit";
 import { SubscriptionVerificationProvider } from "../hooks/verify-sub";
-import "../global.css";
+import { getBiometricAvailability } from "../lib/biometric-auth";
 
 const DEBUG_ROOT_LAYOUT = true;
 
@@ -67,6 +67,14 @@ function RootLayoutContent() {
   });
 
   const [isRedirectChecking, setIsRedirectChecking] = useState(true);
+
+  // The startup redirect runs ONCE per app launch. The refs below mirror the
+  // live route so the async check reads the route AT DECISION TIME, not at
+  // schedule time — a stale captured pathname is what caused the redirect
+  // fights right after onboarding handed off to the welcome screen.
+  const hasResolvedStartupRouteRef = useRef(false);
+  const routeStateRef = useRef({ pathname, rootSegment });
+  routeStateRef.current = { pathname, rootSegment };
 
   useEffect(() => {
     debugLog("font defaults effect", { fontsLoaded });
@@ -114,16 +122,26 @@ function RootLayoutContent() {
       return;
     }
 
+    // One-shot: decide the initial destination exactly once. Re-running this
+    // whole check on every navigation re-read SecureStore/AsyncStorage each
+    // time (the noticeable "wait") and raced with in-flight navigations.
+    if (hasResolvedStartupRouteRef.current) return;
+
     let cancelled = false;
+
+    // Live route accessors: always read the CURRENT route, never the values
+    // captured when this effect was scheduled.
+    const readCurrentPathname = () => routeStateRef.current.pathname;
+    const readCurrentRootSegment = () => routeStateRef.current.rootSegment;
 
     const checkInitialRedirect = async () => {
       debugLog("redirect check started");
 
       try {
         if (isAuthenticated) {
-          debugLog("user is authenticated", { rootSegment });
+          debugLog("user is authenticated", { rootSegment: readCurrentRootSegment() });
 
-          if (!cancelled && rootSegment !== "(app)") {
+          if (!cancelled && readCurrentRootSegment() !== "(app)") {
             debugLog("redirecting to app home");
             router.replace("/(app)/(tabs)/home");
           } else {
@@ -134,13 +152,14 @@ function RootLayoutContent() {
         }
 
         if (isFirstTime) {
-          debugLog("user is first time", { rootSegment });
+          debugLog("user is first time", { rootSegment: readCurrentRootSegment() });
 
-          if (!cancelled && rootSegment !== "(onboarding)") {
+          // Force first-time users into onboarding from anywhere else.
+          // (Completing onboarding flips isFirstTime BEFORE navigating,
+          // so this branch can never fight the welcome-screen handoff.)
+          if (!cancelled && readCurrentRootSegment() !== "(onboarding)") {
             debugLog("redirecting to onboarding");
             router.replace("/(onboarding)");
-          } else {
-            debugLog("already on onboarding");
           }
 
           return;
@@ -155,7 +174,7 @@ function RootLayoutContent() {
             biometric.deviceReady &&
             biometric.sessionRecoverable
           ) {
-            if (!pathname.includes("/login")) {
+            if (!readCurrentPathname().includes("/login")) {
               router.replace("/(auth)/login");
             }
             return;
@@ -181,7 +200,7 @@ function RootLayoutContent() {
             });
 
             if (authFlow.step === "email_otp_sent") {
-              if (!pathname.includes("/verify-mail")) {
+              if (!readCurrentPathname().includes("/verify-mail")) {
                 debugLog("redirecting to verify mail from auth flow", {
                   email: authFlow.email,
                 });
@@ -197,7 +216,7 @@ function RootLayoutContent() {
               return;
             }
 
-            if (!pathname.includes("/register")) {
+            if (!readCurrentPathname().includes("/register")) {
               debugLog("redirecting to register from auth flow");
               router.replace("/(auth)/register");
             } else {
@@ -207,10 +226,10 @@ function RootLayoutContent() {
             return;
           }
 
-          if (email) {
-            debugLog("pending email found", { email });
+        if (email) {
+          debugLog("pending email found", { email });
 
-            if (!pathname.includes("/verify-mail")) {
+          if (!readCurrentPathname().includes("/verify-mail")) {
               debugLog("redirecting to verify mail from pending email", {
                 email,
               });
@@ -222,31 +241,19 @@ function RootLayoutContent() {
             } else {
               debugLog("already on verify mail");
             }
-          } else if (registrationDraft && !pathname.includes("/register")) {
+          } else if (registrationDraft && !readCurrentPathname().includes("/register")) {
             debugLog("registration draft found, redirecting to register");
             router.replace("/(auth)/register");
           } else if (
-            rootSegment !== "(auth)" &&
-            ![
-              "/login",
-              "/register",
-              "/verify-mail",
-              "/forgot-password",
-              "/initial",
-              "/welcome",
-            ].includes(pathname)
+            readCurrentRootSegment() !== "(auth)" &&
+            !["/login", "/register", "/verify-mail", "/forgot-password", "/initial", "/welcome"].includes(
+              readCurrentPathname(),
+            )
           ) {
-            debugLog("no saved auth flow, redirecting to auth initial", {
-              rootSegment,
-              pathname,
-            });
-
+            debugLog("no saved auth flow, redirecting to auth initial");
             router.replace("/(auth)/login");
           } else {
-            debugLog("no redirect needed", {
-              rootSegment,
-              pathname,
-            });
+            debugLog("no redirect needed");
           }
         }
       } catch (error) {
@@ -254,6 +261,10 @@ function RootLayoutContent() {
         console.log("Failed to check pending auth flow:", error);
       } finally {
         debugLog("redirect check finished");
+
+        // Whether we navigated or not, the startup destination is decided.
+        // Later navigation is owned by the screens themselves.
+        hasResolvedStartupRouteRef.current = true;
         if (!cancelled) setIsRedirectChecking(false);
       }
     };
@@ -263,15 +274,11 @@ function RootLayoutContent() {
     return () => {
       cancelled = true;
     };
-  }, [
-    onboardingLoading,
-    authLoading,
-    fontsLoaded,
-    isFirstTime,
-    isAuthenticated,
-    pathname,
-    rootSegment,
-  ]);
+    // Deliberately narrow: this fires when the loading gates open, and the
+    // one-shot ref makes every later firing a no-op. All flows (login,
+    // register, logout) navigate explicitly from their own screens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pathname/rootSegment are read live via routeStateRef
+  }, [onboardingLoading, authLoading, fontsLoaded, isFirstTime, isAuthenticated]);
 
   useEffect(() => {
     if (

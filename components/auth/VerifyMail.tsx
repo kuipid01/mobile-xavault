@@ -1,3 +1,4 @@
+import Coin from "@/assets/images/coin.svg";
 import {
   useStartRegistration,
   useVerifyRegistrationMail,
@@ -5,7 +6,6 @@ import {
 import { COLORS, Radius } from "@/themes/colors";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -189,11 +189,7 @@ const VerifyMailScreen = () => {
 
         {/* Image */}
         <View style={styles.artWrap}>
-          <Image
-            source={require("@/assets/images/coin.svg")}
-            style={styles.art}
-            contentFit="contain"
-          />
+          <Coin width={200} height={200} />
         </View>
 
         {/* Content */}
@@ -291,11 +287,6 @@ const styles = StyleSheet.create({
   artWrap: {
     alignItems: "center",
     marginTop: 20,
-  },
-
-  art: {
-    width: 200,
-    height: 200,
   },
 
   content: {

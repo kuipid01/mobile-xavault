@@ -1,4 +1,4 @@
-import { Image } from "expo-image";
+import Coin from "@/assets/images/coin.svg";
 import React from "react";
 import { Text, View } from "react-native";
 import { AuthField, FooterLink, PrimaryButton } from "./FormControls";
@@ -23,11 +23,7 @@ export const EmailStep = ({
 }: Props) => (
   <>
     <View style={styles.artWrap}>
-      <Image
-        source={require("@/assets/images/coin.svg")}
-        style={styles.art}
-        contentFit="contain"
-      />
+      <Coin width={200} height={200} />
     </View>
 
     <View style={styles.stepBody}>

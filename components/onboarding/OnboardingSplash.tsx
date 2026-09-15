@@ -2,9 +2,17 @@ import { useOnboarding } from "@/context/OnboardingContext";
 import { COLORS } from "@/themes/colors";
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { LogoWhiteBG } from "./general/logo";
 
-export function SplashScreen() {
+import { LogoWhiteBG } from "../general/logo";
+
+/**
+ * Full-screen splash shown before the onboarding carousel.
+ *
+ * Tapping anywhere advances to the carousel step. (The app's root layout
+ * shows its own loading screen while AsyncStorage is checked, so this
+ * screen is purely the "brand moment" for first-time users.)
+ */
+export function OnboardingSplash() {
   const { setStep } = useOnboarding();
 
   return (
@@ -19,6 +27,7 @@ export function SplashScreen() {
         <LogoWhiteBG />
         <Text style={styles.title}>XAVAULT</Text>
       </View>
+
       <View />
     </TouchableOpacity>
   );
@@ -38,51 +47,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  iconContainer: {
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "rgba(0, 194, 140, 0.3)",
-    padding: 20,
-    borderRadius: 16,
-    backgroundColor: "rgba(0, 194, 140, 0.2)",
-  },
-
-  icon: {
-    fontSize: 36,
-  },
-
   title: {
     color: "#FFFFFF",
     fontSize: 46,
     fontFamily: "Lexend_700Bold",
     letterSpacing: 1,
     textAlign: "center",
-  },
-
-  subtitle: {
-    color: "rgba(0, 194, 140, 0.7)",
-    fontSize: 12,
-    marginTop: 12,
-    letterSpacing: 1,
-    fontFamily: "Lexend_500Medium",
-  },
-
-  footer: {
-    alignItems: "center",
-  },
-
-  securityText: {
-    color: "rgba(255,255,255,0.4)",
-    fontSize: 10,
-    letterSpacing: 2,
-    fontFamily: "Lexend_700Bold",
-    textTransform: "uppercase",
-  },
-
-  copyright: {
-    color: "rgba(255,255,255,0.2)",
-    fontSize: 9,
-    marginTop: 4,
-    fontFamily: "Lexend_400Regular",
   },
 });

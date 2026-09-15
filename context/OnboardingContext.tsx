@@ -1,49 +1,93 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
-type Step = 'splash' | 'onboarding' | 'welcome' | 'login' | 'register';
+/** Internal steps of the first-time-user flow. */
+type Step = "splash" | "onboarding";
+
+/** AsyncStorage key marking that onboarding has been completed. */
+const FIRST_TIME_USER_KEY = "firstTimeUser";
 
 interface OnboardingContextType {
+  /** Where the user currently is within the onboarding flow. */
   currentStep: Step;
+  /** Move the user to another step of the flow. */
   setStep: (step: Step) => void;
+  /**
+   * True while onboarding has not been completed yet. `null` while the
+   * stored flag is still being read from AsyncStorage.
+   */
   isFirstTime: boolean | null;
+  /** Mark onboarding as done: persists the flag and updates state. */
   completeOnboarding: () => Promise<void>;
+  /** True until the stored flag has been read. */
   isLoading: boolean;
 }
 
-const OnboardingContext = createContext<OnboardingContextType | undefined>(undefined);
+const OnboardingContext = createContext<OnboardingContextType | undefined>(
+  undefined,
+);
 
-export function OnboardingProvider({ children }: { children: React.ReactNode }) {
-  const [currentStep, setStep] = useState<Step>('splash');
+export function OnboardingProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const [currentStep, setStep] = useState<Step>("splash");
   const [isFirstTime, setIsFirstTime] = useState<boolean | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Read the persisted flag once on mount to decide if this is a
+  // first-time user. Errors are treated as "seen" so a corrupted store
+  // can never trap a returning user in onboarding.
   useEffect(() => {
     const check = async () => {
       try {
-        const value = await AsyncStorage.getItem('firstTimeUser');
+        const value = await AsyncStorage.getItem(FIRST_TIME_USER_KEY);
+
         setIsFirstTime(value === null);
-      } catch (error) {
-        console.log('Failed to check onboarding state:', error);
+      } catch {
         setIsFirstTime(false);
       } finally {
         setIsLoading(false);
       }
     };
-    check();
+
+    void check();
   }, []);
 
-  const completeOnboarding = async () => {
+  /**
+   * Mark onboarding as complete.
+   *
+   * State is updated optimistically BEFORE the write resolves so anything
+   * depending on `isFirstTime` (e.g. the root-layout redirect guard) reacts
+   * in the same tick as the navigation away from onboarding — no waiting on
+   * AsyncStorage, no window for flicker.
+   */
+  const completeOnboarding = useCallback(async () => {
+    setIsFirstTime(false);
+
     try {
-      await AsyncStorage.setItem('firstTimeUser', 'done');
-      setIsFirstTime(false);
-    } catch (error) {
-      console.log('Failed to set onboarding state:', error);
+      await AsyncStorage.setItem(FIRST_TIME_USER_KEY, "done");
+    } catch {
+      // Best effort: next launch will show onboarding again, which is
+      // preferable to blocking the user here.
     }
-  };
+  }, []);
+
+  const value = useMemo(
+    () => ({ currentStep, setStep, isFirstTime, completeOnboarding, isLoading }),
+    [currentStep, isFirstTime, completeOnboarding, isLoading],
+  );
 
   return (
-    <OnboardingContext.Provider value={{ currentStep, setStep, isFirstTime, completeOnboarding, isLoading }}>
+    <OnboardingContext.Provider value={value}>
       {children}
     </OnboardingContext.Provider>
   );
@@ -51,6 +95,10 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
 export function useOnboarding() {
   const context = useContext(OnboardingContext);
-  if (!context) throw new Error('useOnboarding must be used within OnboardingProvider');
+
+  if (!context) {
+    throw new Error("useOnboarding must be used within OnboardingProvider");
+  }
+
   return context;
 }

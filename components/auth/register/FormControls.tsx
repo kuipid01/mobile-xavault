@@ -1,3 +1,4 @@
+import { COLORS } from "@/themes/colors";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useRef, useState } from "react";
 import {
@@ -13,6 +14,9 @@ type AuthFieldProps = React.ComponentProps<typeof TextInput> & {
   label: string;
   icon?: keyof typeof Ionicons.glyphMap;
   onIconPress?: () => void;
+  viewPassword?: boolean;
+  setViewPassword?: any;
+  iconColor?: string;
 };
 
 export const AuthField = ({
@@ -21,20 +25,23 @@ export const AuthField = ({
   onIconPress,
   style,
   editable = true,
+  setViewPassword,
+  secureTextEntry,
+  viewPassword,
+  iconColor,
   ...props
 }: AuthFieldProps) => {
   const [isFocused, setIsFocused] = useState(false);
   const isActive = isFocused || !!props.value;
-
+  const isPassword = secureTextEntry;
   return (
     <View className="mb-4 w-full">
-      <View 
+      <View
         className={`relative w-full h-16 rounded-xl px-4 justify-center ${editable ? 'bg-[#EEF2F0]' : 'bg-gray-200 opacity-60'} ${isFocused ? 'border border-[#063B2E]' : 'border border-transparent'}`}
       >
         <Text
-          className={`absolute left-4 ${
-            isActive ? "top-2 text-xs text-gray-500" : "top-5 text-base text-gray-500"
-          }`}
+          className={`absolute left-4 ${isActive ? "top-2 text-xs text-gray-500" : "top-5 text-base text-gray-500"
+            }`}
         >
           {label}
         </Text>
@@ -56,8 +63,27 @@ export const AuthField = ({
         />
 
         {icon && (
-          <TouchableOpacity onPress={onIconPress} className="absolute right-4 top-0 bottom-0 z-10 justify-center">
+          <TouchableOpacity onPress={() => {
+            onIconPress
+            if (label === "password") {
+
+              setViewPassword(!viewPassword)
+            }
+          }} className="absolute right-4 top-0 bottom-0 z-10 justify-center">
             <Ionicons name={icon} size={22} color="#AAB1C0" />
+          </TouchableOpacity>
+        )}
+        {/* Password toggle icon */}
+        {isPassword && setViewPassword && (
+          <TouchableOpacity
+            onPress={() => setViewPassword(!viewPassword)}
+            style={styles.rightIcon}
+          >
+            <Ionicons
+              name={viewPassword ? "eye-outline" : "eye-off-outline"}
+              size={18}
+              color={iconColor || COLORS.primary}
+            />
           </TouchableOpacity>
         )}
       </View>

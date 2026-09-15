@@ -5,7 +5,11 @@ export const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
-
+  rightIcon: {
+    position: "absolute",
+    right: 12,
+    zIndex: 10,
+  },
   container: {
     backgroundColor: "#FFFFFF",
     flexGrow: 1,
@@ -24,7 +28,7 @@ export const styles = StyleSheet.create({
 
   artWrap: {
     alignItems: "center",
-    marginTop: 18,
+    marginTop: 150,
   },
 
   art: {

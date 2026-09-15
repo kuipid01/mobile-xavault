@@ -20,8 +20,8 @@ import {
 } from "react-native";
 import Toast from "react-native-toast-message";
 import { useAuth } from "../../api/auth";
-import { FlatInput } from "../flatinput";
 import { clearRegistrationFlow } from "./authFlow";
+import { AuthField } from "./register/FormControls";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -270,7 +270,7 @@ const LoginScreen = () => {
         <View style={styles.card}>
           {!mailAvailable && (
             <>
-              <FlatInput
+              <AuthField
                 label="Email"
                 placeholder="Enter your email"
                 value={email}
@@ -288,7 +288,7 @@ const LoginScreen = () => {
               )}
             </>
           )}
-          <FlatInput
+          <AuthField
             label="Password"
             placeholder="Enter your password"
             value={password}

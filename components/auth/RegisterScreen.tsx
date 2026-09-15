@@ -354,7 +354,7 @@ const RegisterScreen = () => {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {draft.step !== "pin" && draft.step !== "details" && (
+        {draft.step !== "pin" && draft.step !== "details" && draft.step !== "email" && (
           <TouchableOpacity
             onPress={closeFlow}
             style={styles.closeButton}

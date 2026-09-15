@@ -3,10 +3,17 @@ import { View, StyleSheet } from 'react-native';
 import { COLORS } from '@/themes/colors';
 
 type Props = {
+  /** Index of the active dot (zero-based). */
   activeIndex: number;
+  /** Total number of dots to render. */
   count?: number;
 };
 
+/**
+ * Row of small progress dots where the active one stretches wide.
+ * Shared indicator used by the onboarding carousel (and reusable in any
+ * paged flow).
+ */
 export function ProgressDots({ activeIndex, count = 3 }: Props) {
   return (
     <View style={styles.container}>

@@ -1,4 +1,4 @@
-import { Image } from "expo-image";
+import Pigs from "@/assets/images/pg.svg";
 import { router } from "expo-router";
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -21,11 +21,11 @@ const IndexScreen = () => {
         <View style={styles.container}>
             {/* Floating Background Icons */}
             {PIG_BACKGROUNDS.map((position, index) => (
-                <Image
+                <Pigs
                     key={index}
-                    source={require("@/assets/images/pg.svg")}
+                    width={42}
+                    height={42}
                     style={[styles.pig, position]}
-                    contentFit="contain"
                 />
             ))}
 
@@ -79,10 +79,8 @@ const styles = StyleSheet.create({
         position: "relative",
     },
     pig: {
-        width: 42,
-        height: 42,
         position: "absolute",
-        opacity: 0.15, // Blends background icons softly behind typography
+        opacity: 0.15,
     },
     brand: {
         fontSize: 30,
