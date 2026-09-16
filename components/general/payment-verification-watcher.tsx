@@ -1,3 +1,4 @@
+import { useAuth } from "@/api/auth";
 import { useSubscriptionPlans } from "@/hooks/app/subscription";
 import { clearSubscriptionReminderState } from "@/hooks/subscription-reminder-storage";
 import { resetSubscriptionPromptSessionState } from "@/hooks/use-subscription-prompt";
@@ -10,6 +11,7 @@ import Toast from "react-native-toast-message";
 import { PaystackWebView, isCancelledRedirect } from "./paystack-webview";
 
 export function PaymentVerificationWatcher() {
+  const { isAuthenticated } = useAuth();
   const {
     checkStatus,
     closeCheckout,
@@ -22,7 +24,9 @@ export function PaymentVerificationWatcher() {
     pendingStatus,
     startNewPayment,
   } = useSubscriptionVerificationContext();
-  const { data: plans = [] } = useSubscriptionPlans();
+  const { data: plans = [] } = useSubscriptionPlans({
+    enabled: isAuthenticated,
+  });
   const pendingPlan = plans.find((plan) => plan.ID === pendingPlanId);
   const planName = pendingPlan?.Name || "-";
   const amount = pendingPlan

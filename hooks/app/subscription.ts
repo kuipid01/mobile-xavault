@@ -43,10 +43,12 @@ export const useDismissSubscriptionPayment = () => {
   });
 };
 
-export const useSubscriptionPlans = () => {
+export const useSubscriptionPlans = (options?: { enabled?: boolean }) => {
   return useQuery({
     queryKey: subscriptionKeys.plans,
     queryFn: getSubscriptionPlans,
+    enabled: options?.enabled ?? true,
+    retry: false,
   });
 };
 

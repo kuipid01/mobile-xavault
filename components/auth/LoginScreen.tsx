@@ -346,12 +346,14 @@ const LoginScreen = () => {
             {rememberedName ? `Not ${rememberedName}? ` : ""}
             <Text style={styles.link}>Switch Account</Text>
           </Text>
+        {process.env.EXPO_PUBLIC_TEST === "true" && (
           <Button
             title="Clear Storage"
             onPress={async () => {
               await AsyncStorage.clear();
             }}
           />
+        )}
         </View>
         {/* <ErrorModal
         visible={!!errorMessage}
