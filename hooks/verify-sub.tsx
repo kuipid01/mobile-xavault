@@ -1,5 +1,4 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as WebBrowser from "expo-web-browser";
 import React, {
   createContext,
   ReactNode,
@@ -16,7 +15,11 @@ import { trackEvent } from "../lib/analytics";
 
 const DEBUG = true;
 const PENDING_SUBSCRIPTION_KEY = "pending_subscription_verification";
+const RECEIPT_KEY = "subscription_confirmation_receipt";
 const CHECKOUT_LINK_TTL_MS = 24 * 60 * 60 * 1000;
+// A confirmation receipt lives briefly so the banner can show it after a
+// relaunch too ("upgrade confirmed" surviving an app restart).
+const RECEIPT_TTL_MS = 10 * 60 * 1000;
 
 export type SubscriptionPaymentStatus =
   | "idle"
@@ -39,6 +42,14 @@ type PendingSubscription = {
   lastOpenedAt?: number | null;
 };
 
+// Post-confirmation receipt, mirroring the deposit flow's ConfirmedDepositReceipt.
+type ConfirmedSubscriptionReceipt = {
+  planId: string;
+  planName?: string | null;
+  reference: string | null;
+  confirmedAt: number;
+};
+
 type SubscriptionVerificationContextValue = {
   isVerifying: boolean;
   pendingPlanId: string | null;
@@ -55,6 +66,16 @@ type SubscriptionVerificationContextValue = {
   dismissPayment: () => Promise<void>;
   clearVerification: () => Promise<void>;
   checkStatus: (options?: { bounded?: boolean }) => Promise<boolean>;
+  // Receipt of the just-confirmed upgrade, shown by the banner. Persists
+  // briefly (see RECEIPT_TTL_MS) so it survives an app restart.
+  confirmedReceipt: ConfirmedSubscriptionReceipt | null;
+  dismissReceipt: () => Promise<void>;
+  // URL of the Paystack checkout currently shown in the in-app WebView.
+  // Null when no checkout is open. Deliberately NOT persisted: after a
+  // relaunch the checkout is re-opened from the stored payment URL — same
+  // model as the deposit flow.
+  checkoutUrl: string | null;
+  closeCheckout: () => void;
 };
 
 const SubscriptionVerificationContext = createContext<
@@ -78,6 +99,11 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
     useState<SubscriptionPaymentStatus>("idle");
   const [hasLoaded, setHasLoaded] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
+  const [confirmedReceipt, setConfirmedReceipt] = useState<ConfirmedSubscriptionReceipt | null>(null);
+  // In-app checkout (PaystackWebView) — opened instead of an external
+  // browser tab so the checkout survives the user backgrounding the app to
+  // pay via a banking app. Same model as the deposit verification flow.
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const isCheckingRef = useRef(false);
   const isDismissingRef = useRef(false);
   const appState = useRef(AppState.currentState);
@@ -89,6 +115,32 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
     const raw = await AsyncStorage.getItem(PENDING_SUBSCRIPTION_KEY);
     if (!raw) return null;
     return JSON.parse(raw) as PendingSubscription;
+  }, []);
+
+  // ── Confirmation receipt (persists briefly so the banner survives a
+  // restart) ────────────────────────────────────────────────────────────
+  const readReceipt = useCallback(async (): Promise<ConfirmedSubscriptionReceipt | null> => {
+    try {
+      const raw = await AsyncStorage.getItem(RECEIPT_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as ConfirmedSubscriptionReceipt;
+      if (Date.now() - parsed.confirmedAt > RECEIPT_TTL_MS) {
+        await AsyncStorage.removeItem(RECEIPT_KEY);
+        return null;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const persistReceipt = useCallback(async (receipt: ConfirmedSubscriptionReceipt | null) => {
+    if (receipt) {
+      await AsyncStorage.setItem(RECEIPT_KEY, JSON.stringify(receipt));
+    } else {
+      await AsyncStorage.removeItem(RECEIPT_KEY);
+    }
+    setConfirmedReceipt(receipt);
   }, []);
 
   const persistPending = useCallback(async (payload: PendingSubscription) => {
@@ -109,6 +161,14 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
     setPendingInitiatedAt(null);
     setPendingStatus("idle");
   }, []);
+
+  /**
+   * Banner dismiss for the confirmation receipt. Clears it everywhere
+   * (storage + state) so it never resurfaces.
+   */
+  const dismissReceipt = useCallback(async () => {
+    await persistReceipt(null);
+  }, [persistReceipt]);
 
   const loadPending = useCallback(async () => {
     try {
@@ -158,7 +218,31 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
 
   useEffect(() => {
     void loadPending();
-  }, [loadPending]);
+    // Restore a confirmation receipt from a previous session (if still
+    // within its TTL) so the banner shows it after a restart too.
+    void (async () => {
+      const storedReceipt = await readReceipt();
+      if (storedReceipt) setConfirmedReceipt(storedReceipt);
+    })();
+  }, [loadPending, readReceipt]);
+
+  const closeCheckout = useCallback(() => {
+    setCheckoutUrl(null);
+  }, []);
+
+  // Close the in-app checkout whenever the payment reaches a terminal state
+  // (confirmed / dismissed / expired) or the pending payment is cleared, so
+  // the checkout never lingers over a completed upgrade.
+  useEffect(() => {
+    if (
+      pendingStatus === "confirmed" ||
+      pendingStatus === "dismissed" ||
+      pendingStatus === "expired" ||
+      pendingPlanId === null
+    ) {
+      setCheckoutUrl(null);
+    }
+  }, [pendingPlanId, pendingStatus]);
 
   const updatePendingStatus = useCallback(
     async (
@@ -252,6 +336,17 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
       if (verified) {
         trackEvent("subscription_verified", { plan_id: activePlanId });
         setPendingStatus("confirmed");
+        // Close the in-app checkout — the payment succeeded and the
+        // watcher modal takes over from here.
+        setCheckoutUrl(null);
+        // Persist the receipt first (survives restarts within its TTL);
+        // the banner shows it after the modal/state clears.
+        await persistReceipt({
+          planId: activePlanId,
+          planName: data?.plan?.Name || null,
+          reference: pendingPaymentReference,
+          confirmedAt: Date.now(),
+        });
         await clearVerification();
         return true;
       }
@@ -268,7 +363,9 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
     }
   }, [
     clearVerification,
+    persistReceipt,
     pendingInitiatedAt,
+    pendingPaymentReference,
     pendingPlanId,
     readPending,
     refetch,
@@ -326,10 +423,17 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
     await updatePendingStatus("checkout_opened", {
       lastOpenedAt: Date.now(),
     });
-    await WebBrowser.openBrowserAsync(paymentUrl);
-    return checkStatus({ bounded: true });
+    // Open the Paystack checkout inside the app instead of in an external
+    // browser tab. A custom tab belongs to Chrome's process and the OS can
+    // destroy it while the user is away paying (e.g. bank transfer via Opay).
+    // The in-app WebView lives in this app's process, so it survives
+    // backgrounding — same model as the deposit flow.
+    setCheckoutUrl(paymentUrl);
+    // Completion is detected by the checkout WebView redirecting to the
+    // transaction callback URL; verification also runs when the user returns
+    // from a banking app (AppState listener) or taps "Verify again".
+    return false;
   }, [
-    checkStatus,
     pendingInitiatedAt,
     pendingPaymentUrl,
     readPending,
@@ -365,10 +469,10 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
       plan_id: planId,
       payment_reference: paymentReference,
     });
-    await WebBrowser.openBrowserAsync(paymentUrl);
-    return checkStatus({ bounded: true });
+    // Show the new checkout in the in-app WebView (see continuePayment).
+    setCheckoutUrl(paymentUrl);
+    return false;
   }, [
-    checkStatus,
     createSubscription,
     pendingPlanId,
     persistPending,
@@ -423,7 +527,14 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
           void (async () => {
             await loadPending();
             const stored = await readPending();
-            if (stored?.status === "checkout_opened") {
+            const status = stored?.status;
+            // Verify when returning from checkout, or if the user left during
+            // a needs_action state (they may have gone back to complete
+            // payment) - same coverage as the deposit flow.
+            if (
+              status === "checkout_opened" ||
+              status === "needs_action"
+            ) {
               void checkStatus({ bounded: true });
             }
           })();
@@ -453,12 +564,20 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
       dismissPayment,
       clearVerification,
       checkStatus,
+      checkoutUrl,
+      closeCheckout,
+      confirmedReceipt,
+      dismissReceipt,
     }),
     [
       checkStatus,
+      checkoutUrl,
       clearVerification,
+      closeCheckout,
+      confirmedReceipt,
       continuePayment,
       dismissPayment,
+      dismissReceipt,
       hasLoaded,
       isChecking,
       pendingPaymentReference,

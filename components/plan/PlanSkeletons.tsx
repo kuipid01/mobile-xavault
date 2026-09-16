@@ -1,16 +1,49 @@
-import { StyleSheet, View } from "react-native";
+import { useEffect, useRef } from "react";
+import { Animated, StyleSheet, View } from "react-native";
 
 const SkeletonBlock = ({
   height,
   width = "100%",
   radius = 10,
+  tone = "default",
 }: {
   height: number;
   width?: number | `${number}%`;
   radius?: number;
-}) => (
-  <View style={[styles.block, { borderRadius: radius, height, width }]} />
-);
+  tone?: "default" | "hero";
+}) => {
+  const opacity = useRef(new Animated.Value(0.58)).current;
+
+  useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 0.42,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0.62,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    pulse.start();
+    return () => pulse.stop();
+  }, [opacity]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.block,
+        tone === "hero" && styles.heroBlock,
+        { borderRadius: radius, height, opacity, width },
+      ]}
+    />
+  );
+};
 
 export function PlanListSkeleton({ count = 3 }: { count?: number }) {
   return (
@@ -112,15 +145,15 @@ export function EnvelopeDetailSkeleton() {
       <View style={styles.heroCard}>
         <View style={styles.cardHeader}>
           <View style={styles.heroTitleStack}>
-            <SkeletonBlock height={12} width={130} radius={6} />
-            <SkeletonBlock height={28} width="66%" />
+            <SkeletonBlock height={12} width={130} radius={6} tone="hero" />
+            <SkeletonBlock height={28} width="66%" tone="hero" />
           </View>
-          <SkeletonBlock height={46} width={46} radius={16} />
+          <SkeletonBlock height={46} width={46} radius={16} tone="hero" />
         </View>
-        <SkeletonBlock height={12} width={118} radius={6} />
-        <SkeletonBlock height={44} width="70%" radius={14} />
-        <SkeletonBlock height={6} radius={999} />
-        <SkeletonBlock height={28} width={160} radius={999} />
+        <SkeletonBlock height={12} width={118} radius={6} tone="hero" />
+        <SkeletonBlock height={44} width="70%" radius={14} tone="hero" />
+        <SkeletonBlock height={6} radius={999} tone="hero" />
+        <SkeletonBlock height={28} width={160} radius={999} tone="hero" />
       </View>
 
       <View style={styles.statsCard}>
@@ -142,7 +175,10 @@ export function EnvelopeDetailSkeleton() {
 
 const styles = StyleSheet.create({
   block: {
-    backgroundColor: "#E5ECE8",
+    backgroundColor: "#C9D8D1",
+  },
+  heroBlock: {
+    backgroundColor: "#4B806E",
   },
   listWrap: {
     gap: 16,

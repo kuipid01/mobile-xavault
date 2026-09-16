@@ -1,4 +1,5 @@
 import { getAccessToken, useAuth } from "@/api/auth";
+import { ProfileAvatar } from "@/components/general/ProfileAvatar";
 import { COLORS } from "@/themes/colors";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -6,7 +7,6 @@ import { router } from "expo-router";
 import { jwtDecode } from "jwt-decode";
 import { useEffect, useState } from "react";
 import {
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -85,21 +85,7 @@ export default function ProfileDrawerContent({
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.profileBlock}>
-          {
-            profile?.profile_image_url ? <Image
-              source={{
-                uri: profile?.profile_image_url,
-              }}
-              style={styles.avatar}
-            />
-
-              : <Image
-                source={{
-                  uri: "https://i.pinimg.com/1200x/31/02/62/3102629a406ed439592d5833f0faa979.jpg",
-                }}
-                style={styles.avatar}
-              />
-          }
+          <ProfileAvatar profile={profile} size={100} />
           <View style={styles.profileText}>
             <Text style={styles.name} numberOfLines={1}>
               {name || email || "Xacvault User"}
@@ -182,14 +168,6 @@ const styles = StyleSheet.create({
     gap: 13,
     paddingBottom: 22,
     paddingRight: 42,
-  },
-  avatar: {
-    backgroundColor: COLORS.white,
-    borderColor: "rgba(255,255,255,0.18)",
-    borderRadius: 100,
-    borderWidth: 1,
-    height: 100,
-    width: 100,
   },
   profileText: {
     flex: 1,

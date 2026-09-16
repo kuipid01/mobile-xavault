@@ -1,4 +1,5 @@
 import { getAccessToken, useAuth } from "@/api/auth";
+import { ProfileAvatar } from "@/components/general/ProfileAvatar";
 import { useProfile } from "@/hooks/app/profile";
 import { useActiveSubscription } from "@/hooks/app/subscription";
 import { Ionicons } from "@expo/vector-icons";
@@ -6,7 +7,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { jwtDecode } from "jwt-decode";
 import { useEffect, useState } from "react";
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSubscriptionPrompt } from "../../../hooks/use-subscription-prompt";
 
@@ -122,7 +123,6 @@ export default function Profile() {
     email ||
     "XAVAULT User";
   const displayEmail = profile?.email || email || "Complete your profile";
-  const avatarLetter = displayName ? displayName[0].toUpperCase() : "U";
   const planCode = activeSubscription?.plan?.Code || "free";
   const plan = planVisuals[planCode] || planVisuals.free;
 
@@ -147,14 +147,7 @@ export default function Profile() {
             accessibilityLabel="Open my profile"
           >
             <View style={styles.avatar}>
-              {profile?.profile_image_url ? (
-                <Image
-                  source={{ uri: profile.profile_image_url }}
-                  style={styles.avatarImage}
-                />
-              ) : (
-                <Text style={styles.avatarLetter}>{avatarLetter}</Text>
-              )}
+              <ProfileAvatar profile={profile} size={68} />
             </View>
             <View style={styles.cameraBadge}>
               <Ionicons name="pencil" size={12} color={C.forest} />
@@ -360,8 +353,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     overflow: "hidden",
   },
-  avatarImage: { height: "100%", width: "100%" },
-  avatarLetter: { color: C.forest, fontSize: 28, fontWeight: "800" },
   cameraBadge: {
     position: "absolute",
     right: 2,

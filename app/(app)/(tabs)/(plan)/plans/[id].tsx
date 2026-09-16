@@ -5,11 +5,19 @@ import {
   EnvelopeListSkeleton,
   PlanDetailSkeleton,
 } from "@/components/plan/PlanSkeletons";
-import { useEnvelopes } from "@/hooks/app/envelopes";
-import { useCancelPlan, useConfirmPlan, usePlan, usePreviewPlan } from "@/hooks/app/plans";
+import { envelopeKeys, useEnvelopes } from "@/hooks/app/envelopes";
+import {
+  planKeys,
+  useCancelPlan,
+  useConfirmPlan,
+  usePlan,
+  usePreviewPlan,
+} from "@/hooks/app/plans";
 import { useSubscriptionLimitModal } from "@/hooks/use-subscription-limit-modal";
 import { Ionicons } from "@expo/vector-icons";
+import { useQueryClient } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
+import { useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -19,16 +27,20 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useState } from "react";
 import Toast from "react-native-toast-message";
 
 export default function PlanDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const planId = typeof id === "string" ? id : "";
 
+  const queryClient = useQueryClient();
   const { data: plan, isLoading: isPlanLoading } = usePlan(planId);
-  const { data: envelopes = [], isLoading: isEnvelopesLoading } =
-    useEnvelopes(planId);
+  const {
+    data: envelopes = [],
+    isLoading: isEnvelopesLoading,
+    refetch: refetchEnvelopes,
+    isRefetching: isEnvelopesRefetching,
+  } = useEnvelopes(planId);
   const { data: preview } = usePreviewPlan(
     plan?.status === "draft" ? planId : undefined
   );
@@ -140,12 +152,7 @@ export default function PlanDetailScreen() {
 
         {/* ── Hero card ── */}
         <View style={styles.heroCard}>
-          {/* Dot-grid texture */}
-          <View style={styles.dotGrid} pointerEvents="none">
-            {Array.from({ length: 48 }).map((_, i) => (
-              <View key={i} style={styles.dot} />
-            ))}
-          </View>
+        
 
           <View style={styles.heroTop}>
             <View style={styles.heroTextWrap}>
@@ -156,7 +163,27 @@ export default function PlanDetailScreen() {
             </View>
 
             <View style={styles.heroIcon}>
-              <Ionicons name="pie-chart-outline" size={22} color="#FFFFFF" />
+         
+            <TouchableOpacity
+              onPress={() => {
+                queryClient.invalidateQueries({ queryKey: envelopeKeys.list(planId) });
+                queryClient.invalidateQueries({ queryKey: planKeys.detail(planId) });
+                refetchEnvelopes();
+              }}
+              disabled={isEnvelopesRefetching}
+              activeOpacity={0.7}
+              // style={styles.refreshButton}
+              accessibilityLabel="Refresh envelopes"
+              accessibilityRole="button"
+            >
+              <Ionicons
+                name="refresh"
+                size={16}
+                color="white"
+              />
+            </TouchableOpacity>
+
+    
             </View>
           </View>
 
@@ -353,9 +380,7 @@ export default function PlanDetailScreen() {
             </Text>
           </View>
 
-          <View style={styles.countPill}>
-            <Text style={styles.countPillText}>{envelopes.length}</Text>
-          </View>
+        
         </View>
 
         {isEnvelopesLoading ? (
@@ -1016,6 +1041,23 @@ const styles = StyleSheet.create({
     color: "#063B2E",
     fontSize: 13,
     fontWeight: "900",
+  },
+
+  sectionHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+
+  refreshButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#DDE6E1",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   // ── Envelope list states ──

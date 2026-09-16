@@ -1,6 +1,5 @@
-import { createEnvelope } from "@/api/envelopes";
 import { koboToNaira, nairaToKobo } from "@/api/money";
-import { useEnvelopes } from "@/hooks/app/envelopes";
+import { useCreateEnvelope, useEnvelopes } from "@/hooks/app/envelopes";
 import { usePlan } from "@/hooks/app/plans";
 import { useActiveSubscription } from "@/hooks/app/subscription";
 import { useSubscriptionLimitModal } from "@/hooks/use-subscription-limit-modal";
@@ -24,17 +23,9 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  UIManager,
   View,
 } from "react-native";
 import Toast from "react-native-toast-message";
-
-if (
-  Platform.OS === "android" &&
-  UIManager.setLayoutAnimationEnabledExperimental
-) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -146,6 +137,9 @@ export default function CreateBulkEnvelopesScreen() {
 
   const { data: plan, isLoading: isPlanLoading } = usePlan(planId);
   const { data: existingEnvelopes = [] } = useEnvelopes(planId);
+  // Route creation through the TanStack mutation hook so the envelope list
+  // and plan queries are invalidated automatically after each creation.
+  const { mutateAsync: createEnvelope } = useCreateEnvelope(planId);
   const { data: subscription } = useActiveSubscription({ enabled: true });
   const { showSubscriptionLimitModal } = useSubscriptionLimitModal();
 
@@ -204,11 +198,12 @@ export default function CreateBulkEnvelopesScreen() {
   }, [existingEnvelopes]);
 
   const remainingDurationStart = useMemo(() => {
-    if (latestEnvelopeEnd) {
-      return addDays(latestEnvelopeEnd, 1);
-    }
+    const scheduleStart = planStartDate || today;
+    const nextAvailableDate = latestEnvelopeEnd
+      ? addDays(latestEnvelopeEnd, 1)
+      : today;
 
-    return planStartDate || today;
+    return scheduleStart > nextAvailableDate ? scheduleStart : nextAvailableDate;
   }, [latestEnvelopeEnd, planStartDate]);
 
   const remainingDays = useMemo(() => {
@@ -219,6 +214,11 @@ export default function CreateBulkEnvelopesScreen() {
       0
     );
   }, [remainingDurationStart, planEndDate]);
+
+  const isPlanExpired = Boolean(planEndDate && planEndDate < today);
+  const hasRemainingDuration = Boolean(
+    planEndDate && remainingDurationStart <= planEndDate
+  );
 
   // ───────────────────────────────────────────────────────────────────────────
   // Wizard state
@@ -387,28 +387,184 @@ export default function CreateBulkEnvelopesScreen() {
   // ───────────────────────────────────────────────────────────────────────────
 
   const canSubmit = useMemo(() => {
-    if (!planEndDate) return false;
+    if (!planEndDate) {
+      console.warn("[BulkEnvelopes] Cannot submit: plan end date is missing");
+      return false;
+    }
+
+    if (!hasRemainingDuration) {
+      console.warn(
+        "[BulkEnvelopes] Cannot submit: no unallocated dates remain after existing envelopes",
+        {
+          isPlanExpired,
+          latestEnvelopeEnd: latestEnvelopeEnd
+            ? formatDateForApi(latestEnvelopeEnd)
+            : null,
+          today: formatDateForApi(today),
+          planEndDate: formatDateForApi(planEndDate),
+          remainingDurationStart: formatDateForApi(remainingDurationStart),
+        }
+      );
+      return false;
+    }
 
     for (let i = 0; i < envelopeCount; i++) {
       const draft = drafts[i];
 
-      if (!draft.name.trim()) return false;
-      if (draft.amountKobo <= 0) return false;
-      if (draft.startDate < today) return false;
-      if (draft.endDate < draft.startDate) return false;
-      if (draft.endDate > planEndDate) return false;
+      if (!draft.name.trim()) {
+        console.warn(`[BulkEnvelopes] Cannot submit: envelope ${i + 1} has no name`);
+        return false;
+      }
+      if (draft.amountKobo <= 0) {
+        console.warn(
+          `[BulkEnvelopes] Cannot submit: envelope ${i + 1} amount is not positive`,
+          { amountKobo: draft.amountKobo }
+        );
+        return false;
+      }
+      if (draft.startDate < today) {
+        console.warn(
+          `[BulkEnvelopes] Cannot submit: envelope ${i + 1} starts before today`,
+          { startDate: formatDateForApi(draft.startDate), today: formatDateForApi(today) }
+        );
+        return false;
+      }
+      if (draft.endDate < draft.startDate) {
+        console.warn(
+          `[BulkEnvelopes] Cannot submit: envelope ${i + 1} ends before it starts`,
+          {
+            startDate: formatDateForApi(draft.startDate),
+            endDate: formatDateForApi(draft.endDate),
+          }
+        );
+        return false;
+      }
+      if (draft.endDate > planEndDate) {
+        console.warn(
+          `[BulkEnvelopes] Cannot submit: envelope ${i + 1} ends after the plan`,
+          {
+            endDate: formatDateForApi(draft.endDate),
+            planEndDate: formatDateForApi(planEndDate),
+          }
+        );
+        return false;
+      }
     }
 
-    return !lastAmountNegative && !isSubmitting;
+    if (lastAmountNegative) {
+      console.warn("[BulkEnvelopes] Cannot submit: edited amounts exceed the remaining plan balance", {
+        totalEditedKobo,
+        totalAvailableKobo,
+      });
+      return false;
+    }
+
+    if (isSubmitting) {
+      console.warn("[BulkEnvelopes] Cannot submit: submission is already in progress");
+      return false;
+    }
+
+    return true;
   }, [
     drafts,
     envelopeCount,
     lastAmountNegative,
     isSubmitting,
+    hasRemainingDuration,
     planEndDate,
+    remainingDurationStart,
+    totalEditedKobo,
+    totalAvailableKobo,
   ]);
 
   // ───────────────────────────────────────────────────────────────────────────
+  // UI-facing validation details. The underlying validation rules remain unchanged;
+  // this simply tells the user exactly what is blocking the current action.
+  const validationMessage = useMemo(() => {
+    if (!planEndDate) {
+      return {
+        title: "Plan dates are unavailable",
+        detail: "This plan is missing an end date, so the envelope schedule cannot be created.",
+        icon: "calendar-outline" as const,
+      };
+    }
+
+    if (!hasRemainingDuration) {
+      return {
+        title: isPlanExpired ? "This plan has ended" : "No dates are available",
+        detail: isPlanExpired
+          ? "There are no future dates in this plan where a new envelope can start."
+          : "All available dates are already covered by existing envelopes.",
+        icon: "calendar-clear-outline" as const,
+      };
+    }
+
+    for (let i = 0; i < drafts.length; i++) {
+      const draft = drafts[i];
+      const label = draft.name.trim() || `Envelope ${i + 1}`;
+
+      if (!draft.name.trim()) {
+        return {
+          title: `Envelope ${i + 1} needs a name`,
+          detail: "Give this envelope a name before creating the batch.",
+          icon: "create-outline" as const,
+        };
+      }
+
+      if (draft.amountKobo <= 0) {
+        return {
+          title: `${label} needs an amount`,
+          detail: "Enter an amount greater than ₦0.",
+          icon: "cash-outline" as const,
+        };
+      }
+
+      if (draft.startDate < today) {
+        return {
+          title: `${label} starts too early`,
+          detail: `Its start date cannot be before ${formatDateShort(today)}.`,
+          icon: "calendar-outline" as const,
+        };
+      }
+
+      if (draft.endDate < draft.startDate) {
+        return {
+          title: `${label} has an invalid date range`,
+          detail: "The end date must be on or after the start date.",
+          icon: "alert-circle-outline" as const,
+        };
+      }
+
+      if (draft.endDate > planEndDate) {
+        return {
+          title: `${label} runs past the plan`,
+          detail: `The end date must be on or before ${formatDateShort(planEndDate)}.`,
+          icon: "calendar-outline" as const,
+        };
+      }
+    }
+
+    if (lastAmountNegative) {
+      const overBy = koboToNaira(totalEditedKobo - totalAvailableKobo);
+      return {
+        title: "Allocation is over the available balance",
+        detail: `Reduce the editable amounts by ₦${formatNumber(overBy)} to continue.`,
+        icon: "alert-circle-outline" as const,
+      };
+    }
+
+    return null;
+  }, [
+    drafts,
+    hasRemainingDuration,
+    isPlanExpired,
+    lastAmountNegative,
+    planEndDate,
+    totalAvailableKobo,
+    totalEditedKobo,
+  ]);
+
+
   // Submit
   // ───────────────────────────────────────────────────────────────────────────
 
@@ -424,7 +580,7 @@ export default function CreateBulkEnvelopesScreen() {
       const draft = drafts[i];
 
       try {
-        await createEnvelope(planId, {
+        await createEnvelope({
           name: draft.name.trim(),
           amount: draft.amountKobo,
           start_date: formatDateForApi(draft.startDate),
@@ -553,6 +709,38 @@ export default function CreateBulkEnvelopesScreen() {
       <View style={styles.container}>
         <View style={styles.center}>
           <ActivityIndicator color="#063B2E" />
+        </View>
+      </View>
+    );
+  }
+
+  if (isPlanExpired || !hasRemainingDuration) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.center}>
+          <View style={styles.expiredIcon}>
+            <Ionicons
+              name={isPlanExpired ? "time-outline" : "calendar-clear-outline"}
+              size={28}
+              color="#B42318"
+            />
+          </View>
+          <Text style={styles.expiredTitle}>
+            {isPlanExpired ? "Plan expired" : "No dates remaining"}
+          </Text>
+          <Text style={styles.expiredText}>
+            {isPlanExpired
+              ? "This plan has already ended, so no new envelopes can be created."
+              : "This plan has no remaining days available for a new envelope."}
+          </Text>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => router.back()}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="arrow-back" size={16} color="#FFFFFF" />
+            <Text style={styles.primaryButtonText}>Go Back</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -705,7 +893,7 @@ export default function CreateBulkEnvelopesScreen() {
           </View>
         </Animated.View>
 
-        {/* Existing envelopes */}
+        {/* Existing envelope context */}
         {existingEnvelopes.length > 0 && (
           <View style={styles.existingCard}>
             <View style={styles.existingTop}>
@@ -714,27 +902,26 @@ export default function CreateBulkEnvelopesScreen() {
               </View>
 
               <View style={styles.existingCopy}>
+                <Text style={styles.existingEyebrow}>ALREADY ALLOCATED</Text>
                 <Text style={styles.existingTitle}>
                   {existingEnvelopes.length} existing envelope
                   {existingEnvelopes.length === 1 ? "" : "s"}
                 </Text>
-
                 <Text style={styles.existingDetail}>
-                  ₦{formatNumber(koboToNaira(existingUsedKobo))} already
-                  allocated
+                  ₦{formatNumber(koboToNaira(existingUsedKobo))} is already
+                  assigned to this plan.
                 </Text>
               </View>
             </View>
 
             {latestEnvelopeEnd && (
               <View style={styles.existingFooter}>
-                <Ionicons
-                  name="calendar-outline"
-                  size={14}
-                  color="#7A8580"
-                />
+                <Ionicons name="calendar-outline" size={14} color="#66736E" />
                 <Text style={styles.existingFooterText}>
-                  Latest envelope ends {formatDateShort(latestEnvelopeEnd)}
+                  Current allocation runs through{" "}
+                  <Text style={styles.existingFooterStrong}>
+                    {formatDateShort(latestEnvelopeEnd)}
+                  </Text>
                 </Text>
               </View>
             )}
@@ -852,20 +1039,24 @@ export default function CreateBulkEnvelopesScreen() {
               </View>
             </View>
 
-            <View style={styles.allocationSummary}>
+            <View
+              style={[
+                styles.allocationSummary,
+                lastAmountNegative && styles.allocationSummaryError,
+              ]}
+            >
               <View style={styles.allocationSummaryTop}>
                 <View>
-                  <Text style={styles.allocationLabel}>ALLOCATING</Text>
+                  <Text style={styles.allocationLabel}>PLAN BALANCE</Text>
                   <Text style={styles.allocationAmount}>
-                    ₦
-                    {formatNumber(
-                      koboToNaira(totalEditedKobo + lastAmountKobo)
-                    )}
+                    ₦{formatNumber(remainingPlanBalance)}
                   </Text>
                 </View>
 
                 <View style={styles.remainingAmountWrap}>
-                  <Text style={styles.allocationLabel}>REMAINING</Text>
+                  <Text style={styles.allocationLabel}>
+                    {lastAmountNegative ? "OVER BY" : "LEFT FOR LAST"}
+                  </Text>
                   <Text
                     style={[
                       styles.remainingAmount,
@@ -874,10 +1065,9 @@ export default function CreateBulkEnvelopesScreen() {
                   >
                     ₦
                     {formatNumber(
-                      Math.max(
-                        remainingPlanBalance - koboToNaira(totalEditedKobo),
-                        0
-                      )
+                      lastAmountNegative
+                        ? koboToNaira(totalEditedKobo - totalAvailableKobo)
+                        : koboToNaira(lastAmountKobo)
                     )}
                   </Text>
                 </View>
@@ -887,10 +1077,25 @@ export default function CreateBulkEnvelopesScreen() {
                 <View
                   style={[
                     styles.allocationBarFill,
+                    lastAmountNegative && styles.allocationBarFillError,
                     { width: `${allocationPercentage}%` },
                   ]}
                 />
               </View>
+
+              {lastAmountNegative ? (
+                <View style={styles.inlineError}>
+                  <Ionicons name="alert-circle" size={15} color="#B42318" />
+                  <Text style={styles.inlineErrorText}>
+                    Your editable amounts are over the available balance.
+                    Reduce one or more amounts before continuing.
+                  </Text>
+                </View>
+              ) : (
+                <Text style={styles.allocationHint}>
+                  The last envelope is calculated automatically from the remaining balance.
+                </Text>
+              )}
             </View>
 
             {Array.from({ length: envelopeCount }, (_, i) => {
@@ -900,14 +1105,29 @@ export default function CreateBulkEnvelopesScreen() {
 
               return (
                 <View key={i} style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>
-                    Envelope {i + 1} Amount {isLast ? "(Calculated)" : ""}
-                  </Text>
+                  <View style={styles.envelopeFieldHeader}>
+                    <View style={styles.envelopeIndex}>
+                      <Text style={styles.envelopeIndexText}>{i + 1}</Text>
+                    </View>
+                    <View style={styles.envelopeFieldCopy}>
+                      <Text style={styles.inputLabel}>Envelope {i + 1}</Text>
+                      <Text style={styles.inputMeta}>
+                        {isLast ? "Automatic balance" : "Set the amount"}
+                      </Text>
+                    </View>
+                    {isLast && (
+                      <View style={styles.calculatedPill}>
+                        <Ionicons name="calculator-outline" size={12} color="#106B4F" />
+                        <Text style={styles.calculatedPillText}>CALCULATED</Text>
+                      </View>
+                    )}
+                  </View>
 
                   <View
                     style={[
                       styles.amountInputWrap,
                       isLast && styles.amountInputDisabled,
+                      !isLast && lastAmountNegative && styles.amountInputWarning,
                     ]}
                   >
                     <Text style={styles.currencyPrefix}>₦</Text>
@@ -917,7 +1137,7 @@ export default function CreateBulkEnvelopesScreen() {
                       editable={!isLast}
                       value={valNaira === 0 ? "" : String(valNaira)}
                       placeholder="0"
-                      placeholderTextColor="#7A8580"
+                      placeholderTextColor="#9AA5A0"
                       onChangeText={(text) => {
                         const parsed = parseFloat(text.replace(/,/g, "")) || 0;
                         setAmount(i, nairaToKobo(parsed));
@@ -947,15 +1167,68 @@ export default function CreateBulkEnvelopesScreen() {
               </View>
             </View>
 
-            {timeSlices.map((slice, i) => (
-              <View key={i} style={styles.sliceRow}>
-                <Text style={styles.sliceTitle}>Envelope {i + 1}</Text>
-                <Text style={styles.sliceDate}>
-                  {formatDateShort(slice.startDate)} -{" "}
-                  {formatDateShort(slice.endDate)}
+            <View style={styles.scheduleWindow}>
+              <View>
+                <Text style={styles.scheduleWindowLabel}>NEW BATCH</Text>
+                <Text style={styles.scheduleWindowValue}>
+                  {formatDateShort(remainingDurationStart)}
                 </Text>
               </View>
-            ))}
+              <Ionicons name="arrow-forward" size={16} color="#8A9691" />
+              <View style={styles.scheduleWindowRight}>
+                <Text style={styles.scheduleWindowLabel}>PLAN ENDS</Text>
+                <Text style={styles.scheduleWindowValue}>
+                  {planEndDate ? formatDateShort(planEndDate) : "—"}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.scheduleTimeline}>
+              {timeSlices.map((slice, i) => (
+                <View key={i} style={styles.scheduleTimelineItem}>
+                  <View style={styles.timelineMarkerColumn}>
+                    <View style={styles.timelineMarker}>
+                      <Text style={styles.timelineMarkerText}>{i + 1}</Text>
+                    </View>
+                    {i < timeSlices.length - 1 && (
+                      <View style={styles.timelineConnector} />
+                    )}
+                  </View>
+
+                  <View style={styles.scheduleContent}>
+                    <View style={styles.scheduleContentTop}>
+                      <View style={styles.scheduleContentCopy}>
+                        <Text style={styles.sliceTitle}>
+                          {names[i] || `Envelope ${i + 1}`}
+                        </Text>
+                        <Text style={styles.sliceDate}>
+                          {formatDateShort(slice.startDate)} —{" "}
+                          {formatDateShort(slice.endDate)}
+                        </Text>
+                      </View>
+                      <Text style={styles.scheduleAmount}>
+                        ₦{formatNumber(koboToNaira(drafts[i]?.amountKobo || 0))}
+                      </Text>
+                    </View>
+
+                    <View style={styles.scheduleMeta}>
+                      <Ionicons name="time-outline" size={13} color="#7A8580" />
+                      <Text style={styles.scheduleMetaText}>
+                        {daysBetween(slice.startDate, slice.endDate) + 1} days
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.scheduleNote}>
+              <Ionicons name="information-circle-outline" size={16} color="#66736E" />
+              <Text style={styles.scheduleNoteText}>
+                This is the date range currently prepared for the new batch.
+                Existing envelopes are shown above for context.
+              </Text>
+            </View>
           </View>
         )}
 
@@ -995,31 +1268,66 @@ export default function CreateBulkEnvelopesScreen() {
           </View>
         )}
 
-        {/* Navigation Buttons */}
+        {/* Navigation */}
         <View style={styles.footerNav}>
+          {step > 1 && (
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={previousStep}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="arrow-back" size={16} color="#063B2E" />
+              <Text style={styles.secondaryButtonText}>Back</Text>
+            </TouchableOpacity>
+          )}
+
           {step < 4 ? (
             <TouchableOpacity
-              style={styles.primaryButton}
+              style={[styles.primaryButton, step > 1 && styles.primaryButtonFlex]}
               onPress={nextStep}
+              activeOpacity={0.85}
             >
-              <Text style={styles.primaryButtonText}>Continue</Text>
-              <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+              <Text style={styles.primaryButtonText}>
+                {step === 3 ? "Continue to names" : "Continue"}
+              </Text>
+              <Ionicons name="arrow-forward" size={17} color="#FFFFFF" />
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity
-              style={[
-                styles.primaryButton,
-                !canSubmit && styles.buttonDisabled,
-              ]}
-              disabled={!canSubmit}
-              onPress={handleSubmit}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.primaryButtonText}>Create Envelopes</Text>
+            <View style={styles.submitArea}>
+              {validationMessage && !isSubmitting && (
+                <View style={styles.actionError}>
+                  <Ionicons name={validationMessage.icon} size={15} color="#B42318" />
+                  <Text style={styles.actionErrorText}>
+                    {validationMessage.detail}
+                  </Text>
+                </View>
               )}
-            </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.primaryButton,
+                  styles.submitButton,
+                  !canSubmit && styles.buttonDisabled,
+                ]}
+                disabled={!canSubmit}
+                onPress={handleSubmit}
+                activeOpacity={0.85}
+              >
+                {isSubmitting ? (
+                  <>
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                    <Text style={styles.primaryButtonText}>Creating…</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.primaryButtonText}>
+                      Create {envelopeCount} envelope{envelopeCount === 1 ? "" : "s"}
+                    </Text>
+                    <Ionicons name="checkmark" size={18} color="#FFFFFF" />
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       </ScrollView>
@@ -1040,6 +1348,31 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    padding: 24,
+  },
+  expiredIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: "#FEECEB",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  expiredTitle: {
+    color: "#063B2E",
+    fontSize: 20,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  expiredText: {
+    color: "#66736E",
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 8,
+    maxWidth: 320,
+    textAlign: "center",
+    marginBottom: 20,
   },
   content: {
     padding: 20,
@@ -1186,8 +1519,10 @@ const styles = StyleSheet.create({
   existingCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
+    padding: 15,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#E5EAE7",
   },
   existingTop: {
     flexDirection: "row",
@@ -1415,11 +1750,284 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#7A8580",
   },
+  existingEyebrow: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#89938F",
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+
+  existingFooterStrong: {
+    color: "#52605B",
+    fontWeight: "700",
+  },
+
+  allocationSummaryError: {
+    backgroundColor: "#FFF7F5",
+    borderWidth: 1,
+    borderColor: "#F2D7D2",
+  },
+
+  allocationBarFillError: {
+    backgroundColor: "#C74F43",
+  },
+
+  allocationHint: {
+    marginTop: 8,
+    fontSize: 11,
+    lineHeight: 16,
+    color: "#7A8580",
+  },
+
+  inlineError: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: 9,
+  },
+
+  inlineErrorText: {
+    flex: 1,
+    marginLeft: 6,
+    fontSize: 11,
+    lineHeight: 16,
+    color: "#A43D32",
+    fontWeight: "600",
+  },
+
+  envelopeFieldHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 7,
+  },
+
+  envelopeIndex: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    backgroundColor: "#E8F1ED",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 9,
+  },
+
+  envelopeIndexText: {
+    color: "#106B4F",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+
+  envelopeFieldCopy: {
+    flex: 1,
+  },
+
+  inputMeta: {
+    color: "#89938F",
+    fontSize: 10,
+    marginTop: 2,
+  },
+
+  calculatedPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: 24,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    backgroundColor: "#DDEFE7",
+  },
+
+  calculatedPillText: {
+    color: "#106B4F",
+    fontSize: 8,
+    fontWeight: "900",
+    letterSpacing: 0.4,
+    marginLeft: 4,
+  },
+
+  amountInputWarning: {
+    borderColor: "#E2B2AA",
+    backgroundColor: "#FFFBFA",
+  },
+
+  scheduleWindow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 13,
+    borderRadius: 13,
+    backgroundColor: "#F6F9F7",
+    borderWidth: 1,
+    borderColor: "#E8EEEB",
+    marginBottom: 16,
+  },
+
+  scheduleWindowRight: {
+    alignItems: "flex-end",
+  },
+
+  scheduleWindowLabel: {
+    fontSize: 8,
+    fontWeight: "800",
+    color: "#89938F",
+    letterSpacing: 0.6,
+  },
+
+  scheduleWindowValue: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#063B2E",
+    marginTop: 3,
+  },
+
+  scheduleTimeline: {
+    paddingTop: 2,
+  },
+
+  scheduleTimelineItem: {
+    flexDirection: "row",
+    minHeight: 74,
+  },
+
+  timelineMarkerColumn: {
+    width: 31,
+    alignItems: "center",
+  },
+
+  timelineMarker: {
+    width: 27,
+    height: 27,
+    borderRadius: 9,
+    backgroundColor: "#E8F1ED",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  timelineMarkerText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#106B4F",
+  },
+
+  timelineConnector: {
+    flex: 1,
+    width: 1,
+    backgroundColor: "#D7E4DE",
+    marginVertical: 4,
+  },
+
+  scheduleContent: {
+    flex: 1,
+    marginLeft: 10,
+    paddingBottom: 14,
+    marginBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#EEF1EF",
+  },
+
+  scheduleContentTop: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+  },
+
+  scheduleContentCopy: {
+    flex: 1,
+    marginRight: 8,
+  },
+
+  scheduleAmount: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#063B2E",
+  },
+
+  scheduleMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 7,
+  },
+
+  scheduleMetaText: {
+    color: "#7A8580",
+    fontSize: 10,
+    marginLeft: 5,
+  },
+
+  scheduleNote: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: 3,
+    padding: 11,
+    borderRadius: 11,
+    backgroundColor: "#F7F8F7",
+  },
+
+  scheduleNoteText: {
+    flex: 1,
+    color: "#66736E",
+    fontSize: 10,
+    lineHeight: 15,
+    marginLeft: 6,
+  },
+
+  secondaryButton: {
+    height: 50,
+    minWidth: 84,
+    paddingHorizontal: 15,
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#DCE4E0",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  secondaryButtonText: {
+    color: "#063B2E",
+    fontSize: 14,
+    fontWeight: "700",
+    marginLeft: 6,
+  },
+
+  primaryButtonFlex: {
+    flex: 1,
+  },
+
+  submitArea: {
+    flex: 1,
+  },
+
+  submitButton: {
+    width: "100%",
+  },
+
+  actionError: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    paddingHorizontal: 2,
+    marginBottom: 8,
+  },
+
+  actionErrorText: {
+    flex: 1,
+    marginLeft: 6,
+    color: "#A43D32",
+    fontSize: 10,
+    lineHeight: 15,
+    fontWeight: "600",
+  },
+
   footerNav: {
-    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 8,
   },
   primaryButton: {
     height: 50,
+    minWidth: 140,
+    paddingHorizontal: 18,
     backgroundColor: "#063B2E",
     borderRadius: 12,
     flexDirection: "row",

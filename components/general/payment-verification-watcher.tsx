@@ -1,22 +1,93 @@
+import { useSubscriptionPlans } from "@/hooks/app/subscription";
 import { clearSubscriptionReminderState } from "@/hooks/subscription-reminder-storage";
 import { resetSubscriptionPromptSessionState } from "@/hooks/use-subscription-prompt";
 import { useSubscriptionVerificationContext } from "@/hooks/verify-sub";
 import { COLORS } from "@/themes/colors";
 import { Ionicons } from "@expo/vector-icons";
+import { useCallback, useEffect } from "react";
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import Toast from "react-native-toast-message";
+import { PaystackWebView, isCancelledRedirect } from "./paystack-webview";
 
 export function PaymentVerificationWatcher() {
   const {
     checkStatus,
+    closeCheckout,
+    checkoutUrl,
     continuePayment,
     dismissPayment,
     isVerifying,
     pendingPaymentUrl,
-    pendingPaymentReference,
     pendingPlanId,
     pendingStatus,
     startNewPayment,
   } = useSubscriptionVerificationContext();
+  const { data: plans = [] } = useSubscriptionPlans();
+  const pendingPlan = plans.find((plan) => plan.ID === pendingPlanId);
+  const planName = pendingPlan?.Name || "-";
+  const amount = pendingPlan
+    ? new Intl.NumberFormat("en-NG", {
+        currency: pendingPlan.Currency,
+        maximumFractionDigits: 0,
+        style: "currency",
+      }).format(pendingPlan.PriceKobo / 100)
+    : "-";
+
+  // The subscription checkout reuses the same in-app Paystack WebView as the
+  // deposit flow: it closes on the transaction callback redirect and triggers
+  // a bounded verification, exactly like deposits.
+  const handleTerminalRedirect = useCallback(
+    (url: string) => {
+      closeCheckout();
+      if (isCancelledRedirect(url)) {
+        // Customer cancelled on the Paystack page: just return to the
+        // upgrade prompt - the pending payment stays resumable.
+        return;
+      }
+      void checkStatus({ bounded: true });
+    },
+    [checkStatus, closeCheckout]
+  );
+
+  const handleClose = useCallback(
+    ({ terminalHandled }: { terminalHandled: boolean }) => {
+      closeCheckout();
+      if (!terminalHandled) {
+        // Manual close (X / back): verify once in case the payment completed
+        // without a redirect (mirrors the deposit checkout behaviour).
+        void checkStatus({ bounded: true });
+      }
+    },
+    [checkStatus, closeCheckout]
+  );
+
+  // Success UX: the verification hook flips to "confirmed" right before it
+  // clears the pending payment, so this effect is the single place that
+  // celebrates + resets prompt/reminder session state for every confirm path
+  // (checkout redirect, AppState return, manual "Verify again").
+  useEffect(() => {
+    if (pendingStatus !== "confirmed") return;
+
+    Toast.show({
+      type: "success",
+      text1: "Upgrade confirmed",
+      text2: "Your new plan is now active.",
+    });
+    void (async () => {
+      await clearSubscriptionReminderState();
+      resetSubscriptionPromptSessionState();
+    })();
+  }, [pendingStatus]);
+
+  if (checkoutUrl) {
+    return (
+      <PaystackWebView
+        checkoutUrl={checkoutUrl}
+        onClose={handleClose}
+        onTerminalRedirect={handleTerminalRedirect}
+      />
+    );
+  }
 
   const visible = Boolean(isVerifying && pendingPlanId);
   if (!visible) return null;
@@ -72,12 +143,12 @@ export function PaymentVerificationWatcher() {
         <View style={styles.card}>
           <View style={styles.iconWrap}>
             {isChecking ? (
-              <ActivityIndicator color={COLORS.white} />
+              <ActivityIndicator color={COLORS.secondary} size="small" />
             ) : (
               <Ionicons
                 name={isReady ? "card-outline" : isExpired ? "time-outline" : "alert-circle-outline"}
-                size={24}
-                color={COLORS.white}
+                size={16}
+                color={COLORS.secondary}
               />
             )}
           </View>
@@ -85,9 +156,13 @@ export function PaymentVerificationWatcher() {
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.body}>{body}</Text>
 
-          <View style={styles.receipt}>
-            <Row label="Plan ID" value={pendingPlanId || "-"} />
-            <Row label="Reference" value={pendingPaymentReference || "-"} />
+          <View style={styles.amountBlock}>
+            <Text style={styles.planLabel} numberOfLines={1}>
+              {planName}
+            </Text>
+            <Text style={styles.amount} numberOfLines={1}>
+              {amount}
+            </Text>
           </View>
 
           <View style={styles.actions}>
@@ -141,17 +216,6 @@ export function PaymentVerificationWatcher() {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue} numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   overlay: {
     alignItems: "center",
@@ -162,89 +226,85 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: COLORS.white,
-    borderRadius: 18,
-    padding: 22,
+    borderRadius: 16,
+    padding: 20,
     width: "100%",
   },
   iconWrap: {
     alignItems: "center",
     alignSelf: "flex-start",
-    backgroundColor: COLORS.primary,
-    borderRadius: 18,
-    height: 44,
+    backgroundColor: `${COLORS.secondary}18`,
+    borderRadius: 9,
+    height: 34,
     justifyContent: "center",
     marginBottom: 14,
-    width: 44,
+    width: 34,
   },
   title: {
     color: COLORS.primary,
-    fontSize: 22,
-    fontWeight: "800",
-    marginBottom: 8,
+    fontSize: 17,
+    fontWeight: "700",
+    marginBottom: 4,
   },
   body: {
     color: "#51605A",
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 16,
+    fontSize: 12.5,
+    lineHeight: 18,
   },
-  receipt: {
-    backgroundColor: "#F6F8F7",
-    borderRadius: 12,
-    gap: 10,
-    marginBottom: 18,
-    padding: 14,
+  amountBlock: {
+    borderTopColor: `${COLORS.secondary}55`,
+    borderTopWidth: 1,
+    borderStyle: "dashed",
+    marginTop: 16,
+    paddingTop: 16,
   },
-  row: {
-    flexDirection: "row",
-    gap: 12,
-    justifyContent: "space-between",
+  planLabel: {
+    color: "#8D9793",
+    fontSize: 11,
+    marginBottom: 2,
   },
-  rowLabel: {
-    color: "#7A8580",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  rowValue: {
+  amount: {
     color: COLORS.primary,
-    flex: 1,
-    fontSize: 12,
-    fontWeight: "800",
-    textAlign: "right",
+    fontSize: 30,
+    fontWeight: "700",
+    letterSpacing: -0.5,
   },
   actions: {
-    gap: 10,
+    gap: 8,
+    marginTop: 18,
   },
   primaryButton: {
     alignItems: "center",
     backgroundColor: COLORS.secondary,
-    borderRadius: 10,
-    paddingVertical: 14,
+    borderRadius: 12,
+    paddingVertical: 12,
   },
   primaryText: {
     color: COLORS.white,
-    fontSize: 14,
-    fontWeight: "800",
+    fontSize: 13,
+    fontWeight: "700",
   },
   secondaryButton: {
     alignItems: "center",
-    backgroundColor: "#E8F5EF",
-    borderRadius: 10,
-    paddingVertical: 13,
+    borderColor: "#D8DEDA",
+    borderRadius: 12,
+    borderWidth: 0.5,
+    paddingVertical: 11,
   },
   secondaryText: {
-    color: COLORS.secondary,
-    fontSize: 14,
-    fontWeight: "800",
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "500",
   },
   dismissButton: {
     alignItems: "center",
-    paddingVertical: 10,
+    paddingVertical: 4,
   },
   dismissText: {
     color: "#8D9793",
-    fontSize: 13,
-    fontWeight: "800",
+    fontSize: 12,
+    fontWeight: "500",
+    textDecorationLine: "underline",
   },
   disabled: {
     opacity: 0.55,

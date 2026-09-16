@@ -4,9 +4,10 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { jwtDecode } from "jwt-decode";
 import { useEffect, useState } from "react";
-import { Image, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useProfile } from "../../hooks/app/profile";
 import { COLORS } from "../../themes/colors";
+import { ProfileAvatar } from "../general/ProfileAvatar";
 
 const getGreeting = (): string => {
     const hour = new Date().getHours();
@@ -44,17 +45,7 @@ const ProfileHeader = () => {
                     onPress={() => openDrawer("profile")}
                     style={styles.avatarWrap}
                 >
-                    {profile?.profile_image_url ? <Image
-                        source={{
-                            uri: profile?.profile_image_url,
-                        }}
-                        style={styles.avatar}
-                    /> : <Image
-                        source={{
-                            uri: "https://i.pinimg.com/1200x/31/02/62/3102629a406ed439592d5833f0faa979.jpg",
-                        }}
-                        style={styles.avatar}
-                    />}
+                    <ProfileAvatar profile={profile} size={44} />
                 </Pressable>
 
                 <View style={styles.userText}>
@@ -113,14 +104,6 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
         borderWidth: 2,
-    },
-
-    avatar: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: COLORS.primary,
-        borderColor: COLORS.primary,
     },
 
     userText: {

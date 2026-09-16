@@ -62,9 +62,15 @@ export const useDeleteEnvelope = (planId: string) => {
 
   return useMutation({
     mutationFn: (envelopeId: string) => deleteEnvelope(planId, envelopeId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: envelopeKeys.list(planId) });
-      queryClient.invalidateQueries({ queryKey: planKeys.all });
+    onSuccess: async (_data, envelopeId) => {
+      const detailKey = envelopeKeys.detail(planId, envelopeId);
+
+      await queryClient.cancelQueries({ queryKey: detailKey, exact: true });
+      queryClient.invalidateQueries({
+        queryKey: envelopeKeys.list(planId),
+        exact: true,
+      });
+      queryClient.invalidateQueries({ queryKey: planKeys.list() });
       queryClient.invalidateQueries({ queryKey: planKeys.detail(planId) });
       queryClient.invalidateQueries({ queryKey: planKeys.preview(planId) });
     },

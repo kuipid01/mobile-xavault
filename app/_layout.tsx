@@ -26,6 +26,8 @@ import {
 } from "../components/auth/authFlow";
 import { DepositPaymentModal } from "../components/general/deposit-payment-modal";
 import { DepositVerificationBanner } from "../components/general/deposit-verification-banner";
+import { PaymentVerificationWatcher } from "../components/general/payment-verification-watcher";
+import { SubscriptionVerificationBanner } from "../components/general/subscription-verification-banner";
 import { ModalProvider } from "../context/special-modal-context";
 import "../global.css";
 import { useSubscriptionPrompt } from "../hooks/use-subscription-prompt";
@@ -357,6 +359,8 @@ export default function RootLayout() {
                 <DepositVerificationWatcher />
                 <DepositPaymentModal />
                 <DepositVerificationBanner />
+                <PaymentVerificationWatcher />
+                <SubscriptionVerificationBanner />
                 <GlobalErrorModal />
                 <Toast />
               </OnboardingProvider>
