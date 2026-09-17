@@ -2,12 +2,16 @@ import { koboToNaira } from "@/api/money";
 import { useDepositVerificationContext } from "@/hooks/verify-deposit";
 import { COLORS } from "@/themes/colors";
 import { Ionicons } from "@expo/vector-icons";
+import React from "react";
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { PaystackCheckoutLayer } from "./paystack-checkout-layer";
 
 const formatAmount = (amount: number | null) =>
   `NGN ${koboToNaira(amount || 0).toLocaleString("en-NG")}`;
 
+// Restyled to mirror the subscription verification card (the minimalistic
+// "Ready to upgrade" card): small icon chip, compact title/body, dashed
+// divider over a big labelled amount, and stacked compact buttons.
 export function DepositPaymentModal() {
   const {
     checkoutUrl,
@@ -76,12 +80,12 @@ export function DepositPaymentModal() {
         <View style={styles.card}>
           <View style={styles.iconWrap}>
             {isVerifying ? (
-              <ActivityIndicator color={COLORS.white} />
+              <ActivityIndicator color={COLORS.secondary} size="small" />
             ) : (
               <Ionicons
                 name={isReady ? "card-outline" : isExpired ? "time-outline" : "alert-circle-outline"}
-                size={24}
-                color={COLORS.white}
+                size={16}
+                color={COLORS.secondary}
               />
             )}
           </View>
@@ -89,9 +93,16 @@ export function DepositPaymentModal() {
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.body}>{body}</Text>
 
-          <View style={styles.receipt}>
-            <Row label="Amount" value={formatAmount(pendingAmount)} />
-            <Row label="Reference" value={pendingReference || "-"} />
+          <View style={styles.amountBlock}>
+            <Text style={styles.amountLabel} numberOfLines={1}>
+              Deposit
+            </Text>
+            <Text style={styles.amount} numberOfLines={1}>
+              {formatAmount(pendingAmount)}
+            </Text>
+            <Text style={styles.reference} numberOfLines={1}>
+              Ref {pendingReference || "-"}
+            </Text>
           </View>
 
           <View style={styles.actions}>
@@ -129,10 +140,10 @@ export function DepositPaymentModal() {
               </Text>
             </Pressable>
 
-            {/* Bug fix: dismissal must always be available - even while a
-                verification is in flight - so the user can cancel an
-                initiated payment at any time. Cancelling propagates to the
-                backend and stops all polling for this reference. */}
+            {/* Dismissal must always be available - even while a verification
+                is in flight - so the user can cancel an initiated payment at
+                any time. Cancelling propagates to the backend and stops all
+                polling for this reference. */}
             <Pressable
               onPress={() => void dismissPendingDeposit()}
               testID="deposit-cancel"
@@ -147,17 +158,9 @@ export function DepositPaymentModal() {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue} numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
+// Style values mirror payment-verification-watcher.tsx so both cards look
+// and feel identical (minimalistic: chip → title → body → dashed divider →
+// big labelled amount → compact actions).
 const styles = StyleSheet.create({
   overlay: {
     alignItems: "center",
@@ -168,89 +171,91 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: COLORS.white,
-    borderRadius: 18,
-    padding: 22,
+    borderRadius: 16,
+    padding: 20,
     width: "100%",
   },
   iconWrap: {
     alignItems: "center",
     alignSelf: "flex-start",
-    backgroundColor: COLORS.primary,
-    borderRadius: 18,
-    height: 44,
+    backgroundColor: `${COLORS.secondary}18`,
+    borderRadius: 9,
+    height: 34,
     justifyContent: "center",
     marginBottom: 14,
-    width: 44,
+    width: 34,
   },
   title: {
     color: COLORS.primary,
-    fontSize: 22,
-    fontWeight: "800",
-    marginBottom: 8,
+    fontSize: 17,
+    fontWeight: "700",
+    marginBottom: 4,
   },
   body: {
     color: "#51605A",
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 16,
+    fontSize: 12.5,
+    lineHeight: 18,
   },
-  receipt: {
-    backgroundColor: "#F6F8F7",
-    borderRadius: 12,
-    gap: 10,
-    marginBottom: 18,
-    padding: 14,
+  amountBlock: {
+    borderTopColor: `${COLORS.secondary}55`,
+    borderTopWidth: 1,
+    borderStyle: "dashed",
+    marginTop: 16,
+    paddingTop: 16,
   },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12,
+  amountLabel: {
+    color: "#8D9793",
+    fontSize: 11,
+    marginBottom: 2,
   },
-  rowLabel: {
-    color: "#7A8580",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  rowValue: {
+  amount: {
     color: COLORS.primary,
-    flex: 1,
-    fontSize: 12,
-    fontWeight: "800",
-    textAlign: "right",
+    fontSize: 30,
+    fontWeight: "700",
+    letterSpacing: -0.5,
+  },
+  reference: {
+    color: "#8D9793",
+    fontSize: 11,
+    fontWeight: "500",
+    marginTop: 4,
   },
   actions: {
-    gap: 10,
+    gap: 8,
+    marginTop: 18,
   },
   primaryButton: {
     alignItems: "center",
     backgroundColor: COLORS.secondary,
-    borderRadius: 10,
-    paddingVertical: 14,
+    borderRadius: 12,
+    paddingVertical: 12,
   },
   primaryText: {
     color: COLORS.white,
-    fontSize: 14,
-    fontWeight: "800",
+    fontSize: 13,
+    fontWeight: "700",
   },
   secondaryButton: {
     alignItems: "center",
-    backgroundColor: "#E8F5EF",
-    borderRadius: 10,
-    paddingVertical: 13,
+    borderColor: "#D8DEDA",
+    borderRadius: 12,
+    borderWidth: 0.5,
+    paddingVertical: 11,
   },
   secondaryText: {
-    color: COLORS.secondary,
-    fontSize: 14,
-    fontWeight: "800",
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: "500",
   },
   dismissButton: {
     alignItems: "center",
-    paddingVertical: 10,
+    paddingVertical: 4,
   },
   dismissText: {
     color: "#8D9793",
-    fontSize: 13,
-    fontWeight: "800",
+    fontSize: 12,
+    fontWeight: "500",
+    textDecorationLine: "underline",
   },
   disabled: {
     opacity: 0.55,

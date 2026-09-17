@@ -227,6 +227,13 @@ function useDepositVerificationState(): DepositVerificationContextValue {
 
       if (!reference || !initiatedAt) return;
 
+      // Bug fix: if the stored record is gone, the deposit was dismissed
+      // ("Cancel payment") or confirmed while a check was still in flight.
+      // Re-persisting here is what resurrected the cancelled-payment modal a
+      // few seconds after dismissal. A status update can only ever modify an
+      // existing record — never re-create one.
+      if (!storedPending) return;
+
       const nextPayload: PendingDeposit = {
         ...storedPending,
         reference,
@@ -415,6 +422,14 @@ function useDepositVerificationState(): DepositVerificationContextValue {
           reference: activeReference,
         }
       );
+      // Bug fix: the deposit may have been dismissed (or replaced by a newer
+      // deposit) while this check was in flight. Only record the outcome if
+      // the exact same deposit is still pending locally.
+      const storedAfterError = await readStoredPendingDeposit();
+      if (!storedAfterError || storedAfterError.reference !== activeReference) {
+        logDebug("Deposit dismissed/replaced during check; not resurrecting modal", activeReference);
+        return false;
+      }
       await updatePendingStatus(isStillProcessing ? "needs_action" : "failed", {
         verificationAttempts: prevAttempts,
       });

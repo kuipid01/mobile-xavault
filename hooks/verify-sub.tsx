@@ -254,6 +254,13 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
       const initiatedAt = pendingInitiatedAt || stored?.initiatedAt;
       if (!planId || !initiatedAt) return;
 
+      // Bug fix: if the stored record is gone, the payment was dismissed
+      // ("Cancel payment") or confirmed while a check was still in flight.
+      // Re-persisting here is what resurrected the cancelled-payment modal a
+      // few seconds after dismissal. A status update can only ever modify an
+      // existing record — never re-create one.
+      if (!stored) return;
+
       await persistPending({
         ...stored,
         planId,
@@ -351,10 +358,26 @@ function useSubscriptionVerificationState(): SubscriptionVerificationContextValu
         return true;
       }
 
+      // Bug fix: the payment may have been dismissed (or replaced by a newer
+      // one) while this check was in flight. Only record the outcome if the
+      // exact same subscription is still pending locally.
+      const storedAfterCheck = await readPending();
+      if (!storedAfterCheck || storedAfterCheck.planId !== activePlanId) {
+        logDebug("Subscription dismissed/replaced during check; not resurrecting modal", activePlanId);
+        return false;
+      }
       await updatePendingStatus("needs_action");
       return false;
     } catch (error) {
       logDebug("Subscription verification check failed", error);
+      // Bug fix: the payment may have been dismissed (or replaced by a newer
+      // one) while this check was in flight. Only record the outcome if the
+      // exact same subscription is still pending locally.
+      const storedAfterCheck = await readPending();
+      if (!storedAfterCheck || storedAfterCheck.planId !== activePlanId) {
+        logDebug("Subscription dismissed/replaced during check; not resurrecting modal", activePlanId);
+        return false;
+      }
       await updatePendingStatus("needs_action");
       return false;
     } finally {

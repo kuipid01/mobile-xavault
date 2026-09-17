@@ -53,15 +53,25 @@ export const getWalletLedger = async () => {
 };
 
 export const verifyDeposit = async (reference: string) => {
+  // Bug fix: "Deposit not verified" is an EXPECTED polling outcome while the
+  // payment is still propagating — the deposit card shows its own "Check
+  // again / still processing" UI for it. Without this flag the axios
+  // interceptor published the global "Transaction could not be completed"
+  // error modal on top of an expected response.
   const res = await api.post<ApiResponse<DepositVerificationResponse>>(
-    `/wallet/deposit/${reference}/verify`
+    `/wallet/deposit/${reference}/verify`,
+    {},
+    { suppressGlobalErrorModal: true } as any
   );
   return res.data;
 };
 
 export const dismissDeposit = async (reference: string) => {
+  // Expected outcome (user cancelled) — never surface the global error modal.
   const res = await api.post<ApiResponse<WalletDeposit>>(
-    `/wallet/deposit/${reference}/dismiss`
+    `/wallet/deposit/${reference}/dismiss`,
+    {},
+    { suppressGlobalErrorModal: true } as any
   );
   return res.data.data;
 };
