@@ -106,6 +106,8 @@ export type Plan = {
   plan_unboxed_balance: number;
   withdrawn_amount?: number;
   pending_withdrawal_amount?: number;
+  remaining_balance?: number;
+  is_exhausted?: boolean;
   confirmed_at?: string | null;
   created_at: string;
   updated_at: string;

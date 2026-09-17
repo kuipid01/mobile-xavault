@@ -10,35 +10,58 @@ type Props = {
 };
 
 export function PlanCard({ plan, onPress }: Props) {
-  const progress = plan.amount > 0 ? Math.round((plan.top_level_allocated / plan.amount) * 100) : 0;
+  const total = plan.amount || 0;
+  const paid = plan.withdrawn_amount ?? 0;
+  const pending = plan.pending_withdrawal_amount ?? 0;
+  const remaining = plan.remaining_balance ?? Math.max(total - paid - pending, 0);
+  const isExhausted = plan.is_exhausted ?? (total > 0 && remaining <= 0);
+  const spentRatio = total > 0 ? Math.min((paid + pending) / total, 1) : 0;
+  const progress = total > 0 ? Math.round(spentRatio * 100) : 0;
 
   return (
     <Pressable onPress={onPress} style={styles.card}>
       <View style={styles.header}>
         <View style={styles.iconBox}>
-          <Ionicons name="wallet-outline" size={22} color="#007A5A" />
+          <Ionicons name="wallet-outline" size={22} color={isExhausted ? "#9AA5A1" : "#007A5A"} />
         </View>
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{plan.status.toUpperCase()}</Text>
+        <View style={[styles.badge, isExhausted && styles.badgeExhausted]}>
+          <Text style={[styles.badgeText, isExhausted && styles.badgeTextExhausted]}>
+            {isExhausted ? "EXHAUSTED" : plan.status.toUpperCase()}
+          </Text>
         </View>
       </View>
 
       <Text style={styles.title}>{plan.name}</Text>
       <Text style={styles.meta}>
-        {formatDate(plan.start_date)} - {formatDate(plan.end_date)} • {formatMoney(plan.amount, plan.currency)}
+        {formatDate(plan.start_date)} - {formatDate(plan.end_date)} • {formatMoney(total, plan.currency)}
       </Text>
 
       <View style={styles.amountRow}>
         <View>
-          <Text style={styles.amount}>{formatMoney(plan.top_level_allocated, plan.currency)}</Text>
-          <Text style={styles.amountLabel}>Allocated</Text>
+          <Text style={[styles.amount, isExhausted && styles.amountExhausted]}>
+            {formatMoney(remaining, plan.currency)}
+          </Text>
+          <Text style={styles.amountLabel}>{isExhausted ? "Nothing left" : "Remaining"}</Text>
         </View>
-        <Text style={styles.percent}>{progress}%</Text>
+        <Text style={[styles.percent, isExhausted && styles.percentExhausted]}>{progress}% spent</Text>
       </View>
 
       <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${Math.min(progress, 100)}%` }]} />
+        <View
+          style={[
+            styles.progressFill,
+            isExhausted && styles.progressFillExhausted,
+            { width: `${Math.max(Math.min(progress, 100), spentRatio > 0 ? 6 : 0)}%` },
+          ]}
+        />
       </View>
+
+      {paid + pending > 0 ? (
+        <Text style={styles.spentLine}>
+          Spent {formatMoney(paid, plan.currency)}
+          {pending > 0 ? ` · ${formatMoney(pending, plan.currency)} pending` : ""}
+        </Text>
+      ) : null}
     </Pressable>
   );
 }
@@ -76,10 +99,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     paddingVertical: 6,
   },
+  badgeExhausted: {
+    backgroundColor: "#F3F4F6",
+  },
   badgeText: {
     color: "#007A5A",
     fontSize: 10,
     fontWeight: "900",
+  },
+  badgeTextExhausted: {
+    color: "#6B7280",
+    letterSpacing: 0.5,
   },
   title: {
     color: "#063B2E",
@@ -103,6 +133,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "900",
   },
+  amountExhausted: {
+    color: "#9AA5A1",
+  },
   amountLabel: {
     color: "#9AA5A1",
     fontSize: 10,
@@ -113,6 +146,9 @@ const styles = StyleSheet.create({
     color: "#007A5A",
     fontSize: 13,
     fontWeight: "900",
+  },
+  percentExhausted: {
+    color: "#6B7280",
   },
   progressTrack: {
     marginTop: 10,
@@ -125,5 +161,14 @@ const styles = StyleSheet.create({
     height: "100%",
     borderRadius: 999,
     backgroundColor: "#007A5A",
+  },
+  progressFillExhausted: {
+    backgroundColor: "#9CA3AF",
+  },
+  spentLine: {
+    marginTop: 10,
+    color: "#6B7280",
+    fontSize: 11,
+    fontWeight: "700",
   },
 });

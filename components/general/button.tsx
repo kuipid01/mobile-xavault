@@ -37,7 +37,8 @@ const styles = StyleSheet.create({
         justifyContent: "center",
         gap: 8,
         width: 66, height: 66, borderRadius: 16,
-        backgroundColor: "rgba(255,255,255,0.1)",
+        // backgroundColor: "rgba(255,255,255,0.1)",
+        backgroundColor:COLORS.primary
     },
 
     iconBox: {

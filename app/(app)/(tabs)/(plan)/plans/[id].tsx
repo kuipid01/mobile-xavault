@@ -120,6 +120,24 @@ export default function PlanDetailScreen() {
   const isDraft = plan.status === "draft";
   const canConfirm = Boolean(preview?.can_confirm);
 
+  // Withdrawal / exhaustion state
+  const planPaid = plan.withdrawn_amount ?? 0;
+  const planPending = plan.pending_withdrawal_amount ?? 0;
+  const planRemaining =
+    plan.remaining_balance ?? Math.max(plan.amount - planPaid - planPending, 0);
+  const isPlanExhausted =
+    plan.is_exhausted ?? (plan.amount > 0 && planRemaining <= 0);
+
+  // Countdown state
+  const endDateMs = plan.end_date ? new Date(plan.end_date).getTime() : NaN;
+  const daysRemaining = Number.isNaN(endDateMs)
+    ? null
+    : Math.ceil((endDateMs - Date.now()) / 86_400_000);
+  const hasNoDaysRemaining = daysRemaining !== null && daysRemaining <= 0;
+
+  // Allocation actions are pointless once every kobo has been paid out.
+  const bulkDisabled = !isDraft && isPlanExhausted;
+
   // Allocation progress
   const totalAmount = plan.amount || 1;
   const allocatedRatio = Math.min(
@@ -130,6 +148,7 @@ export default function PlanDetailScreen() {
     (plan.plan_unboxed_balance || 0) / totalAmount,
     1
   );
+  const withdrawnRatio = Math.min((planPaid + planPending) / totalAmount, 1);
 
   return (
     <View style={styles.container}>
@@ -200,6 +219,13 @@ export default function PlanDetailScreen() {
               <View
                 style={[
                   styles.progressSlice,
+                  styles.progressSliceWithdrawn,
+                  { flex: withdrawnRatio },
+                ]}
+              />
+              <View
+                style={[
+                  styles.progressSlice,
                   styles.progressSliceAllocated,
                   { flex: allocatedRatio },
                 ]}
@@ -230,11 +256,44 @@ export default function PlanDetailScreen() {
                   {formatMoney(plan.plan_unboxed_balance, plan.currency)} unboxed
                 </Text>
               </View>
+              {planPaid + planPending > 0 ? (
+                <View style={styles.legendItem}>
+                  <View
+                    style={[
+                      styles.legendDot,
+                      { backgroundColor: "#D6A84F" },
+                    ]}
+                  />
+                  <Text style={styles.legendText}>
+                    {formatMoney(planPaid + planPending, plan.currency)} withdrawn
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </View>
 
           {/* Meta pills */}
           <View style={styles.heroMetaRow}>
+            <View
+              style={[styles.metaPill, hasNoDaysRemaining && styles.metaPillEnded]}
+            >
+              <Ionicons
+                name={hasNoDaysRemaining ? "calendar-clear-outline" : "time-outline"}
+                size={13}
+                color={hasNoDaysRemaining ? "#D6A84F" : "#58FFBE"}
+              />
+              <Text
+                style={[
+                  styles.metaPillText,
+                  hasNoDaysRemaining && styles.metaPillTextEnded,
+                ]}
+              >
+                {hasNoDaysRemaining
+                  ? "No days remaining"
+                  : `${daysRemaining} day${daysRemaining === 1 ? "" : "s"} left`}
+              </Text>
+            </View>
+
             <View style={styles.metaPill}>
               <Ionicons name="albums-outline" size={13} color="#58FFBE" />
               <Text style={styles.metaPillText}>
@@ -251,6 +310,16 @@ export default function PlanDetailScreen() {
           </View>
         </View>
 
+        {/* ── Exhausted banner ── */}
+        {isPlanExhausted && !isDraft ? (
+          <View style={styles.exhaustedBanner}>
+            <Ionicons name="checkmark-done-circle-outline" size={20} color="#6B7280" />
+            <Text style={styles.exhaustedBannerText}>
+              Fully withdrawn — all funds from this plan have been paid out.
+            </Text>
+          </View>
+        ) : null}
+
         {/* ── Stats row ── */}
         <View style={styles.statsRow}>
           <StatCell
@@ -261,17 +330,17 @@ export default function PlanDetailScreen() {
           />
           <View style={styles.statsDivider} />
           <StatCell
-            label="Unboxed"
-            value={formatMoney(plan.plan_unboxed_balance, plan.currency)}
-            icon="cube-outline"
+            label="Withdrawn"
+            value={formatMoney(planPaid + planPending, plan.currency)}
+            icon="arrow-up-circle-outline"
             accent={false}
           />
           <View style={styles.statsDivider} />
           <StatCell
-            label="Policy"
-            value={plan.unboxed_balance_policy.replace(/_/g, " ")}
-            icon="lock-closed-outline"
-            accent={false}
+            label="Remaining"
+            value={formatMoney(planRemaining, plan.currency)}
+            icon="cube-outline"
+            accent={!isPlanExhausted}
           />
         </View>
 
@@ -428,6 +497,8 @@ export default function PlanDetailScreen() {
               params: { id: plan.id },
             })
           }
+          allocatable={isDraft ? undefined : Math.max(planRemaining - (plan.top_level_allocated || 0), 0)}
+          currency={plan.currency}
         />
 
         <TouchableOpacity
@@ -438,10 +509,22 @@ export default function PlanDetailScreen() {
               params: { id: plan.id },
             })
           }
-          style={styles.bulkButton}
+          disabled={bulkDisabled}
+          style={[styles.bulkButton, bulkDisabled && styles.bulkButtonDisabled]}
         >
-          <Ionicons name="layers-outline" size={18} color="#106B4F" />
-          <Text style={styles.bulkButtonText}>Bulk envelopes</Text>
+          <Ionicons
+            name={bulkDisabled ? "lock-closed-outline" : "layers-outline"}
+            size={18}
+            color={bulkDisabled ? "#8A9892" : "#106B4F"}
+          />
+          <Text
+            style={[
+              styles.bulkButtonText,
+              bulkDisabled && styles.bulkButtonTextDisabled,
+            ]}
+          >
+            {bulkDisabled ? "All funds paid out" : "Bulk envelopes"}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
       <Modal visible={showDeleteDraft} transparent animationType="fade" onRequestClose={() => setShowDeleteDraft(false)}>
@@ -753,6 +836,31 @@ const styles = StyleSheet.create({
   progressSliceUnboxed: {
     backgroundColor: "rgba(255,255,255,0.35)",
     borderRadius: 3,
+  },
+
+  progressSliceWithdrawn: {
+    backgroundColor: "#D6A84F",
+    borderRadius: 3,
+  },
+
+  exhaustedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#F3F4F6",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 16,
+  },
+
+  exhaustedBannerText: {
+    flex: 1,
+    color: "#6B7280",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
   },
 
   progressLegend: {
@@ -1195,7 +1303,21 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
   },
+  bulkButtonDisabled: {
+    backgroundColor: "#F3F4F6",
+    borderColor: "#E5E7EB",
+  },
   bulkButtonText: { color: "#106B4F", fontSize: 14, fontWeight: "900" },
+  bulkButtonTextDisabled: { color: "#8A9892" },
+
+  metaPillEnded: {
+    backgroundColor: "rgba(214,168,79,0.12)",
+    borderColor: "rgba(214,168,79,0.3)",
+  },
+
+  metaPillTextEnded: {
+    color: "#D6A84F",
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(3, 25, 19, 0.52)",

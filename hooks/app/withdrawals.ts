@@ -8,6 +8,7 @@ import {
   WithdrawPayload
 } from "@/api/withdrawals";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { envelopeKeys } from "./envelopes";
 import { planKeys } from "./plans";
 import { walletKeys } from "./wallet";
@@ -39,6 +40,11 @@ const isTerminalWithdrawal = (status?: string) =>
   );
 
 export const useWithdrawalHistory = () => {
+  const queryClient = useQueryClient();
+  // Withdrawals already seen in a terminal state; prevents re-invalidating on
+  // every refetch of the history list.
+  const seenTerminal = useRef<Set<string>>(new Set());
+
   const query = useInfiniteQuery({
     queryKey: withdrawalKeys.history,
     queryFn: ({ pageParam }) => getWithdrawals(pageParam),
@@ -58,9 +64,41 @@ export const useWithdrawalHistory = () => {
         : false;
     }
   });
+
+  const items = query.data?.pages.flatMap((page) => page.items) || [];
+
+  // When a withdrawal resolves (paid/failed/reversed), refresh the plan,
+  // envelope and wallet balances it affects so the UI shows the new state
+  // even if the withdrawal modal is not open.
+  useEffect(() => {
+    const newlyResolved = items.filter(
+      (item) =>
+        isTerminalWithdrawal(item.status) &&
+        item.id &&
+        !seenTerminal.current.has(item.id)
+    );
+    if (!newlyResolved.length) return;
+
+    for (const item of newlyResolved) {
+      seenTerminal.current.add(item.id);
+    }
+
+    queryClient.invalidateQueries({ queryKey: walletKeys.wallet });
+    queryClient.invalidateQueries({ queryKey: walletKeys.ledger });
+    queryClient.invalidateQueries({ queryKey: planKeys.list() });
+    const planIds = new Set(
+      newlyResolved.map((item) => item.plan_id).filter((id): id is string => !!id)
+    );
+    for (const planId of planIds) {
+      queryClient.invalidateQueries({ queryKey: planKeys.detail(planId) });
+      queryClient.invalidateQueries({ queryKey: envelopeKeys.list(planId), exact: true });
+      queryClient.invalidateQueries({ queryKey: withdrawalKeys.plan(planId) });
+    }
+  }, [items, queryClient]);
+
   return {
     ...query,
-    data: query.data?.pages.flatMap((page) => page.items) || []
+    data: items
   };
 };
 

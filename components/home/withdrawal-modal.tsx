@@ -137,6 +137,17 @@ const planWithdrawalTarget = (plan: Plan): WithdrawalTarget | null => {
   };
 };
 
+// A plan only belongs in the withdrawal picker if it can still pay out:
+// it must be live (not draft/cancelled) and have funds left anywhere in it
+// (unallocated or inside envelopes). Fully withdrawn plans are excluded.
+const isWithdrawablePlan = (plan: Plan): boolean => {
+  if (!["active", "expired", "completed"].includes(plan.status)) return false;
+  const paid = plan.withdrawn_amount ?? 0;
+  const pending = plan.pending_withdrawal_amount ?? 0;
+  const remaining = plan.remaining_balance ?? Math.max(plan.amount - paid - pending, 0);
+  return remaining > 0;
+};
+
 const envelopeWithdrawalTarget = (envelope: Envelope): WithdrawalTarget | null => {
   const matured = isEnvelopeMatured(envelope);
   const flexible = envelope.unboxed_balance_policy === "flexible";
@@ -802,6 +813,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
     refetch: refetchPlans,
   } = usePlans();
   const plans = useMemo(() => plansData?.items || [], [plansData?.items]);
+  const withdrawablePlans = useMemo(() => plans.filter(isWithdrawablePlan), [plans]);
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
 
   const {
@@ -870,10 +882,10 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
 
   // Auto-select first plan
   useEffect(() => {
-    if (visible && !selectedPlanId && plans[0]) {
-      setSelectedPlanId(plans[0].id);
+    if (visible && !selectedPlanId && withdrawablePlans[0]) {
+      setSelectedPlanId(withdrawablePlans[0].id);
     }
-  }, [plans, selectedPlanId, visible]);
+  }, [withdrawablePlans, selectedPlanId, visible]);
 
   // Auto-select first eligible target when plan changes
   useEffect(() => {
@@ -1279,15 +1291,21 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
         error: error?.response?.data?.message || error?.message || "unknown"
       });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      const status = error?.response?.status;
       const errorMessage = String(
         error?.response?.data?.message || error?.response?.data?.error?.message || ""
       ).toLowerCase();
-      const isPinError =
-        error?.response?.status === 401 ||
-        error?.response?.status === 403 ||
-        errorMessage.includes("pin");
 
-      if (isPinError) {
+      // PIN problems have dedicated statuses (422 wrong PIN, 423 locked).
+      // A bare 401 here is a real auth failure — do NOT treat it as a PIN
+      // error; the interceptor already retried once after token refresh.
+      const isPinLocked = status === 423 || errorMessage.includes("locked after three");
+      const isInvalidPin = status === 422 || errorMessage.includes("incorrect withdrawal pin");
+
+      if (isPinLocked) {
+        setWithdrawalPin("");
+        setPinError("Withdrawals are locked after 3 incorrect attempts. Use “Forgot PIN?” to reset.");
+      } else if (isInvalidPin) {
         setWithdrawalPin("");
         setPinError("Incorrect PIN. Enter your 4-digit withdrawal PIN and try again.");
       } else {
@@ -1345,7 +1363,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
           >
             {step === "plan" && (
               <StepPlan
-                plans={plans}
+                plans={withdrawablePlans}
                 isLoading={isPlansLoading}
                 error={plansError}
                 selectedPlanId={selectedPlanId}
@@ -1560,7 +1578,11 @@ const StepPlan = ({
     ) : error ? (
       <ErrorState onRetry={onRetry} />
     ) : plans.length === 0 ? (
-      <EmptyState icon="folder-open-outline" title="No plans found" />
+      <EmptyState
+        icon="checkmark-done-outline"
+        title="Nothing left to withdraw"
+        subtitle="Plans you can withdraw from appear here once they hold funds."
+      />
     ) : (
       <View style={stepStyles.list}>
         {plans.map((plan) => (
@@ -1569,7 +1591,11 @@ const StepPlan = ({
             selected={plan.id === selectedPlanId}
             icon="layers-outline"
             title={plan.name}
-            meta={formatMoney(plan.amount, plan.currency)}
+            meta={formatMoney(
+              plan.remaining_balance ?? plan.plan_unboxed_balance ?? plan.amount,
+              plan.currency
+            )}
+            tag="Remaining"
             onPress={() => onSelect(plan.id)}
           />
         ))}

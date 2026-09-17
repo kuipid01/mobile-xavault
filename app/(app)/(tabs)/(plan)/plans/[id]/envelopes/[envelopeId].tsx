@@ -81,6 +81,12 @@ export default function EnvelopeDetailScreen() {
 
   const policyText = envelope.unboxed_balance_policy.replace(/_/g, " ");
 
+  // Withdrawal / exhaustion state
+  const envelopePaid = envelope.withdrawn_amount ?? 0;
+  const envelopePending = envelope.pending_withdrawal_amount ?? 0;
+  const isEnvelopeExhausted =
+    (envelope.amount || 0) > 0 && (envelope.unboxed_balance || 0) <= 0;
+
   // Derive a progress ratio: how much of the amount is unboxed
   const totalAmount = envelope.amount || 1;
   const allocatedRatio = Math.min(
@@ -193,6 +199,16 @@ export default function EnvelopeDetailScreen() {
           </View>
         </View>
 
+        {/* ── Exhausted banner ── */}
+        {isEnvelopeExhausted ? (
+          <View style={styles.exhaustedBanner}>
+            <Ionicons name="checkmark-done-circle-outline" size={20} color="#6B7280" />
+            <Text style={styles.exhaustedBannerText}>
+              Fully withdrawn — this envelope has no unboxed funds left.
+            </Text>
+          </View>
+        ) : null}
+
         {/* ── Stats row ── */}
         <View style={styles.statsRow}>
           <StatCell
@@ -203,9 +219,9 @@ export default function EnvelopeDetailScreen() {
           />
           <View style={styles.statsDivider} />
           <StatCell
-            label="Children"
-            value={formatMoney(envelope.allocated_to_children)}
-            icon="git-branch-outline"
+            label="Withdrawn"
+            value={formatMoney(envelopePaid + envelopePending)}
+            icon="arrow-up-circle-outline"
             accent={false}
           />
           <View style={styles.statsDivider} />
@@ -213,7 +229,7 @@ export default function EnvelopeDetailScreen() {
             label="Unboxed"
             value={formatMoney(envelope.unboxed_balance)}
             icon="cube-outline"
-            accent={true}
+            accent={!isEnvelopeExhausted}
           />
         </View>
 
@@ -567,6 +583,26 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textTransform: "capitalize",
     letterSpacing: 0.2,
+  },
+
+  exhaustedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#F3F4F6",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 16,
+  },
+
+  exhaustedBannerText: {
+    flex: 1,
+    color: "#6B7280",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
   },
 
   // ── Stats row ──
