@@ -1,7 +1,7 @@
 import {
   cancelWithdrawal,
-  getWithdrawals,
   getPlanWithdrawals,
+  getWithdrawals,
   previewWithdrawal,
   requestWithdrawal,
   WithdrawalPreviewPayload,
@@ -19,6 +19,7 @@ type WithdrawalRequest = {
 
 export const withdrawalKeys = {
   history: ["withdrawals", "history"] as const,
+  plans: ["withdrawals", "plan"] as const,
   plan: (planId: string) => ["withdrawals", "plan", planId] as const
 };
 
@@ -70,12 +71,14 @@ export const useRequestWithdrawal = () => {
     mutationFn: ({ planId, payload }: WithdrawalRequest) => requestWithdrawal(planId, payload),
     onSuccess: (_data, variables) => {
 	  queryClient.invalidateQueries({ queryKey: withdrawalKeys.history });
-      queryClient.invalidateQueries({ queryKey: planKeys.all });
+    queryClient.invalidateQueries({ queryKey: withdrawalKeys.plan(variables.planId) });
+      queryClient.invalidateQueries({ queryKey: planKeys.list() });
       queryClient.invalidateQueries({
         queryKey: planKeys.detail(variables.planId)
       });
       queryClient.invalidateQueries({
-        queryKey: envelopeKeys.list(variables.planId)
+        queryKey: envelopeKeys.list(variables.planId),
+        exact: true,
       });
       queryClient.invalidateQueries({ queryKey: walletKeys.wallet });
       queryClient.invalidateQueries({ queryKey: walletKeys.ledger });
@@ -94,11 +97,20 @@ export const useCancelWithdrawal = () => {
 
   return useMutation({
     mutationFn: (withdrawalId: string) => cancelWithdrawal(withdrawalId),
-    onSuccess: () => {
+     onSuccess: (withdrawal) => {
       queryClient.invalidateQueries({ queryKey: withdrawalKeys.history });
-      queryClient.invalidateQueries({ queryKey: planKeys.all });
+      queryClient.invalidateQueries({ queryKey: withdrawalKeys.plans });
+      queryClient.invalidateQueries({ queryKey: planKeys.list() });
       queryClient.invalidateQueries({ queryKey: walletKeys.wallet });
       queryClient.invalidateQueries({ queryKey: walletKeys.ledger });
+      if (withdrawal?.plan_id) {
+        queryClient.invalidateQueries({ queryKey: withdrawalKeys.plan(withdrawal.plan_id) });
+        queryClient.invalidateQueries({
+          queryKey: envelopeKeys.list(withdrawal.plan_id),
+          exact: true,
+        });
+        queryClient.invalidateQueries({ queryKey: planKeys.detail(withdrawal.plan_id) });
+      }
     },
   });
 };

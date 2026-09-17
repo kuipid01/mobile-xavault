@@ -1,6 +1,7 @@
 import { formatMoney } from "@/api/money";
 import { WalletLedger } from "@/api/types";
 import { WithdrawalRecord } from "@/api/withdrawals";
+import { AppScreenHeader } from "@/components/ui/AppScreenHeader";
 import { useWalletLedger } from "@/hooks/app/wallet";
 import { useCancelWithdrawal, useWithdrawalHistory } from "@/hooks/app/withdrawals";
 import { trackEvent } from "@/lib/analytics";
@@ -8,21 +9,20 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
-  Modal,
-  Platform,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Modal,
+    Platform,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 import { COLORS, Padding, Radius } from "../../themes/colors";
-import { AppScreenHeader } from "@/components/ui/AppScreenHeader";
 
 
 
@@ -225,7 +225,10 @@ export default function TransactionsScreen() {
       <TransactionDetailModal
         item={selected}
         onClose={() => setSelected(null)}
-        onWithdrawalCancelled={() => void refetchWithdrawals()}
+        onWithdrawalCancelled={() => {
+          setSelected(null);
+          void refetchWithdrawals();
+        }}
       />
     </SafeAreaView>
   );

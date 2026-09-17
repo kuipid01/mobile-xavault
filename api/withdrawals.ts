@@ -89,7 +89,10 @@ export const previewWithdrawal = async (planId: string, payload: WithdrawalPrevi
 };
 
 export const getWithdrawal = async (withdrawalId: string) => {
-  const res = await api.get<ApiResponse<WithdrawalRecord>>(`/withdrawals/${withdrawalId}`);
+  const res = await api.get<ApiResponse<WithdrawalRecord>>(
+    `/withdrawals/${withdrawalId}`,
+    { suppressGlobalErrorModal: true } as any
+  );
   return res.data.data;
 };
 

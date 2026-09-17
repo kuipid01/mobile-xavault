@@ -1,7 +1,8 @@
 import { Bank, BankAccount, CreateBankAccountPayload, ResolveAccountResponse } from "@/api/banking";
-import { getWithdrawal, WithdrawalPreview } from "@/api/withdrawals";
 import { formatMoney, koboToNaira, nairaToKobo } from "@/api/money";
 import { Envelope, Plan } from "@/api/types";
+import { getWithdrawal, WithdrawalPreview } from "@/api/withdrawals";
+import { ErrorModal } from "@/components/ui/ErrorModal";
 import {
   useBankAccounts,
   useBanks,
@@ -10,18 +11,19 @@ import {
   useCreateBeneficiary,
   useResolveBankAccount
 } from "@/hooks/app/banking";
-import { useEnvelopes } from "@/hooks/app/envelopes";
-import { usePlans } from "@/hooks/app/plans";
+import { envelopeKeys, useEnvelopes } from "@/hooks/app/envelopes";
+import { planKeys, usePlans } from "@/hooks/app/plans";
+import { walletKeys } from "@/hooks/app/wallet";
 import {
   useForgotWithdrawalPin,
   useResetWithdrawalPin,
   useSetWithdrawalPin,
   useWithdrawalPinStatus
 } from "@/hooks/app/withdrawal-pin";
-import { usePreviewWithdrawal, useRequestWithdrawal } from "@/hooks/app/withdrawals";
+import { usePreviewWithdrawal, useRequestWithdrawal, withdrawalKeys } from "@/hooks/app/withdrawals";
 import { trackEvent } from "@/lib/analytics";
-import { ErrorModal } from "@/components/ui/ErrorModal";
 import { Ionicons } from "@expo/vector-icons";
+import { useQueryClient } from "@tanstack/react-query";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -42,8 +44,6 @@ import {
 } from "react-native";
 import Toast from "react-native-toast-message";
 
-// ─── Design tokens ────────────────────────────────────────────────────────────
-
 const COLOR = {
   forestDeep: "#063B2E",
   forestMid: "#106B4F",
@@ -63,8 +63,6 @@ const COLOR = {
   textFaint: "#9EAAA5"
 };
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 type Props = {
   visible: boolean;
   onClose: () => void;
@@ -73,14 +71,7 @@ type Props = {
 
 type WithdrawalTarget =
   | { type: "plan"; id: string; label: string; balance: number; reason: string }
-  | {
-      type: "envelope";
-      id: string;
-      label: string;
-      balance: number;
-      reason: string;
-      envelope: Envelope;
-    };
+  | { type: "envelope"; id: string; label: string; balance: number; reason: string; envelope: Envelope };
 
 type Step = "plan" | "source" | "amount" | "destination" | "review" | "pin";
 
@@ -162,6 +153,18 @@ const envelopeWithdrawalTarget = (envelope: Envelope): WithdrawalTarget | null =
 };
 
 const maskAccountNumber = (value: string) => (value.length > 4 ? `••${value.slice(-4)}` : value);
+
+const formatQuoteExpiry = (value?: string) => {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+
+  const minutes = Math.ceil((date.getTime() - Date.now()) / 60000);
+  return minutes > 0 ? `Quote expires in ${minutes} minutes` : "Quote expired";
+};
+
+const quoteAmount = (value?: number | null) =>
+  value == null ? "—" : formatMoney(value);
 
 const mapDestination = (
   account: BankAccount,
@@ -442,6 +445,19 @@ const EmptyState = ({
   </View>
 );
 
+const ErrorState = ({ onRetry }: { onRetry: () => void }) => (
+  <View style={stateStyles.emptyCard}>
+    <View style={stateStyles.emptyIcon}>
+      <Ionicons name="cloud-offline-outline" size={22} color={COLOR.amber} />
+    </View>
+    <Text style={stateStyles.emptyTitle}>Could not load this step</Text>
+    <Text style={stateStyles.emptySub}>Check your connection and try again.</Text>
+    <TouchableOpacity onPress={onRetry} style={stateStyles.retryButton} activeOpacity={0.8}>
+      <Text style={stateStyles.retryText}>Try again</Text>
+    </TouchableOpacity>
+  </View>
+);
+
 const stateStyles = StyleSheet.create({
   row: {
     flexDirection: "row",
@@ -529,6 +545,18 @@ const stateStyles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 18,
     maxWidth: 240
+  },
+  retryButton: {
+    backgroundColor: COLOR.forestLight,
+    borderRadius: 10,
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+  },
+  retryText: {
+    color: COLOR.forestDeep,
+    fontSize: 12,
+    fontWeight: "800",
   }
 });
 
@@ -722,6 +750,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
   const [withdrawalAttemptKey, setWithdrawalAttemptKey] = useState(createWithdrawalAttemptKey);
   const [processingState, setProcessingState] = useState<WithdrawalProcessingState>();
   const [withdrawalReceipt, setWithdrawalReceipt] = useState<WithdrawalReceipt | null>(null);
+  const [pinError, setPinError] = useState<string | null>(null);
   const [withdrawalQuote, setWithdrawalQuote] = useState<WithdrawalPreview>();
   const [modalError, setModalError] = useState<{
     title: string;
@@ -729,6 +758,26 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
     supportReference?: string;
   } | null>(null);
   const withdrawalPollSession = useRef(0);
+  const confirmingRef = useRef(false);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [pollTimedOut, setPollTimedOut] = useState(false);
+  const queryClient = useQueryClient();
+
+  const refreshWithdrawalData = async (planId?: string) => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: withdrawalKeys.history }),
+      queryClient.invalidateQueries({ queryKey: walletKeys.wallet }),
+      queryClient.invalidateQueries({ queryKey: walletKeys.ledger }),
+      queryClient.invalidateQueries({ queryKey: planKeys.list() }),
+      ...(planId
+        ? [
+            queryClient.invalidateQueries({ queryKey: planKeys.detail(planId) }),
+            queryClient.invalidateQueries({ queryKey: envelopeKeys.list(planId), exact: true }),
+            queryClient.invalidateQueries({ queryKey: withdrawalKeys.plan(planId) }),
+          ]
+        : []),
+    ]);
+  };
 
   const showError = (title: string, error: any, fallback: string) => {
     const message =
@@ -746,18 +795,24 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
     });
   };
 
-  const { data: plansData, isLoading: isPlansLoading, refetch: refetchPlans } = usePlans();
+  const {
+    data: plansData,
+    isLoading: isPlansLoading,
+    error: plansError,
+    refetch: refetchPlans,
+  } = usePlans();
   const plans = useMemo(() => plansData?.items || [], [plansData?.items]);
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
 
   const {
     data: envelopes = [],
     isLoading: isEnvelopesLoading,
+    error: envelopesError,
     refetch: refetchEnvelopes
   } = useEnvelopes(selectedPlanId);
-  const { data: banks = [], isLoading: isBanksLoading } = useBanks();
-  const { data: bankAccounts = [], isLoading: isAccountsLoading } = useBankAccounts();
-  const { data: beneficiaries = [], isLoading: isBeneficiariesLoading } = useBeneficiaries();
+  const { data: banks = [], isLoading: isBanksLoading, error: banksError, refetch: refetchBanks } = useBanks();
+  const { data: bankAccounts = [], isLoading: isAccountsLoading, error: accountsError, refetch: refetchAccounts } = useBankAccounts();
+  const { data: beneficiaries = [], isLoading: isBeneficiariesLoading, error: beneficiariesError, refetch: refetchBeneficiaries } = useBeneficiaries();
   const { mutateAsync: resolveAccount, isPending: isResolvingAccount } = useResolveBankAccount();
   const { mutateAsync: createBankAccount, isPending: isCreatingAccount } = useCreateBankAccount();
   const { mutateAsync: createBeneficiary, isPending: isCreatingBeneficiary } =
@@ -804,6 +859,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
     pinMode === "enter" &&
     pinIsValid &&
     !isPreviewing &&
+    !isConfirming &&
     !processingState;
 
   useEffect(() => {
@@ -835,10 +891,14 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
     setSelectedDestinationKey(undefined);
     setWithdrawalPin("");
     setNewWithdrawalPin("");
+    setPinError(null);
     setResetOtp("");
     setPinMode("enter");
     setWithdrawalAttemptKey(createWithdrawalAttemptKey());
     setProcessingState(undefined);
+    setPollTimedOut(false);
+    confirmingRef.current = false;
+    setIsConfirming(false);
     setWithdrawalReceipt(null);
     setModalError(null);
     onClose();
@@ -983,8 +1043,8 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
       if (!amountIsValid) {
         showBottomToast({
           type: "error",
-          text1: "Invalid amount",
-          text2: `Max: ${formatMoney(selectedTarget?.balance || 0)}`
+          text1: "Invalid withdrawal amount",
+          text2: `You can withdraw up to ${formatMoney(selectedTarget?.balance || 0)} from this plan.`
         });
         return;
       }
@@ -1031,10 +1091,24 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
   };
 
   const handleConfirm = async () => {
-    if (!canConfirm || !selectedPlan || !selectedTarget || !selectedDestination) return;
+    if (
+      confirmingRef.current ||
+      !canConfirm ||
+      !selectedPlan ||
+      !selectedTarget ||
+      !selectedDestination
+    ) return;
+
+    confirmingRef.current = true;
+    setIsConfirming(true);
+    setPollTimedOut(false);
 
     const previewPayload = buildPreviewPayload();
-    if (!previewPayload) return;
+    if (!previewPayload) {
+      confirmingRef.current = false;
+      setIsConfirming(false);
+      return;
+    }
     let confirmedQuote = withdrawalQuote;
     try {
       const latest = await previewWithdrawal({
@@ -1047,12 +1121,16 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
           title: "Balance changed",
           message: latest?.validation_errors?.[0] || "Review the available amount and try again."
         });
+        confirmingRef.current = false;
+        setIsConfirming(false);
         return;
       }
       setWithdrawalQuote(latest);
       confirmedQuote = latest;
     } catch (error: any) {
       showError("Could not verify this balance", error, "Please try again.");
+      confirmingRef.current = false;
+      setIsConfirming(false);
       return;
     }
 
@@ -1063,6 +1141,8 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
         setWithdrawalPin(newWithdrawalPin);
       } catch (error: any) {
         showError("Could not save PIN", error, "Please try again.");
+        confirmingRef.current = false;
+        setIsConfirming(false);
         return;
       }
     }
@@ -1110,17 +1190,34 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
           status: response?.withdrawal?.status || "paid"
         });
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        await onCompleted?.();
+        await refreshWithdrawalData(selectedPlan.id);
+        try {
+          await onCompleted?.();
+        } catch {
+          // The withdrawal is complete even if a secondary UI refresh fails.
+        }
+        confirmingRef.current = false;
+        setIsConfirming(false);
         return;
       }
 
       const withdrawalId = response?.withdrawal?.id;
-      if (!withdrawalId || initialState === "failed") return;
+      if (!withdrawalId || initialState === "failed") {
+        await refreshWithdrawalData(selectedPlan.id);
+        confirmingRef.current = false;
+        setIsConfirming(false);
+        return;
+      }
       const pollSession = ++withdrawalPollSession.current;
+      let reachedTerminal = false;
 
       for (let attempt = 0; attempt < WITHDRAWAL_POLL_ATTEMPTS; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, WITHDRAWAL_POLL_INTERVAL_MS));
-        if (withdrawalPollSession.current !== pollSession) return;
+        if (withdrawalPollSession.current !== pollSession) {
+          confirmingRef.current = false;
+          setIsConfirming(false);
+          return;
+        }
         let current;
         try {
           current = await getWithdrawal(withdrawalId);
@@ -1135,26 +1232,46 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
         setProcessingState(currentState);
 
         if (currentState === "completed") {
+          reachedTerminal = true;
           trackEvent("withdrawal_completed", {
             amount: current?.amount || amountInKobo,
             reference: current?.reference || reference,
             status: current?.status || "paid"
           });
           void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          await onCompleted?.();
+          await refreshWithdrawalData(selectedPlan.id);
+          try {
+            await onCompleted?.();
+          } catch {
+            // The withdrawal is complete even if a secondary UI refresh fails.
+          }
+          confirmingRef.current = false;
+          setIsConfirming(false);
           break;
         }
         if (currentState === "failed") {
+          reachedTerminal = true;
           trackEvent("withdrawal_failed", {
             amount: current?.amount || amountInKobo,
             reference: current?.reference || reference,
             status: current?.status || "failed"
           });
           void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          await refreshWithdrawalData(selectedPlan.id);
+          confirmingRef.current = false;
+          setIsConfirming(false);
           break;
         }
       }
+      if (!reachedTerminal) {
+        setPollTimedOut(true);
+        await refreshWithdrawalData(selectedPlan.id);
+      }
+      confirmingRef.current = false;
+      setIsConfirming(false);
     } catch (error: any) {
+      confirmingRef.current = false;
+      setIsConfirming(false);
       setProcessingState(undefined);
       setWithdrawalAttemptKey(createWithdrawalAttemptKey());
       trackEvent("withdrawal_failed", {
@@ -1162,8 +1279,21 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
         error: error?.response?.data?.message || error?.message || "unknown"
       });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setWithdrawalPin("");
-      showError("Withdrawal failed", error, "Please try again.");
+      const errorMessage = String(
+        error?.response?.data?.message || error?.response?.data?.error?.message || ""
+      ).toLowerCase();
+      const isPinError =
+        error?.response?.status === 401 ||
+        error?.response?.status === 403 ||
+        errorMessage.includes("pin");
+
+      if (isPinError) {
+        setWithdrawalPin("");
+        setPinError("Incorrect PIN. Enter your 4-digit withdrawal PIN and try again.");
+      } else {
+        setWithdrawalPin("");
+        showError("Withdrawal failed", error, "Please try again.");
+      }
     }
   };
 
@@ -1174,7 +1304,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
     (step === "amount" && !amountIsValid) ||
     (step === "destination" && !selectedDestination) ||
     (step === "review" && (!selectedDestination || !amountIsValid)) ||
-    (step === "pin" && (!canConfirm || isWithdrawing || isSettingPin));
+    (step === "pin" && (!canConfirm || isWithdrawing || isSettingPin || isConfirming));
 
   const isLastStep = step === "pin";
 
@@ -1217,8 +1347,10 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
               <StepPlan
                 plans={plans}
                 isLoading={isPlansLoading}
+                error={plansError}
                 selectedPlanId={selectedPlanId}
                 onSelect={setSelectedPlanId}
+                onRetry={() => void refetchPlans()}
               />
             )}
 
@@ -1226,9 +1358,11 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
               <StepSource
                 targetOptions={targetOptions}
                 isLoading={isEnvelopesLoading}
+                error={envelopesError}
                 selectedTargetId={selectedTargetId}
                 onSelect={(id) => { setSelectedTargetId(id); setWithdrawalQuote(undefined); }}
                 currency={selectedPlan?.currency}
+                onRetry={() => void refetchEnvelopes()}
               />
             )}
 
@@ -1258,6 +1392,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
                 destinationOptions={destinationOptions}
                 selectedDestinationKey={selectedDestinationKey}
                 isLoading={isBanksLoading || isAccountsLoading || isBeneficiariesLoading}
+                error={banksError || accountsError || beneficiariesError}
                 isResolving={isResolvingAccount}
                 isSaving={isCreatingAccount || isCreatingBeneficiary}
                 onSelect={setSelectedDestinationKey}
@@ -1274,16 +1409,16 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
                     setSelectedDestinationKey(`beneficiary:${account.id}`);
                   }
                 }}
+                onRetry={() => {
+                  void Promise.all([refetchBanks(), refetchAccounts(), refetchBeneficiaries()]);
+                }}
               />
             )}
 
             {step === "review" && (
               <StepReview
-                selectedPlan={selectedPlan}
                 selectedTarget={selectedTarget}
                 selectedDestination={selectedDestination}
-                amountInKobo={amountInKobo}
-                withdrawAll={withdrawAll}
                 quote={withdrawalQuote}
               />
             )}
@@ -1301,11 +1436,12 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
                 pinMode={pinMode}
                 withdrawalPin={withdrawalPin}
                 newWithdrawalPin={newWithdrawalPin}
+                pinError={pinError}
                 resetOtp={resetOtp}
                 isSendingPinOtp={isSendingPinOtp}
                 isResettingPin={isResettingPin}
-                onChangeWithdrawalPin={setWithdrawalPin}
-                onChangeNewWithdrawalPin={setNewWithdrawalPin}
+                onChangeWithdrawalPin={(value) => { setPinError(null); setWithdrawalPin(value); }}
+                onChangeNewWithdrawalPin={(value) => { setPinError(null); setNewWithdrawalPin(value); }}
                 onChangeResetOtp={setResetOtp}
                 onForgotPin={async () => {
                   try {
@@ -1383,6 +1519,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
             state={processingState}
             amount={formatMoney(amountInKobo, selectedPlan?.currency)}
             receipt={withdrawalReceipt}
+            timedOut={pollTimedOut}
             onDone={resetAndClose}
           />
         )}
@@ -1404,18 +1541,24 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
 const StepPlan = ({
   plans,
   isLoading,
+  error,
   selectedPlanId,
-  onSelect
+  onSelect,
+  onRetry,
 }: {
   plans: Plan[];
   isLoading: boolean;
+  error: unknown;
   selectedPlanId?: string;
   onSelect: (id: string) => void;
+  onRetry: () => void;
 }) => (
   <View style={stepStyles.wrap}>
     <StepHeading title="Which plan?" sub="Choose the plan you want to withdraw from." />
     {isLoading ? (
       <LoadingState text="Loading plans…" />
+    ) : error ? (
+      <ErrorState onRetry={onRetry} />
     ) : plans.length === 0 ? (
       <EmptyState icon="folder-open-outline" title="No plans found" />
     ) : (
@@ -1440,20 +1583,26 @@ const StepPlan = ({
 const StepSource = ({
   targetOptions,
   isLoading,
+  error,
   selectedTargetId,
   onSelect,
-  currency
+  currency,
+  onRetry,
 }: {
   targetOptions: WithdrawalTarget[];
   isLoading: boolean;
+  error: unknown;
   selectedTargetId?: string;
   onSelect: (id: string) => void;
   currency?: string;
+  onRetry: () => void;
 }) => (
   <View style={stepStyles.wrap}>
     <StepHeading title="Which balance?" sub="Only unlocked or matured balances can be withdrawn." />
     {isLoading ? (
       <LoadingState text="Checking sources…" />
+    ) : error ? (
+      <ErrorState onRetry={onRetry} />
     ) : targetOptions.length === 0 ? (
       <EmptyState
         icon="lock-closed-outline"
@@ -1586,18 +1735,21 @@ const StepDestination = ({
   destinationOptions,
   selectedDestinationKey,
   isLoading,
+  error,
   isResolving,
   isSaving,
   onSelect,
   onResolve,
   onCreateAccount,
-  onCreateBeneficiary
+  onCreateBeneficiary,
+  onRetry,
 }: {
   banks: Bank[];
   accounts: BankAccount[];
   destinationOptions: DestinationSelection[];
   selectedDestinationKey?: string;
   isLoading: boolean;
+  error: unknown;
   isResolving: boolean;
   isSaving: boolean;
   onSelect: (key: string) => void;
@@ -1607,6 +1759,7 @@ const StepDestination = ({
   }) => Promise<ResolveAccountResponse | undefined>;
   onCreateAccount: (payload: CreateBankAccountPayload) => Promise<void>;
   onCreateBeneficiary: (payload: CreateBankAccountPayload) => Promise<void>;
+  onRetry: () => void;
 }) => {
   const [showAdd, setShowAdd] = useState(false);
   const [saveAs, setSaveAs] = useState<"account" | "beneficiary">("account");
@@ -1685,7 +1838,9 @@ const StepDestination = ({
 
       {isLoading && <LoadingState text="Loading accounts…" />}
 
-      {!isLoading && destinationOptions.length === 0 && !showAdd && (
+      {!isLoading && Boolean(error) && <ErrorState onRetry={onRetry} />}
+
+      {!isLoading && !error && destinationOptions.length === 0 && !showAdd && (
         <EmptyState
           icon="card-outline"
           title="No saved accounts"
@@ -1693,7 +1848,7 @@ const StepDestination = ({
         />
       )}
 
-      {destinationOptions.length > 0 && (
+      {!error && destinationOptions.length > 0 && (
         <View style={stepStyles.list}>
           {/* Search */}
           <View style={destStyles.searchRow}>
@@ -1878,77 +2033,57 @@ const StepDestination = ({
 // ─── Step 5: PIN + confirm (merged) ──────────────────────────────────────────
 
 const StepReview = ({
-  selectedPlan,
   selectedTarget,
   selectedDestination,
-  amountInKobo,
-  withdrawAll,
-  quote
+  quote,
 }: {
-  selectedPlan?: Plan;
   selectedTarget?: WithdrawalTarget;
   selectedDestination?: DestinationSelection;
-  amountInKobo: number;
-  withdrawAll: boolean;
   quote?: WithdrawalPreview;
 }) => (
   <View style={stepStyles.wrap}>
-    <StepHeading
-      title="Review withdrawal"
-      sub="Check every detail before you approve this transfer."
-    />
-
-    <SummaryCard
-      plan={selectedPlan}
-      target={selectedTarget}
-      destination={selectedDestination}
-      amountInKobo={amountInKobo}
-      withdrawAll={withdrawAll}
-    />
-
-    <View style={reviewStyles.card}>
-      <ReviewRow label="Recipient gets" value={formatMoney(quote?.recipient_amount || amountInKobo)} />
-      <ReviewRow label="Provider fee" value={formatMoney(quote?.provider_transfer_fee || 0)} />
-      {quote?.government_levy ? <ReviewRow label="Government levy" value={formatMoney(quote.government_levy)} /> : null}
-      {quote?.allowance_applied ? <ReviewRow label="Covered by Xavault" value={`-${formatMoney(quote.xavault_subsidy)}`} /> : null}
-      <ReviewRow label="Total deducted" value={formatMoney(quote?.total_deduction || amountInKobo)} />
-      <ReviewRow
-        label="From"
-        value={selectedTarget?.label || "Selected source"}
-        sub={
-          selectedTarget?.type === "envelope" ? "Envelope unboxed balance" : "Plan unboxed balance"
-        }
-      />
-      <ReviewRow
-        label="To"
-        value={selectedDestination?.label || "Selected destination"}
-        sub={
-          selectedDestination
-            ? `${selectedDestination.bank} | ${maskAccountNumber(
-                selectedDestination.accountNumber
-              )}`
-            : undefined
-        }
-      />
-      <ReviewRow
-        label="Timing"
-        value="Processing starts immediately"
-        sub="Final status is confirmed by Paystack."
-      />
-      <ReviewRow
-        label="Reference"
-        value="Generated after submission"
-        sub="Use the reference for support if needed."
-        last
-      />
+    <StepHeading title="Review withdrawal" sub="Check every detail before you approve this transfer." />
+    <View style={reviewStyles.hero}>
+      <Text style={reviewStyles.heroLabel}>You&apos;ll receive</Text>
+      <Text style={reviewStyles.heroAmount}>{quoteAmount(quote?.recipient_amount)}</Text>
+      <Text style={reviewStyles.heroMeta}>{quoteAmount(quote?.requested_amount)} withdrawal · {quote ? formatMoney(quote.provider_transfer_fee + quote.government_levy) : "—"} fee</Text>
     </View>
-
-    <View style={stepStyles.notice}>
-      <Ionicons name="alert-circle-outline" size={14} color={COLOR.amber} />
-      <Text style={stepStyles.noticeText}>
-        Once submitted, this withdrawal cannot be reversed from the app.
-      </Text>
+    <View style={reviewStyles.contextGroup}>
+      <ReviewContextRow label="FROM" value={selectedTarget?.label || "Selected source"} sub={`${quoteAmount(selectedTarget?.balance)} available${quote ? ` · ${quoteAmount(quote.remaining_balance)} remaining` : ""}`} icon="wallet-outline" />
+      <ReviewContextRow label="TO" value={selectedDestination?.bank || "Selected destination"} sub={selectedDestination ? maskAccountNumber(selectedDestination.accountNumber) : undefined} icon="paper-plane-outline" last />
     </View>
+    <View style={reviewStyles.breakdown}>
+      <ReviewBreakdownRow label="Withdrawal amount" value={quoteAmount(quote?.requested_amount)} />
+      <ReviewBreakdownRow label="Fee" value={quote ? formatMoney(quote.provider_transfer_fee + quote.government_levy) : "—"} sub={quote?.allowance_applied && quote.xavault_subsidy > 0 ? "Covered by XAVAULT" : undefined} />
+      <View style={reviewStyles.breakdownDivider} />
+      <ReviewBreakdownRow label="You&apos;ll receive" value={quoteAmount(quote?.recipient_amount)} strong />
+    </View>
+    <View style={reviewStyles.explanation}>
+      <Ionicons name="information-circle-outline" size={15} color={COLOR.forestMid} />
+      <Text style={reviewStyles.explanationText}>Fee is deducted from your withdrawal amount.</Text>
+    </View>
+    {quote?.expires_at ? <Text style={reviewStyles.expiryNotice}>{formatQuoteExpiry(quote.expires_at)}</Text> : null}
+  </View>
+);
+
+const ReviewContextRow = ({ label, value, sub, icon, last }: { label: string; value: string; sub?: string; icon: keyof typeof Ionicons.glyphMap; last?: boolean }) => (
+  <View style={[reviewStyles.contextRow, last && reviewStyles.contextRowLast]}>
+    <View style={reviewStyles.contextIcon}><Ionicons name={icon} size={15} color={COLOR.forestMid} /></View>
+    <View style={reviewStyles.contextCopy}>
+      <Text style={reviewStyles.contextLabel}>{label}</Text>
+      <Text style={reviewStyles.contextValue} numberOfLines={1}>{value}</Text>
+      {sub ? <Text style={reviewStyles.contextSub}>{sub}</Text> : null}
+    </View>
+  </View>
+);
+
+const ReviewBreakdownRow = ({ label, value, sub, strong }: { label: string; value: string; sub?: string; strong?: boolean }) => (
+  <View style={reviewStyles.breakdownRow}>
+    <View style={reviewStyles.breakdownCopy}>
+      <Text style={[reviewStyles.breakdownLabel, strong && reviewStyles.breakdownLabelStrong]}>{label}</Text>
+      {sub ? <Text style={reviewStyles.breakdownSub}>{sub}</Text> : null}
+    </View>
+    <Text style={[reviewStyles.breakdownValue, strong && reviewStyles.breakdownValueStrong]}>{value}</Text>
   </View>
 );
 
@@ -1973,6 +2108,128 @@ const ReviewRow = ({
 );
 
 const reviewStyles = StyleSheet.create({
+  hero: {
+    paddingBottom: 22,
+    paddingTop: 4,
+  },
+  heroLabel: {
+    color: COLOR.textMuted,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  heroAmount: {
+    color: COLOR.forestDeep,
+    fontSize: 38,
+    fontWeight: "900",
+    letterSpacing: -1,
+    marginTop: 3,
+  },
+  heroMeta: {
+    color: COLOR.textMuted,
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 5,
+  },
+  contextGroup: {
+    borderBottomColor: COLOR.border,
+    borderBottomWidth: 1,
+    borderTopColor: COLOR.border,
+    borderTopWidth: 1,
+    marginBottom: 16,
+  },
+  contextRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    paddingVertical: 13,
+    borderBottomColor: "#F0F4F2",
+    borderBottomWidth: 1,
+  },
+  contextRowLast: {
+    borderBottomWidth: 0,
+  },
+  contextIcon: {
+    alignItems: "center",
+    backgroundColor: COLOR.forestLight,
+    borderRadius: 10,
+    height: 30,
+    justifyContent: "center",
+    width: 30,
+  },
+  contextCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  contextLabel: {
+    color: COLOR.textFaint,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 0.7,
+  },
+  contextValue: {
+    color: COLOR.textBody,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  contextSub: {
+    color: COLOR.textMuted,
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  breakdown: {
+    gap: 13,
+    marginBottom: 14,
+  },
+  breakdownRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  breakdownCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  breakdownLabel: {
+    color: COLOR.textMuted,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  breakdownLabelStrong: {
+    color: COLOR.forestDeep,
+    fontWeight: "900",
+  },
+  breakdownSub: {
+    color: COLOR.forestMid,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  breakdownValue: {
+    color: COLOR.textBody,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  breakdownValueStrong: {
+    color: COLOR.forestDeep,
+    fontSize: 18,
+  },
+  breakdownDivider: {
+    borderTopColor: COLOR.border,
+    borderTopWidth: 1,
+    borderStyle: "dashed",
+  },
+  explanation: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 8,
+  },
+  explanationText: {
+    color: COLOR.textMuted,
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "600",
+  },
+
   card: {
     backgroundColor: COLOR.surface,
     borderColor: COLOR.border,
@@ -2014,21 +2271,38 @@ const reviewStyles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
     lineHeight: 16
+  },
+  subsidyBadge: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: COLOR.forestLight,
+    borderRadius: 999,
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  subsidyText: {
+    color: COLOR.forestMid,
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  expiryNotice: {
+    color: COLOR.textMuted,
+    fontSize: 11,
+    fontWeight: "700",
+    marginBottom: 10,
   }
 });
 
 const StepPin = ({
-  selectedPlan,
   selectedTarget,
   selectedDestination,
-  amountInKobo,
-  withdrawAll,
   quote,
   hasWithdrawalPin,
-  isPinStatusLoading,
   pinMode,
   withdrawalPin,
-  newWithdrawalPin,
   resetOtp,
   isSendingPinOtp,
   isResettingPin,
@@ -2037,7 +2311,13 @@ const StepPin = ({
   onChangeResetOtp,
   onForgotPin,
   onResetPin,
-  onCancelReset
+  onCancelReset,
+  pinError,
+  amountInKobo,
+  withdrawAll,
+isPinStatusLoading,
+newWithdrawalPin,
+selectedPlan
 }: {
   selectedPlan?: Plan;
   selectedTarget?: WithdrawalTarget;
@@ -2050,9 +2330,11 @@ const StepPin = ({
   pinMode: "enter" | "reset";
   withdrawalPin: string;
   newWithdrawalPin: string;
+  pinError: string | null;
   resetOtp: string;
   isSendingPinOtp: boolean;
   isResettingPin: boolean;
+  
   onChangeWithdrawalPin: (v: string) => void;
   onChangeNewWithdrawalPin: (v: string) => void;
   onChangeResetOtp: (v: string) => void;
@@ -2082,10 +2364,22 @@ const StepPin = ({
       />
 
       <View style={reviewStyles.card}>
-        <ReviewRow label="Recipient gets" value={formatMoney(quote?.recipient_amount || amountInKobo)} />
-        <ReviewRow label="Fees you pay" value={formatMoney(quote?.user_fee || 0)} />
-        <ReviewRow label="Total deducted" value={formatMoney(quote?.total_deduction || amountInKobo)} last />
+        <ReviewRow label="Withdrawal amount" value={quoteAmount(quote?.requested_amount)} />
+        <ReviewRow label="You’ll receive" value={quoteAmount(quote?.recipient_amount)} />
+        <ReviewRow
+          label="Total fee"
+          value={quote ? formatMoney(quote.provider_transfer_fee + quote.government_levy) : "—"}
+        />
+        <ReviewRow label="Total deducted" value={quoteAmount(quote?.total_deduction)} />
+        <ReviewRow label="Remaining balance" value={quoteAmount(quote?.remaining_balance)} last />
       </View>
+
+      {quote?.allowance_applied && quote.xavault_subsidy > 0 ? (
+        <View style={reviewStyles.subsidyBadge}>
+          <Ionicons name="checkmark-circle-outline" size={15} color={COLOR.forestMid} />
+          <Text style={reviewStyles.subsidyText}>Fee covered by XAVAULT</Text>
+        </View>
+      ) : null}
 
       {/* PIN card */}
       <View style={pinStyles.card}>
@@ -2164,6 +2458,12 @@ const StepPin = ({
                   : onChangeNewWithdrawalPin(cleanPin(v))
               }
             />
+            {pinError ? (
+              <View style={pinStyles.inlineError}>
+                <Ionicons name="alert-circle-outline" size={15} color="#B42318" />
+                <Text style={pinStyles.inlineErrorText}>{pinError}</Text>
+              </View>
+            ) : null}
             {hasWithdrawalPin && (
               <TouchableOpacity
                 activeOpacity={0.8}
@@ -2184,7 +2484,7 @@ const StepPin = ({
       <View style={stepStyles.notice}>
         <Ionicons name="alert-circle-outline" size={14} color={COLOR.amber} />
         <Text style={stepStyles.noticeText}>
-          Withdrawals are processed immediately and cannot be reversed.
+          Withdraw {quoteAmount(quote?.requested_amount)}. You’ll receive approximately {quoteAmount(quote?.recipient_amount)} after a {quote ? formatMoney(quote.provider_transfer_fee + quote.government_levy) : "—"} fee.
         </Text>
       </View>
     </View>
@@ -2255,11 +2555,13 @@ const ProcessingOverlay = ({
   state,
   amount,
   receipt,
+  timedOut,
   onDone
 }: {
   state: WithdrawalProcessingState;
   amount: string;
   receipt: WithdrawalReceipt | null;
+  timedOut: boolean;
   onDone: () => void;
 }) => {
   const isSubmitting = state === "submitting";
@@ -2303,7 +2605,9 @@ const ProcessingOverlay = ({
             ? "Withdrawal completed"
             : isFailed
               ? "Withdrawal failed"
-              : "Transfer processing"}
+              : timedOut
+                ? "Still processing"
+                : "Transfer processing"}
       </Text>
       <Text style={overlayStyles.sub}>
         {isSubmitting
@@ -2312,7 +2616,9 @@ const ProcessingOverlay = ({
             ? `${amount} was successfully transferred.`
             : isFailed
               ? "The transfer was not completed. The funds remain in your plan or envelope."
-              : `${amount} was accepted and is awaiting confirmation from Paystack.`}
+              : timedOut
+                ? `${amount} was accepted and is still awaiting confirmation. You can close this screen and check Transactions later.`
+                : `${amount} was accepted and is awaiting confirmation from Paystack.`}
       </Text>
       {!isSubmitting && receipt ? (
         <View style={overlayStyles.receiptBox}>
@@ -2737,6 +3043,17 @@ const pinStyles = StyleSheet.create({
   form: {
     gap: 12
   },
+  inlineError: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+  inlineErrorText: {
+    color: "#B42318",
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "700",
+  },
   dots: {
     flexDirection: "row",
     justifyContent: "center",
@@ -2811,6 +3128,18 @@ const pinStyles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.6,
     textAlign: "center"
+  },
+  retryButton: {
+    backgroundColor: COLOR.forestLight,
+    borderRadius: 10,
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+  },
+  retryText: {
+    color: COLOR.forestDeep,
+    fontSize: 12,
+    fontWeight: "800",
   },
   actions: {
     flexDirection: "row",
