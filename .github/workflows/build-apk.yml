@@ -23,12 +23,29 @@ jobs:
         uses: actions/checkout@v5
 
       # ---------------------------------------------
+      # Free disk space FIRST
+      # ---------------------------------------------
+      - name: Free disk space
+        run: |
+          echo "Disk space before cleanup:"
+          df -h
+
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /usr/local/share/powershell || true
+          sudo docker system prune -af || true
+
+          echo "Disk space after cleanup:"
+          df -h
+
+      # ---------------------------------------------
       # Node 22
       # ---------------------------------------------
       - name: Setup Node 22
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: yarn
 
       # ---------------------------------------------
       # Enable Yarn
@@ -58,22 +75,26 @@ jobs:
       # ---------------------------------------------
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: "14742923"
+          accept-android-sdk-licenses: true
+          packages: ""
 
       # ---------------------------------------------
-      # Free disk space
+      # Show Android SDK information
       # ---------------------------------------------
-      - name: Free disk space
+      - name: Verify Android SDK
         run: |
-          echo "Disk space before cleanup:"
-          df -h
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
-          sudo rm -rf /usr/share/dotnet || true
-          sudo rm -rf /opt/ghc || true
-          sudo rm -rf /usr/local/share/powershell || true
-          sudo docker system prune -af || true
+          echo ""
+          echo "SDK Manager:"
+          sdkmanager --version
 
-          echo "Disk space after cleanup:"
-          df -h
+          echo ""
+          echo "Installed SDK packages:"
+          sdkmanager --list_installed | head -100
 
       # ---------------------------------------------
       # Expo + EAS
@@ -106,7 +127,7 @@ jobs:
           EOF
 
       # ---------------------------------------------
-      # Verify environment
+      # Verify build environment
       # ---------------------------------------------
       - name: Verify build environment
         run: |
@@ -121,6 +142,10 @@ jobs:
           echo "=============================="
           echo "Java"
           java -version
+
+          echo "=============================="
+          echo "Android SDK"
+          sdkmanager --version
 
           echo "=============================="
           echo "Gradle"
@@ -159,7 +184,7 @@ jobs:
           df -h
 
       # ---------------------------------------------
-      # Upload APK
+      # Upload APK Artifact
       # ---------------------------------------------
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
