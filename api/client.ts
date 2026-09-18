@@ -26,7 +26,6 @@ if (!__DEV__ && parsedBackendURL.protocol !== "https:") {
 const BACKEND_URL = configuredBackendURL.endsWith("/")
   ? configuredBackendURL
   : `${configuredBackendURL}/`;
-console.warn("BACKEND URKKDKDLKDJKEJKDJKDJDFHJFJ ODL", BACKEND_URL)
 export const ACCESS_TOKEN_KEY = "access_token";
 export const REFRESH_TOKEN_KEY = "refresh_token";
 const BIOMETRIC_LOGIN_KEY = "biometric_enabled";
@@ -259,6 +258,11 @@ api.interceptors.response.use(
       log.error(`API error [${status}] on ${url}:`, error.message);
     }
 
+    // When the session is dead (no refresh token / refresh rejected),
+    // triggerLogout fires and the auth redirect owns the UX. Suppress the
+    // global error modal for that request so a 401 storm can't stack modals.
+    let sessionTerminated = false;
+
     if (status === 401 && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true;
       log.info(`401 on ${url} — attempting token refresh and retry`);
@@ -273,14 +277,20 @@ api.interceptors.response.use(
         }
 
         // refreshAuthTokens already called triggerLogout + clearAuthTokens
+        sessionTerminated = true;
         log.warn("Refresh returned null — session terminated, not retrying");
       } catch (refreshErr) {
         log.error("Refresh failed during 401 recovery:", refreshErr);
         // triggerLogout already called inside refreshAuthTokens on throw
+        sessionTerminated = true;
       }
     }
 
-    if (!originalRequest?.suppressGlobalErrorModal && !axios.isCancel(error)) {
+    if (
+      !sessionTerminated &&
+      !originalRequest?.suppressGlobalErrorModal &&
+      !axios.isCancel(error)
+    ) {
       publishGlobalError(apiErrorPayload(error));
     }
 

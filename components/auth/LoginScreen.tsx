@@ -58,13 +58,25 @@ const LoginScreen = () => {
     checkMail();
   }, []);
 
-  const handleSwitchAccount = async () => {
-    await logout();
-    await AsyncStorage.multiRemove(["name", "email"]);
-    setRememberedName("");
-    setEmail("");
-    setTitle("Welcome back");
+  const isSwitchingRef = useRef(false);
+  const handleSwitchAccount = () => {
+    // One tap = one switch. Rapid taps can't stack parallel logout chains.
+    if (isSwitchingRef.current) return;
+    isSwitchingRef.current = true;
+
+    // Redirect FIRST — instant feedback, nothing awaits the network.
     router.replace("/(auth)/initial");
+
+    // Local teardown + server revoke happen in the background. logout() itself
+    // no longer touches the network before state is cleared.
+    void (async () => {
+      try {
+        await logout();
+        await AsyncStorage.multiRemove(["name", "email"]);
+      } catch (err) {
+        console.warn("[LoginScreen] switch-account cleanup failed:", err);
+      }
+    })();
   };
 
   useEffect(() => {

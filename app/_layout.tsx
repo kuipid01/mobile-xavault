@@ -38,14 +38,34 @@ import {
 import { SubscriptionVerificationProvider } from "../hooks/verify-sub";
 import { getBiometricAvailability } from "../lib/biometric-auth";
 
-const DEBUG_ROOT_LAYOUT = true;
+// Logging every render/route change is dev-only; in production this is
+// measurable console overhead on the hottest component in the app.
+const DEBUG_ROOT_LAYOUT = __DEV__;
 
 const debugLog = (...args: unknown[]) => {
   if (!DEBUG_ROOT_LAYOUT) return;
   console.log("[RootLayout]", ...args);
 };
 
-const queryClient = new QueryClient();
+// Sensible defaults so one failed request can't freeze a screen for minutes.
+// Without these, react-query retries 3× with exponential backoff: a 15s axios
+// timeout × 4 attempts + backoff ≈ 2 minutes of apparent "lag" on a failing
+// screen, and staleTime 0 re-fetched + flashed spinners on every mount.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      retryDelay: 500,
+      staleTime: 30_000,
+      gcTime: 5 * 60_000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: true,
+    },
+    mutations: {
+      retry: 0,
+    },
+  },
+});
 
 type ComponentWithDefaultProps = {
   defaultProps?: {

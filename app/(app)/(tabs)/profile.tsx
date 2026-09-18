@@ -7,7 +7,14 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { jwtDecode } from "jwt-decode";
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSubscriptionPrompt } from "../../../hooks/use-subscription-prompt";
 
@@ -126,9 +133,26 @@ export default function Profile() {
   const planCode = activeSubscription?.plan?.Code || "free";
   const plan = planVisuals[planCode] || planVisuals.free;
 
-  const handleLogout = async () => {
-    await logout();
-    router.replace("/(auth)/login");
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogout = () => {
+    // One tap = one logout. Rapid taps can't stack parallel teardown chains
+    // (the same disease Switch Account had).
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+
+    void (async () => {
+      try {
+        // Await the local teardown BEFORE navigating so the login screen never
+        // mounts while the biometric key still exists (it would auto-unlock
+        // straight back into the app). logout() is instant-local; the server
+        // revoke inside it is already fire-and-forget.
+        await logout();
+        router.replace("/(auth)/login");
+      } finally {
+        setIsLoggingOut(false);
+      }
+    })();
   };
 
   return (
@@ -268,9 +292,20 @@ export default function Profile() {
           />
         </View>
 
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
-          <Ionicons name="log-out-outline" size={17} color={C.danger} />
-          <Text style={styles.logoutText}>Log out</Text>
+        <TouchableOpacity
+          style={styles.logoutBtn}
+          onPress={handleLogout}
+          activeOpacity={0.7}
+          disabled={isLoggingOut}
+        >
+          {isLoggingOut ? (
+            <ActivityIndicator size="small" color={C.danger} />
+          ) : (
+            <Ionicons name="log-out-outline" size={17} color={C.danger} />
+          )}
+          <Text style={styles.logoutText}>
+            {isLoggingOut ? "Logging out..." : "Log out"}
+          </Text>
         </TouchableOpacity>
 
         <View style={styles.versionRow}>

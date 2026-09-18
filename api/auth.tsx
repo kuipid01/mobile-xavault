@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
+import { router } from "expo-router";
 import React, {
   createContext,
   useCallback,
@@ -217,18 +218,43 @@ export const resetPassword = async (data: ResetPasswordPayload) => {
 
 export const logoutUser = async (): Promise<void> => {
   log.info("Logging out user, clearing tokens");
-  await disableBiometricLogin();
+
+  // Read the refresh token BEFORE clearing, so the server revoke has what it
+  // needs even though local storage is wiped first.
   const refreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
-  try {
-    const response = await api.post("/auth/logout", { refresh_token: refreshToken });
-    console.log("RESPONSE JOOR IUK")
-  } catch (error) {
-    log.warn(
-      "Server logout failed; clearing the local session anyway",
-      error instanceof Error ? error.message : "Unknown error",
-    );
-  }
+
+  // Local session dies IMMEDIATELY — never make the user wait on the network
+  // to log out. Server-side revocation is fire-and-forget below.
   await clearAuthTokens({ clearBiometric: true });
+
+  void revokeRefreshTokenOnServer(refreshToken);
+};
+
+/** Best-effort server-side revocation with one retry. Fire-and-forget: all
+ * failures are swallowed so logout UX never depends on connectivity. */
+const revokeRefreshTokenOnServer = async (
+  refreshToken: string | null,
+): Promise<void> => {
+  const attempt = () =>
+    api.post(
+      "/auth/logout",
+      { refresh_token: refreshToken },
+      { suppressGlobalErrorModal: true } as any,
+    );
+
+  try {
+    await attempt();
+  } catch {
+    // One retry in case the first attempt hit a transient network blip.
+    try {
+      await attempt();
+    } catch (retryError) {
+      log.warn(
+        "Server logout failed after retry; refresh token stays valid server-side",
+        retryError instanceof Error ? retryError.message : "Unknown error",
+      );
+    }
+  }
 };
 
 type AuthState = {
@@ -350,6 +376,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       unregisterLogoutCallback();
     };
   }, [reloadAuthState]);
+
+  // When the session dies mid-flight (e.g. refreshAuthTokens fails inside a
+  // request interceptor and fires triggerLogout), the root layout's one-shot
+  // startup redirect won't help — we're already deep in the app. Watch for
+  // the flip from authenticated → unauthenticated and yank the user to login
+  // ourselves.
+  const didInitialAuthResolve = useRef(false);
+  useEffect(() => {
+    if (state.isLoading) return;
+
+    if (!didInitialAuthResolve.current) {
+      didInitialAuthResolve.current = true;
+      return;
+    }
+
+    if (!state.isAuthenticated) {
+      log.warn("AuthProvider: session lost after initial load — redirecting to login");
+      router.replace("/(auth)/login");
+    }
+  }, [state.isAuthenticated, state.isLoading]);
 
   return (
     <AuthContext.Provider

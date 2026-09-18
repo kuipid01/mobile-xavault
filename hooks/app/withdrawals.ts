@@ -8,7 +8,7 @@ import {
   WithdrawPayload
 } from "@/api/withdrawals";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { envelopeKeys } from "./envelopes";
 import { planKeys } from "./plans";
 import { walletKeys } from "./wallet";
@@ -54,7 +54,6 @@ export const useWithdrawalHistory = () => {
     staleTime: 5 * 60 * 1000,
     gcTime: 24 * 60 * 60 * 1000,
     refetchOnMount: true,
-    refetchOnWindowFocus: true,
     refetchInterval: (query) => {
       const pages = query.state.data?.pages;
       return pages?.some((page) =>
@@ -65,7 +64,12 @@ export const useWithdrawalHistory = () => {
     }
   });
 
-  const items = query.data?.pages.flatMap((page) => page.items) || [];
+  // Stable identity: flatMap() alone produced a fresh array every render,
+  // re-running the invalidation effect on every render.
+  const items = useMemo(
+    () => query.data?.pages.flatMap((page) => page.items) ?? [],
+    [query.data],
+  );
 
   // When a withdrawal resolves (paid/failed/reversed), refresh the plan,
   // envelope and wallet balances it affects so the UI shows the new state
