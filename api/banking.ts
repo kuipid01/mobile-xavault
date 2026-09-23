@@ -43,11 +43,39 @@ type ListAccountsResponse = {
   items: BankAccount[];
 };
 
-export const getBanks = async () => {
-  const res = await api.get<ApiResponse<Bank[]>>("/banking/banks");
-  return res.data.data || [];
-};
+let banksInFlight: Promise<Bank[]> | null = null;
 
+export const getBanks = async (): Promise<Bank[]> => {
+  // If a request is already running, reuse it.
+  if (banksInFlight) {
+    console.log("[getBanks] Reusing in-flight banks request");
+    return banksInFlight;
+  }
+
+  console.log("[getBanks] Fetching banks from API");
+
+  banksInFlight = api
+    .get<ApiResponse<Bank[]>>("/banking/banks")
+    .then((res) => {
+      const banks = res.data.data || [];
+
+      console.log("[getBanks] Banks fetched", {
+        count: banks.length,
+      });
+
+      return banks;
+    })
+    .catch((error) => {
+      console.error("[getBanks] Failed to fetch banks", error);
+      throw error;
+    })
+    .finally(() => {
+      // Important: allow a future request after this one finishes.
+      banksInFlight = null;
+    });
+
+  return banksInFlight;
+};
 export const resolveBankAccount = async (payload: ResolveAccountPayload) => {
   const res = await api.post<ApiResponse<ResolveAccountResponse>>(
     "/banking/resolve-account",

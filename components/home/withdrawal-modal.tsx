@@ -1,9 +1,10 @@
-import { Bank, BankAccount, CreateBankAccountPayload, ResolveAccountResponse } from "@/api/banking";
+import { Bank, BankAccount, CreateBankAccountPayload, getBanks, ResolveAccountResponse } from "@/api/banking";
 import { formatMoney, koboToNaira, nairaToKobo } from "@/api/money";
 import { Envelope, Plan } from "@/api/types";
 import { getWithdrawal, WithdrawalPreview } from "@/api/withdrawals";
 import { ErrorModal } from "@/components/ui/ErrorModal";
 import {
+  bankingKeys,
   useBankAccounts,
   useBanks,
   useBeneficiaries,
@@ -891,6 +892,13 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
   useEffect(() => {
     setSelectedTargetId(targetOptions[0]?.id);
   }, [selectedPlanId, targetOptions]);
+  useEffect(() => () => {
+    void queryClient.prefetchQuery({
+      queryKey: bankingKeys.banks,
+      queryFn: getBanks,
+      staleTime: 1000 * 60 * 60,
+    });
+  }, [])
 
   const resetAndClose = () => {
     withdrawalPollSession.current += 1;
@@ -2452,84 +2460,60 @@ const StepDestination = ({
                 <ScrollView
                   keyboardShouldPersistTaps="handled"
                   showsVerticalScrollIndicator={false}
-                  contentContainerStyle={
-                    destStyles.bankList
-                  }
+                  contentContainerStyle={destStyles.bankList}
                 >
-                  {isBanksLoading && (
-                    <ActivityIndicator
-                      size="small"
-                      color={COLOR.forestDeep}
-                      style={{ marginTop: 24 }}
-                    />
-                  )}
+                  {isBanksLoading && banks.length === 0 ? (
+                    <View style={{ paddingVertical: 32 }}>
+                      <ActivityIndicator
+                        size="small"
+                        color={COLOR.forestDeep}
+                      />
+                    </View>
+                  ) : filteredBanks.length > 0 ? (
+                    filteredBanks.map((bank) => {
+                      const selected = bank.code === selectedBankCode;
 
-                  {!isBanksLoading && filteredBanks.map((bank) => {
-                    const selected =
-                      bank.code ===
-                      selectedBankCode;
-
-                    return (
-                      <TouchableOpacity
-                        key={
-                          bank.code + bank.name
-                        }
-                        activeOpacity={0.7}
-                        onPress={() =>
-                          handleSelectBank(
-                            bank
-                          )
-                        }
-                        style={[
-                          destStyles.bankRow,
-                          selected &&
-                          destStyles.bankRowSelected,
-                        ]}
-                      >
-                        <View
-                          style={
-                            destStyles.bankRowIcon
-                          }
+                      return (
+                        <TouchableOpacity
+                          key={`${bank.code}-${bank.name}`}
+                          activeOpacity={0.7}
+                          onPress={() => handleSelectBank(bank)}
+                          style={[
+                            destStyles.bankRow,
+                            selected && destStyles.bankRowSelected,
+                          ]}
                         >
-                          <Ionicons
-                            name="business-outline"
-                            size={17}
-                            color={
-                              selected
-                                ? COLOR.forestDeep
-                                : COLOR.textMuted
-                            }
-                          />
-                        </View>
+                          <View style={destStyles.bankRowIcon}>
+                            <Ionicons
+                              name="business-outline"
+                              size={17}
+                              color={
+                                selected
+                                  ? COLOR.forestDeep
+                                  : COLOR.textMuted
+                              }
+                            />
+                          </View>
 
-                        <Text
-                          style={
-                            destStyles.bankRowText
-                          }
-                          numberOfLines={1}
-                        >
-                          {bank.name}
-                        </Text>
+                          <Text
+                            style={destStyles.bankRowText}
+                            numberOfLines={1}
+                          >
+                            {bank.name}
+                          </Text>
 
-                        {selected && (
-                          <Ionicons
-                            name="checkmark"
-                            size={19}
-                            color={
-                              COLOR.forestDeep
-                            }
-                          />
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-
-                  {!isBanksLoading && filteredBanks.length === 0 && (
-                    <Text
-                      style={
-                        destStyles.noBank
-                      }
-                    >
+                          {selected && (
+                            <Ionicons
+                              name="checkmark"
+                              size={19}
+                              color={COLOR.forestDeep}
+                            />
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })
+                  ) : (
+                    <Text style={destStyles.noBank}>
                       No matching bank.
                     </Text>
                   )}

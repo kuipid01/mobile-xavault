@@ -19,6 +19,20 @@ export const useBanks = () => {
   return useQuery({
     queryKey: bankingKeys.banks,
     queryFn: getBanks,
+
+    // Banks don't change frequently.
+    staleTime: 1000 * 60 * 60, // 1 hour
+
+    // Keep cached data around for 24 hours.
+    gcTime: 1000 * 60 * 60 * 100,
+
+    // Don't refetch every time the user returns to the screen.
+    refetchOnWindowFocus: false,
+
+    // Don't refetch just because the component mounted again.
+    refetchOnMount: false,
+
+    retry: 2,
   });
 };
 
