@@ -1,5 +1,6 @@
 import "react-native-gesture-handler";
 
+import { LoggingOutOverlay } from "@/components/general/logging-out-overlay";
 import GlobalDrawerHost from "@/components/GlobalDrawerHost";
 import { GlobalErrorModal } from "@/components/GlobalErrorModal";
 import { OnboardingProvider, useOnboarding } from "@/context/OnboardingContext";
@@ -74,7 +75,7 @@ type ComponentWithDefaultProps = {
 };
 
 function RootLayoutContent() {
-  const { isLoading: authLoading, isAuthenticated } = useAuth();
+  const { isLoading: authLoading, isAuthenticated, isLoggingOut } = useAuth();
   const { isFirstTime, isLoading: onboardingLoading } = useOnboarding();
   const pathname = usePathname();
   const segments = useSegments();
@@ -248,10 +249,10 @@ function RootLayoutContent() {
             return;
           }
 
-        if (email) {
-          debugLog("pending email found", { email });
+          if (email) {
+            debugLog("pending email found", { email });
 
-          if (!readCurrentPathname().includes("/verify-mail")) {
+            if (!readCurrentPathname().includes("/verify-mail")) {
               debugLog("redirecting to verify mail from pending email", {
                 email,
               });
@@ -362,31 +363,45 @@ function RootLayoutContent() {
   );
 }
 
+function AuthenticatedRoot() {
+  const { isLoggingOut } = useAuth();
+
+  return (
+    <>
+      {isLoggingOut && <LoggingOutOverlay />}
+
+      <DepositVerificationProvider>
+        <SubscriptionVerificationProvider>
+          <ModalProvider>
+            <OnboardingProvider>
+              <StatusBar style="light" />
+
+              <GlobalDrawerHost>
+                <RootLayoutContent />
+              </GlobalDrawerHost>
+
+              <DepositVerificationWatcher />
+              <DepositPaymentModal />
+              <DepositVerificationBanner />
+              <PaymentVerificationWatcher />
+              <SubscriptionVerificationBanner />
+              <GlobalErrorModal />
+              <Toast />
+            </OnboardingProvider>
+          </ModalProvider>
+        </SubscriptionVerificationProvider>
+      </DepositVerificationProvider>
+    </>
+  );
+}
+
 export default function RootLayout() {
   debugLog("rendering root layout");
 
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <DepositVerificationProvider>
-          <SubscriptionVerificationProvider>
-            <ModalProvider>
-              <OnboardingProvider>
-                <StatusBar style="light" />
-                <GlobalDrawerHost>
-                  <RootLayoutContent />
-                </GlobalDrawerHost>
-                <DepositVerificationWatcher />
-                <DepositPaymentModal />
-                <DepositVerificationBanner />
-                <PaymentVerificationWatcher />
-                <SubscriptionVerificationBanner />
-                <GlobalErrorModal />
-                <Toast />
-              </OnboardingProvider>
-            </ModalProvider>
-          </SubscriptionVerificationProvider>
-        </DepositVerificationProvider>
+        <AuthenticatedRoot />
       </AuthProvider>
     </QueryClientProvider>
   );

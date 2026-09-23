@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as SecureStore from "expo-secure-store";
 import { router } from "expo-router";
+import * as SecureStore from "expo-secure-store";
 import React, {
   createContext,
   useCallback,
@@ -10,8 +10,7 @@ import React, {
   useState,
 } from "react";
 import {
-  BIOMETRIC_LOGIN_KEY,
-  disableBiometricLogin,
+  BIOMETRIC_LOGIN_KEY
 } from "../lib/biometric-auth";
 import {
   ACCESS_TOKEN_KEY,
@@ -271,31 +270,50 @@ type AuthContextValue = AuthState & {
   logout: () => Promise<void>;
   onLoginSuccess: (token: string) => void;
   reloadAuthState: () => Promise<void>;
+  isLoggingOut: boolean;
+
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [state, setState] = useState<AuthState>({
     userToken: null,
     isLoading: true,
     isAuthenticated: false,
   });
-
+  const isLoggingOutRef = useRef(false);
   const logoutRef = useRef<() => Promise<void>>(null);
 
+
   const logout = useCallback(async () => {
-    log.info("AuthProvider: logout called");
+    if (isLoggingOutRef.current) {
+      console.log("[AuthProvider] Already logging out, ignoring subsequent call");
+      return;
+    }
 
-    await logoutUser();
+    isLoggingOutRef.current = true;
+    setIsLoggingOut(true);
 
-    setState({
-      userToken: null,
-      isLoading: false,
-      isAuthenticated: false,
-    });
+    try {
+      log.info("AuthProvider: logout called");
+
+      await logoutUser();
+
+      setState({
+        userToken: null,
+        isLoading: false,
+        isAuthenticated: false,
+      });
+    } catch (error) {
+      console.error("[AuthProvider] Logout failed:", error);
+      setIsLoggingOut(false);
+      throw error;
+    } finally {
+      isLoggingOutRef.current = false;
+    }
   }, []);
-
   logoutRef.current = logout;
 
   const onLoginSuccess = useCallback((token: string) => {
@@ -396,7 +414,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     if (!state.isAuthenticated) {
-      log.warn("AuthProvider: session lost after initial load — redirecting to login");
+      if (isLoggingOutRef.current) {
+        return;
+      }
+
+      log.warn(
+        "AuthProvider: session lost after initial load — redirecting to login"
+      );
       router.replace("/(auth)/login");
     }
   }, [state.isAuthenticated, state.isLoading]);
@@ -406,6 +430,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       value={{
         ...state,
         logout,
+        isLoggingOut,
         onLoginSuccess,
         reloadAuthState,
       }}

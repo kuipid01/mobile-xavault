@@ -46,6 +46,7 @@ export default function ProfileDrawerContent({
   const { data: profile } = useProfile();
   const [email, setEmail] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const { logout } = useAuth();
   useEffect(() => {
     getAccessToken().then((token) => {
@@ -70,10 +71,31 @@ export default function ProfileDrawerContent({
     }
   };
   const handleLogout = async () => {
-    onClose();
-    await logout();
-    router.replace("/(auth)/login");
+    if (isLoggingOut) return;
+
+    setIsLoggingOut(true);
+
+    try {
+      // 1. Close the drawer first.
+      onClose();
+
+      // 2. Give the drawer time to finish its close animation.
+      await new Promise((resolve) => setTimeout(resolve, 350));
+
+      // 3. Clear local authentication.
+      //    Server token revocation is already fire-and-forget
+      //    inside logoutUser(), so this should be fast.
+      await logout();
+
+      // 4. Navigate only after the drawer is gone
+      //    and local auth has been cleared.
+      router.replace("/(auth)/login");
+    } catch (error) {
+      console.error("[ProfileDrawer] Logout failed:", error);
+      setIsLoggingOut(false);
+    }
   };
+
 
   return (
     <View style={styles.shell}>
@@ -138,7 +160,7 @@ export default function ProfileDrawerContent({
             {({ pressed }) => (
               <View style={[styles.logoutInner, pressed && styles.logoutPressed]}>
                 <Ionicons name="power-outline" size={20} color="rgba(226,232,240,0.86)" />
-                <Text style={styles.logoutText}>Sign Out</Text>
+                <Text style={styles.logoutText}> {isLoggingOut ? "Signing Out..." : "Sign Out"}</Text>
               </View>
             )}
           </Pressable>

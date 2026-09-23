@@ -752,7 +752,7 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
   const [selectedTargetId, setSelectedTargetId] = useState<string>();
   const [amount, setAmount] = useState("");
   const [withdrawAll, setWithdrawAll] = useState(false);
-	const [isCalculatingFullAmount, setIsCalculatingFullAmount] = useState(false);
+  const [isCalculatingFullAmount, setIsCalculatingFullAmount] = useState(false);
   const [selectedDestinationKey, setSelectedDestinationKey] = useState<string>();
   const [withdrawalPin, setWithdrawalPin] = useState("");
   const [newWithdrawalPin, setNewWithdrawalPin] = useState("");
@@ -782,10 +782,10 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
       queryClient.invalidateQueries({ queryKey: planKeys.list() }),
       ...(planId
         ? [
-            queryClient.invalidateQueries({ queryKey: planKeys.detail(planId) }),
-            queryClient.invalidateQueries({ queryKey: envelopeKeys.list(planId), exact: true }),
-            queryClient.invalidateQueries({ queryKey: withdrawalKeys.plan(planId) }),
-          ]
+          queryClient.invalidateQueries({ queryKey: planKeys.detail(planId) }),
+          queryClient.invalidateQueries({ queryKey: envelopeKeys.list(planId), exact: true }),
+          queryClient.invalidateQueries({ queryKey: withdrawalKeys.plan(planId) }),
+        ]
         : []),
     ]);
   };
@@ -982,8 +982,8 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
     setWithdrawalQuote(undefined);
     try {
       let candidate = selectedTarget.balance - (selectedTarget.balance % 100);
-	  let lowestWorkingAmount = 0;
-	  let highestPossibleAmount = candidate;
+      let lowestWorkingAmount = 0;
+      let highestPossibleAmount = candidate;
       let finalQuote: WithdrawalPreview | undefined;
 
       for (let attempt = 0; attempt < 12 && candidate > 0; attempt += 1) {
@@ -996,24 +996,24 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
             amount: candidate,
           },
         });
-		if (!quote) throw new Error("The server did not return a withdrawal quote.");
+        if (!quote) throw new Error("The server did not return a withdrawal quote.");
 
         if (quote.can_withdraw && quote.total_deduction <= selectedTarget.balance) {
           finalQuote = quote;
-		  lowestWorkingAmount = candidate;
-		  if (candidate >= highestPossibleAmount) break;
-		  candidate = Math.floor((candidate + highestPossibleAmount + 100) / 200) * 100;
-		  continue;
+          lowestWorkingAmount = candidate;
+          if (candidate >= highestPossibleAmount) break;
+          candidate = Math.floor((candidate + highestPossibleAmount + 100) / 200) * 100;
+          continue;
         }
 
-		highestPossibleAmount = candidate - 100;
-		if (highestPossibleAmount <= lowestWorkingAmount) break;
-		if (lowestWorkingAmount === 0) {
-		  const excess = Math.max(quote.total_deduction - selectedTarget.balance, 100);
-		  candidate = Math.floor((candidate - excess) / 100) * 100;
-		} else {
-		  candidate = Math.floor((lowestWorkingAmount + highestPossibleAmount + 100) / 200) * 100;
-		}
+        highestPossibleAmount = candidate - 100;
+        if (highestPossibleAmount <= lowestWorkingAmount) break;
+        if (lowestWorkingAmount === 0) {
+          const excess = Math.max(quote.total_deduction - selectedTarget.balance, 100);
+          candidate = Math.floor((candidate - excess) / 100) * 100;
+        } else {
+          candidate = Math.floor((lowestWorkingAmount + highestPossibleAmount + 100) / 200) * 100;
+        }
       }
 
       candidate = lowestWorkingAmount;
@@ -1328,228 +1328,229 @@ const WithdrawalModal = ({ visible, onClose, onCompleted }: Props) => {
 
   return (
     <>
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={requestClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.overlay}
-      >
-        <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
-        <Pressable style={StyleSheet.absoluteFill} onPress={requestClose} />
+      <Modal visible={visible} transparent animationType="slide" onRequestClose={requestClose}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.overlay}
+        >
+          <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
+          <Pressable style={StyleSheet.absoluteFill} onPress={requestClose} />
 
-        <View style={styles.sheet}>
-          <View style={styles.handle} />
+          <View style={styles.sheet}>
+            <View style={styles.handle} />
 
-          {/* ── Sheet header ── */}
-          <View style={styles.sheetHeader}>
-            <TouchableOpacity onPress={goBack} style={styles.navButton} activeOpacity={0.75}>
-              <Ionicons name="arrow-back" size={18} color={COLOR.forestDeep} />
-            </TouchableOpacity>
+            {/* ── Sheet header ── */}
+            <View style={styles.sheetHeader}>
+              <TouchableOpacity onPress={goBack} style={styles.navButton} activeOpacity={0.75}>
+                <Ionicons name="arrow-back" size={18} color={COLOR.forestDeep} />
+              </TouchableOpacity>
 
-            <Text style={styles.sheetTitle}>Withdraw</Text>
+              <Text style={styles.sheetTitle}>Withdraw</Text>
 
-            <TouchableOpacity onPress={requestClose} style={styles.navButton} activeOpacity={0.75}>
-              <Ionicons name="close" size={16} color={COLOR.forestDeep} />
+              <TouchableOpacity onPress={requestClose} style={styles.navButton} activeOpacity={0.75}>
+                <Ionicons name="close" size={16} color={COLOR.forestDeep} />
+              </TouchableOpacity>
+            </View>
+
+            {/* ── Progress ── */}
+            <ProgressBar current={step} />
+
+            {/* ── Step content ── */}
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.content}
+              keyboardShouldPersistTaps="handled"
+            >
+              {step === "plan" && (
+                <StepPlan
+                  plans={withdrawablePlans}
+                  isLoading={isPlansLoading}
+                  error={plansError}
+                  selectedPlanId={selectedPlanId}
+                  onSelect={setSelectedPlanId}
+                  onRetry={() => void refetchPlans()}
+                />
+              )}
+
+              {step === "source" && (
+                <StepSource
+                  targetOptions={targetOptions}
+                  isLoading={isEnvelopesLoading}
+                  error={envelopesError}
+                  selectedTargetId={selectedTargetId}
+                  onSelect={(id) => { setSelectedTargetId(id); setWithdrawalQuote(undefined); }}
+                  currency={selectedPlan?.currency}
+                  onRetry={() => void refetchEnvelopes()}
+                />
+              )}
+
+              {step === "amount" && (
+                <StepAmount
+                  selectedTarget={selectedTarget}
+                  currency={selectedPlan?.currency}
+                  amount={amount}
+                  withdrawAll={withdrawAll}
+                  amountInKobo={amountInKobo}
+                  onChangeAmount={(v) => {
+                    setAmount(v.replace(/[^0-9]/g, ""));
+                    setWithdrawalQuote(undefined);
+                    setWithdrawAll(false);
+                  }}
+                  onWithdrawAll={() => {
+                    void handleWithdrawAll();
+                  }}
+                  isCalculatingFullAmount={isCalculatingFullAmount}
+                />
+              )}
+
+              {step === "destination" && (
+                <StepDestination
+                  banks={banks}
+                  accounts={bankAccounts}
+                  destinationOptions={destinationOptions}
+                  selectedDestinationKey={selectedDestinationKey}
+                  isLoading={isAccountsLoading || isBeneficiariesLoading}
+                  isBanksLoading={isBanksLoading}
+                  error={accountsError || beneficiariesError}
+                  isResolving={isResolvingAccount}
+                  isSaving={isCreatingAccount || isCreatingBeneficiary}
+                  onSelect={setSelectedDestinationKey}
+                  onResolve={resolveAccount}
+                  onCreateAccount={async (payload) => {
+                    const account = await createBankAccount(payload);
+                    if (account) {
+                      setSelectedDestinationKey(`account:${account.id}`);
+                    }
+                  }}
+                  onCreateBeneficiary={async (payload) => {
+                    const account = await createBeneficiary(payload);
+                    if (account) {
+                      setSelectedDestinationKey(`beneficiary:${account.id}`);
+                    }
+                  }}
+                  onRetry={() => {
+                    void Promise.all([refetchBanks(), refetchAccounts(), refetchBeneficiaries()]);
+                  }}
+                />
+              )}
+
+              {step === "review" && (
+                <StepReview
+                  selectedTarget={selectedTarget}
+                  selectedDestination={selectedDestination}
+                  quote={withdrawalQuote}
+                />
+              )}
+
+              {step === "pin" && (
+                <StepPin
+                  selectedPlan={selectedPlan}
+                  selectedTarget={selectedTarget}
+                  selectedDestination={selectedDestination}
+                  amountInKobo={amountInKobo}
+                  withdrawAll={withdrawAll}
+                  quote={withdrawalQuote}
+                  hasWithdrawalPin={hasWithdrawalPin}
+                  isPinStatusLoading={isPinStatusLoading}
+                  pinMode={pinMode}
+                  withdrawalPin={withdrawalPin}
+                  newWithdrawalPin={newWithdrawalPin}
+                  pinError={pinError}
+                  resetOtp={resetOtp}
+                  isSendingPinOtp={isSendingPinOtp}
+                  isResettingPin={isResettingPin}
+                  onChangeWithdrawalPin={(value) => { setPinError(null); setWithdrawalPin(value); }}
+                  onChangeNewWithdrawalPin={(value) => { setPinError(null); setNewWithdrawalPin(value); }}
+                  onChangeResetOtp={setResetOtp}
+                  onForgotPin={async () => {
+                    try {
+                      await forgotWithdrawalPin();
+                      setPinMode("reset");
+                      showBottomToast({
+                        type: "success",
+                        text1: "OTP sent",
+                        text2: "Check your email for the reset code."
+                      });
+                    } catch (error: any) {
+                      showError("Could not send OTP", error, "Please try again.");
+                    }
+                  }}
+                  onResetPin={async () => {
+                    try {
+                      await resetWithdrawalPin({
+                        otp: resetOtp,
+                        pin: newWithdrawalPin
+                      });
+                      setWithdrawalPin(newWithdrawalPin);
+                      setNewWithdrawalPin("");
+                      setResetOtp("");
+                      setPinMode("enter");
+                      showBottomToast({
+                        type: "success",
+                        text1: "PIN reset",
+                        text2: "You can now confirm this withdrawal."
+                      });
+                    } catch (error: any) {
+                      showError("Could not reset PIN", error, "Please check the OTP and try again.");
+                    }
+                  }}
+                  onCancelReset={() => {
+                    setPinMode("enter");
+                    setResetOtp("");
+                    setNewWithdrawalPin("");
+                  }}
+                />
+              )}
+            </ScrollView>
+
+            {/* ── Footer CTA ── */}
+            <TouchableOpacity
+              style={[styles.cta, isCTADisabled && styles.ctaDisabled]}
+              onPress={handleContinue}
+              testID="withdraw-cta"
+              disabled={isCTADisabled}
+              activeOpacity={0.85}
+            >
+              {(isWithdrawing || isSettingPin) && isLastStep ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Text style={styles.ctaText}>
+                    {step === "review"
+                      ? "Approve with PIN"
+                      : isLastStep
+                        ? "Submit withdrawal"
+                        : "Continue"}
+                  </Text>
+                  <Ionicons
+                    name={isLastStep ? "checkmark" : "arrow-forward"}
+                    size={16}
+                    color="#FFFFFF"
+                  />
+                </>
+              )}
             </TouchableOpacity>
           </View>
 
-          {/* ── Progress ── */}
-          <ProgressBar current={step} />
-
-          {/* ── Step content ── */}
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.content}
-            keyboardShouldPersistTaps="handled"
-          >
-            {step === "plan" && (
-              <StepPlan
-                plans={withdrawablePlans}
-                isLoading={isPlansLoading}
-                error={plansError}
-                selectedPlanId={selectedPlanId}
-                onSelect={setSelectedPlanId}
-                onRetry={() => void refetchPlans()}
-              />
-            )}
-
-            {step === "source" && (
-              <StepSource
-                targetOptions={targetOptions}
-                isLoading={isEnvelopesLoading}
-                error={envelopesError}
-                selectedTargetId={selectedTargetId}
-                onSelect={(id) => { setSelectedTargetId(id); setWithdrawalQuote(undefined); }}
-                currency={selectedPlan?.currency}
-                onRetry={() => void refetchEnvelopes()}
-              />
-            )}
-
-            {step === "amount" && (
-              <StepAmount
-                selectedTarget={selectedTarget}
-                currency={selectedPlan?.currency}
-                amount={amount}
-                withdrawAll={withdrawAll}
-                amountInKobo={amountInKobo}
-                onChangeAmount={(v) => {
-                  setAmount(v.replace(/[^0-9]/g, ""));
-                  setWithdrawalQuote(undefined);
-                  setWithdrawAll(false);
-                }}
-                onWithdrawAll={() => {
-                  void handleWithdrawAll();
-                }}
-				isCalculatingFullAmount={isCalculatingFullAmount}
-              />
-            )}
-
-            {step === "destination" && (
-              <StepDestination
-                banks={banks}
-                accounts={bankAccounts}
-                destinationOptions={destinationOptions}
-                selectedDestinationKey={selectedDestinationKey}
-                isLoading={isBanksLoading || isAccountsLoading || isBeneficiariesLoading}
-                error={banksError || accountsError || beneficiariesError}
-                isResolving={isResolvingAccount}
-                isSaving={isCreatingAccount || isCreatingBeneficiary}
-                onSelect={setSelectedDestinationKey}
-                onResolve={resolveAccount}
-                onCreateAccount={async (payload) => {
-                  const account = await createBankAccount(payload);
-                  if (account) {
-                    setSelectedDestinationKey(`account:${account.id}`);
-                  }
-                }}
-                onCreateBeneficiary={async (payload) => {
-                  const account = await createBeneficiary(payload);
-                  if (account) {
-                    setSelectedDestinationKey(`beneficiary:${account.id}`);
-                  }
-                }}
-                onRetry={() => {
-                  void Promise.all([refetchBanks(), refetchAccounts(), refetchBeneficiaries()]);
-                }}
-              />
-            )}
-
-            {step === "review" && (
-              <StepReview
-                selectedTarget={selectedTarget}
-                selectedDestination={selectedDestination}
-                quote={withdrawalQuote}
-              />
-            )}
-
-            {step === "pin" && (
-              <StepPin
-                selectedPlan={selectedPlan}
-                selectedTarget={selectedTarget}
-                selectedDestination={selectedDestination}
-                amountInKobo={amountInKobo}
-                withdrawAll={withdrawAll}
-                quote={withdrawalQuote}
-                hasWithdrawalPin={hasWithdrawalPin}
-                isPinStatusLoading={isPinStatusLoading}
-                pinMode={pinMode}
-                withdrawalPin={withdrawalPin}
-                newWithdrawalPin={newWithdrawalPin}
-                pinError={pinError}
-                resetOtp={resetOtp}
-                isSendingPinOtp={isSendingPinOtp}
-                isResettingPin={isResettingPin}
-                onChangeWithdrawalPin={(value) => { setPinError(null); setWithdrawalPin(value); }}
-                onChangeNewWithdrawalPin={(value) => { setPinError(null); setNewWithdrawalPin(value); }}
-                onChangeResetOtp={setResetOtp}
-                onForgotPin={async () => {
-                  try {
-                    await forgotWithdrawalPin();
-                    setPinMode("reset");
-                    showBottomToast({
-                      type: "success",
-                      text1: "OTP sent",
-                      text2: "Check your email for the reset code."
-                    });
-                  } catch (error: any) {
-                    showError("Could not send OTP", error, "Please try again.");
-                  }
-                }}
-                onResetPin={async () => {
-                  try {
-                    await resetWithdrawalPin({
-                      otp: resetOtp,
-                      pin: newWithdrawalPin
-                    });
-                    setWithdrawalPin(newWithdrawalPin);
-                    setNewWithdrawalPin("");
-                    setResetOtp("");
-                    setPinMode("enter");
-                    showBottomToast({
-                      type: "success",
-                      text1: "PIN reset",
-                      text2: "You can now confirm this withdrawal."
-                    });
-                  } catch (error: any) {
-                    showError("Could not reset PIN", error, "Please check the OTP and try again.");
-                  }
-                }}
-                onCancelReset={() => {
-                  setPinMode("enter");
-                  setResetOtp("");
-                  setNewWithdrawalPin("");
-                }}
-              />
-            )}
-          </ScrollView>
-
-          {/* ── Footer CTA ── */}
-          <TouchableOpacity
-            style={[styles.cta, isCTADisabled && styles.ctaDisabled]}
-            onPress={handleContinue}
-            testID="withdraw-cta"
-            disabled={isCTADisabled}
-            activeOpacity={0.85}
-          >
-            {(isWithdrawing || isSettingPin) && isLastStep ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <>
-                <Text style={styles.ctaText}>
-                  {step === "review"
-                    ? "Approve with PIN"
-                    : isLastStep
-                      ? "Submit withdrawal"
-                      : "Continue"}
-                </Text>
-                <Ionicons
-                  name={isLastStep ? "checkmark" : "arrow-forward"}
-                  size={16}
-                  color="#FFFFFF"
-                />
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* ── Processing overlay (inline in same modal, not nested modal) ── */}
-        {processingState && (
-          <ProcessingOverlay
-            state={processingState}
-            amount={formatMoney(amountInKobo, selectedPlan?.currency)}
-            receipt={withdrawalReceipt}
-            timedOut={pollTimedOut}
-            onDone={resetAndClose}
-          />
-        )}
-      </KeyboardAvoidingView>
-    </Modal>
-    <ErrorModal
-      visible={modalError !== null}
-      title={modalError?.title}
-      message={modalError?.message || "Something went wrong."}
-      supportReference={modalError?.supportReference}
-      onClose={() => setModalError(null)}
-    />
+          {/* ── Processing overlay (inline in same modal, not nested modal) ── */}
+          {processingState && (
+            <ProcessingOverlay
+              state={processingState}
+              amount={formatMoney(amountInKobo, selectedPlan?.currency)}
+              receipt={withdrawalReceipt}
+              timedOut={pollTimedOut}
+              onDone={resetAndClose}
+            />
+          )}
+        </KeyboardAvoidingView>
+      </Modal>
+      <ErrorModal
+        visible={modalError !== null}
+        title={modalError?.title}
+        message={modalError?.message || "Something went wrong."}
+        supportReference={modalError?.supportReference}
+        onClose={() => setModalError(null)}
+      />
     </>
   );
 };
@@ -1697,9 +1698,9 @@ const StepAmount = ({
         value={
           withdrawAll
             ? koboToNaira(amountInKobo).toLocaleString("en-NG", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })
             : amount
         }
         onChangeText={(v) => {
@@ -1722,7 +1723,7 @@ const StepAmount = ({
     <TouchableOpacity
       activeOpacity={0.8}
       onPress={onWithdrawAll}
-	  disabled={isCalculatingFullAmount}
+      disabled={isCalculatingFullAmount}
       style={[amountStyles.allRow, withdrawAll && amountStyles.allRowActive]}
     >
       <View style={[amountStyles.checkbox, withdrawAll && amountStyles.checkboxActive]}>
@@ -1761,6 +1762,7 @@ const StepDestination = ({
   destinationOptions,
   selectedDestinationKey,
   isLoading,
+  isBanksLoading,
   error,
   isResolving,
   isSaving,
@@ -1775,6 +1777,7 @@ const StepDestination = ({
   destinationOptions: DestinationSelection[];
   selectedDestinationKey?: string;
   isLoading: boolean;
+  isBanksLoading: boolean;
   error: unknown;
   isResolving: boolean;
   isSaving: boolean;
@@ -1788,269 +1791,753 @@ const StepDestination = ({
   onRetry: () => void;
 }) => {
   const [showAdd, setShowAdd] = useState(false);
-  const [saveAs, setSaveAs] = useState<"account" | "beneficiary">("account");
+  const [showBankPicker, setShowBankPicker] = useState(false);
+
+  const [saveAs] = useState<"account" | "beneficiary">("account");
+
   const [selectedBankCode, setSelectedBankCode] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
-  const [nickname, setNickname] = useState("");
-  const [resolved, setResolved] = useState<ResolveAccountResponse>();
-  const [destinationSearch, setDestinationSearch] = useState("");
+  const [resolved, setResolved] =
+    useState<ResolveAccountResponse>();
+
   const [bankSearch, setBankSearch] = useState("");
 
-  const selectedBank = banks.find((b) => b.code === selectedBankCode);
-  const filteredDestinations = destinationOptions.filter((d) => {
-    const q = destinationSearch.trim().toLowerCase();
-    if (!q) return true;
-    return [d.label, d.bank, d.accountNumber].some((v) => v.toLowerCase().includes(q));
-  });
-  const filteredBanks = banks.filter((b) => {
+  const selectedBank = banks.find(
+    (bank) => bank.code === selectedBankCode
+  );
+
+  const filteredBanks = banks.filter((bank) => {
     const q = bankSearch.trim().toLowerCase();
+
     if (!q) return true;
-    return [b.name, b.code, b.slug].filter(Boolean).some((v) => v.toLowerCase().includes(q));
+
+    return [bank.name, bank.code, bank.slug]
+      .filter(Boolean)
+      .some((value) => value.toLowerCase().includes(q));
   });
 
-  const handleResolve = async () => {
-    if (!selectedBankCode || accountNumber.length < 10) {
-      showBottomToast({
-        type: "error",
-        text1: "Enter bank and 10-digit account number"
-      });
+  const shouldShowDestinationSearch =
+    destinationOptions.length >= 5;
+
+  /**
+   * Resolve the account.
+   *
+   * This is intentionally kept as the same backend operation as before.
+   * The only UX difference is that we can trigger it automatically once
+   * the account number is complete.
+   */
+  const resolveAccount = async (
+    bankCode: string,
+    number: string
+  ) => {
+    if (!bankCode || number.length !== 10) {
       return;
     }
+
     try {
       const result = await onResolve({
-        bank_code: selectedBankCode,
-        account_number: accountNumber
+        bank_code: bankCode,
+        account_number: number,
       });
+
       setResolved(result);
     } catch (error: any) {
       setResolved(undefined);
+
       showBottomToast({
         type: "error",
         text1: "Could not verify account",
-        text2: error?.response?.data?.message || error?.message || "Please check the bank details."
+        text2:
+          error?.response?.data?.message ||
+          error?.message ||
+          "Please check the bank details.",
       });
+    }
+  };
+
+  const handleAccountNumberChange = (value: string) => {
+    const number = value.replace(/[^0-9]/g, "").slice(0, 10);
+
+    setAccountNumber(number);
+    setResolved(undefined);
+
+    // Automatically verify once the number is complete.
+    if (selectedBankCode && number.length === 10) {
+      void resolveAccount(selectedBankCode, number);
+    }
+  };
+
+  const handleSelectBank = (bank: Bank) => {
+    setSelectedBankCode(bank.code);
+    setResolved(undefined);
+    setShowBankPicker(false);
+    setBankSearch("");
+
+    // If the account number was already entered,
+    // verify against the newly selected bank.
+    if (accountNumber.length === 10) {
+      void resolveAccount(bank.code, accountNumber);
     }
   };
 
   const handleSave = async () => {
-    if (!selectedBank || !resolved) return;
+    if (!selectedBank || !resolved) {
+      return;
+    }
+
     const payload = {
       bank_name: selectedBank.name,
       bank_code: selectedBank.code,
       account_number: resolved.account_number,
-      nickname,
-      is_default: saveAs === "account" && accounts.length === 0
+
+      // Preserve the existing backend contract.
+      nickname: "",
+      is_default:
+        saveAs === "account" && accounts.length === 0,
     };
+
     try {
-      if (saveAs === "account") await onCreateAccount(payload);
-      else await onCreateBeneficiary(payload);
-      showBottomToast({ type: "success", text1: "Account saved" });
+      if (saveAs === "account") {
+        await onCreateAccount(payload);
+      } else {
+        await onCreateBeneficiary(payload);
+      }
+
+      showBottomToast({
+        type: "success",
+        text1: "Account saved",
+      });
+
+      // Return to the simple destination view.
       setShowAdd(false);
+      setShowBankPicker(false);
+      setSelectedBankCode("");
       setAccountNumber("");
-      setNickname("");
       setResolved(undefined);
+      setBankSearch("");
     } catch (error: any) {
       showBottomToast({
         type: "error",
         text1: "Could not save account",
-        text2: error?.response?.data?.message || error?.message || "Please try again."
+        text2:
+          error?.response?.data?.message ||
+          error?.message ||
+          "Please try again.",
       });
     }
   };
 
+  const resetAddForm = () => {
+    setShowAdd(false);
+    setShowBankPicker(false);
+    setSelectedBankCode("");
+    setAccountNumber("");
+    setResolved(undefined);
+    setBankSearch("");
+  };
+
   return (
     <View style={stepStyles.wrap}>
-      <StepHeading title="Send to where?" sub="Pick a saved account or add a new one." />
+      <StepHeading
+        title="Send to where?"
+        sub="Choose where the money should go."
+      />
 
-      {isLoading && <LoadingState text="Loading accounts…" />}
+      {/* ─────────────────────────────────────────────────────────────
+          LOADING
+      ───────────────────────────────────────────────────────────── */}
 
-      {!isLoading && Boolean(error) && <ErrorState onRetry={onRetry} />}
-
-      {!isLoading && !error && destinationOptions.length === 0 && !showAdd && (
-        <EmptyState
-          icon="card-outline"
-          title="No saved accounts"
-          subtitle="Add a bank account below to continue."
-        />
+      {isLoading && (
+        <LoadingState text="Loading accounts…" />
       )}
 
-      {!error && destinationOptions.length > 0 && (
-        <View style={stepStyles.list}>
-          {/* Search */}
-          <View style={destStyles.searchRow}>
-            <Ionicons name="search-outline" size={15} color={COLOR.textFaint} />
-            <TextInput
-              value={destinationSearch}
-              onChangeText={setDestinationSearch}
-              placeholder="Search saved accounts"
-              placeholderTextColor={COLOR.textFaint}
-              style={destStyles.searchInput}
-            />
-            {destinationSearch.length > 0 && (
-              <TouchableOpacity onPress={() => setDestinationSearch("")}>
-                <Ionicons name="close-circle" size={16} color={COLOR.textFaint} />
-              </TouchableOpacity>
-            )}
-          </View>
+      {/* ─────────────────────────────────────────────────────────────
+          ERROR
+      ───────────────────────────────────────────────────────────── */}
 
-          {filteredDestinations.length === 0 ? (
-            <EmptyState icon="search-outline" title="No matching accounts" />
-          ) : (
-            filteredDestinations.map((dest) => {
-              const key = `${dest.type}:${dest.id}`;
-              return (
-                <SelectRow
-                  key={key}
-                  selected={key === selectedDestinationKey}
-                  icon={dest.type === "account" ? "card-outline" : "person-outline"}
-                  title={dest.label}
-                  meta={`${dest.bank} · ${maskAccountNumber(dest.accountNumber)}`}
-                  onPress={() => onSelect(key)}
-                />
-              );
-            })
-          )}
-        </View>
+      {!isLoading && Boolean(error) && (
+        <ErrorState onRetry={onRetry} />
       )}
 
-      {/* Add account toggle */}
-      <TouchableOpacity
-        activeOpacity={0.8}
-        style={destStyles.addToggle}
-        onPress={() => setShowAdd((p) => !p)}
-      >
-        <View style={destStyles.addToggleIcon}>
-          <Ionicons name={showAdd ? "remove" : "add"} size={16} color={COLOR.forestDeep} />
-        </View>
-        <Text style={destStyles.addToggleText}>{showAdd ? "Cancel" : "Add a new account"}</Text>
-      </TouchableOpacity>
+      {!isLoading && !error && (
+        <>
+          {/* ─────────────────────────────────────────────────────────
+              SAVED DESTINATIONS
+          ───────────────────────────────────────────────────────── */}
 
-      {showAdd && (
-        <View style={destStyles.form}>
-          {/* Account type segment */}
-          <View style={destStyles.segment}>
-            {(["account", "beneficiary"] as const).map((opt) => (
-              <TouchableOpacity
-                key={opt}
-                activeOpacity={0.8}
-                onPress={() => setSaveAs(opt)}
-                style={[destStyles.segItem, saveAs === opt && destStyles.segItemActive]}
-              >
-                <Ionicons
-                  name={opt === "account" ? "person-outline" : "people-outline"}
-                  size={13}
-                  color={saveAs === opt ? "#FFF" : COLOR.textMuted}
-                />
-                <Text style={[destStyles.segText, saveAs === opt && destStyles.segTextActive]}>
-                  {opt === "account" ? "My account" : "Beneficiary"}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {destinationOptions.length > 0 && !showAdd && (
+            <View style={stepStyles.list}>
+              {shouldShowDestinationSearch && (
+                <View style={destStyles.searchRow}>
+                  <Ionicons
+                    name="search-outline"
+                    size={15}
+                    color={COLOR.textFaint}
+                  />
 
-          {/* Bank selection */}
-          <Text style={destStyles.fieldLabel}>Bank</Text>
-          <View style={destStyles.searchRow}>
-            <Ionicons name="search-outline" size={15} color={COLOR.textFaint} />
-            <TextInput
-              value={bankSearch}
-              onChangeText={setBankSearch}
-              placeholder="Search banks"
-              placeholderTextColor={COLOR.textFaint}
-              style={destStyles.searchInput}
-            />
-          </View>
-          <ScrollView
-            style={destStyles.bankScroll}
-            contentContainerStyle={{ gap: 6 }}
-            nestedScrollEnabled
-            showsVerticalScrollIndicator={false}
-          >
-            {filteredBanks.slice(0, 30).map((bank) => {
-              const sel = bank.code === selectedBankCode;
-              return (
-                <TouchableOpacity
-                  key={bank.code + bank.name}
-                  activeOpacity={0.8}
-                  onPress={() => {
-                    setSelectedBankCode(bank.code);
-                    setResolved(undefined);
-                  }}
-                  style={[destStyles.bankChip, sel && destStyles.bankChipActive]}
-                >
-                  {sel && <Ionicons name="checkmark-circle" size={13} color={COLOR.forestMid} />}
-                  <Text
-                    style={[destStyles.bankChipText, sel && destStyles.bankChipTextActive]}
-                    numberOfLines={1}
+                  <TextInput
+                    placeholder="Search accounts"
+                    placeholderTextColor={COLOR.textFaint}
+                    style={destStyles.searchInput}
+                  />
+                </View>
+              )}
+
+              {destinationOptions.map((dest) => {
+                const key = `${dest.type}:${dest.id}`;
+
+                const selected =
+                  key === selectedDestinationKey;
+
+                return (
+                  <TouchableOpacity
+                    key={key}
+                    activeOpacity={0.75}
+                    onPress={() => onSelect(key)}
+                    style={[
+                      destStyles.destinationRow,
+                      selected &&
+                      destStyles.destinationRowSelected,
+                    ]}
                   >
-                    {bank.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-            {filteredBanks.length === 0 && <Text style={destStyles.noBank}>No matching bank.</Text>}
-          </ScrollView>
+                    <View
+                      style={[
+                        destStyles.destinationIcon,
+                        selected &&
+                        destStyles.destinationIconSelected,
+                      ]}
+                    >
+                      <Ionicons
+                        name={
+                          dest.type === "account"
+                            ? "card-outline"
+                            : "person-outline"
+                        }
+                        size={18}
+                        color={
+                          selected
+                            ? COLOR.forestDeep
+                            : COLOR.textMuted
+                        }
+                      />
+                    </View>
 
-          {/* Account number */}
-          <Text style={destStyles.fieldLabel}>Account number</Text>
-          <TextInput
-            value={accountNumber}
-            onChangeText={(v) => {
-              setAccountNumber(v.replace(/[^0-9]/g, "").slice(0, 10));
-              setResolved(undefined);
-            }}
-            keyboardType="number-pad"
-            placeholder="10-digit account number"
-            placeholderTextColor={COLOR.textFaint}
-            style={destStyles.fieldInput}
-            maxLength={10}
-          />
+                    <View
+                      style={
+                        destStyles.destinationContent
+                      }
+                    >
+                      <Text
+                        style={destStyles.destinationTitle}
+                        numberOfLines={1}
+                      >
+                        {dest.label}
+                      </Text>
 
-          {/* Nickname */}
-          <Text style={destStyles.fieldLabel}>Nickname (optional)</Text>
-          <TextInput
-            value={nickname}
-            onChangeText={setNickname}
-            placeholder="e.g. Salary account"
-            placeholderTextColor={COLOR.textFaint}
-            style={destStyles.fieldInput}
-          />
+                      <Text
+                        style={destStyles.destinationMeta}
+                        numberOfLines={1}
+                      >
+                        {dest.bank} ·{" "}
+                        {maskAccountNumber(
+                          dest.accountNumber
+                        )}
+                      </Text>
+                    </View>
 
-          {/* Resolved name */}
-          {resolved && (
-            <View style={destStyles.resolvedBox}>
-              <Ionicons name="checkmark-circle" size={16} color={COLOR.forestMid} />
-              <Text style={destStyles.resolvedName}>{resolved.account_name}</Text>
+                    <View
+                      style={[
+                        destStyles.radio,
+                        selected &&
+                        destStyles.radioSelected,
+                      ]}
+                    >
+                      {selected && (
+                        <View
+                          style={
+                            destStyles.radioInner
+                          }
+                        />
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
 
-          <View style={destStyles.formActions}>
+          {/* ─────────────────────────────────────────────────────────
+              NO ACCOUNTS
+          ───────────────────────────────────────────────────────── */}
+
+          {destinationOptions.length === 0 &&
+            !showAdd && (
+              <View style={destStyles.emptyMinimal}>
+                <View style={destStyles.emptyIcon}>
+                  <Ionicons
+                    name="card-outline"
+                    size={20}
+                    color={COLOR.textMuted}
+                  />
+                </View>
+
+                <Text
+                  style={destStyles.emptyTitle}
+                >
+                  No saved accounts
+                </Text>
+
+                <Text
+                  style={destStyles.emptySubtitle}
+                >
+                  Add a bank account to continue.
+                </Text>
+              </View>
+            )}
+
+          {/* ─────────────────────────────────────────────────────────
+              ADD ACCOUNT
+          ───────────────────────────────────────────────────────── */}
+
+          {!showAdd ? (
             <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={handleResolve}
-              disabled={isResolving}
-              style={destStyles.secondaryBtn}
+              activeOpacity={0.7}
+              onPress={() => setShowAdd(true)}
+              style={destStyles.addAccountRow}
             >
-              {isResolving ? (
-                <ActivityIndicator size="small" color={COLOR.forestDeep} />
-              ) : (
-                <Text style={destStyles.secondaryBtnText}>Verify</Text>
-              )}
+              <View
+                style={destStyles.addAccountIcon}
+              >
+                <Ionicons
+                  name="add"
+                  size={18}
+                  color={COLOR.forestDeep}
+                />
+              </View>
+
+              <Text
+                style={destStyles.addAccountText}
+              >
+                Add bank account
+              </Text>
+
+              <Ionicons
+                name="chevron-forward"
+                size={17}
+                color={COLOR.textFaint}
+              />
             </TouchableOpacity>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={handleSave}
-              disabled={!resolved || isSaving}
-              style={[destStyles.primaryBtn, (!resolved || isSaving) && { opacity: 0.4 }]}
+          ) : (
+            <View style={destStyles.addFlow}>
+              {/* Header */}
+              <View
+                style={destStyles.addFlowHeader}
+              >
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={resetAddForm}
+                  hitSlop={10}
+                >
+                  <Ionicons
+                    name="arrow-back"
+                    size={20}
+                    color={COLOR.textMuted}
+                  />
+                </TouchableOpacity>
+
+                <View
+                  style={
+                    destStyles.addFlowHeaderText
+                  }
+                >
+                  <Text
+                    style={
+                      destStyles.addFlowTitle
+                    }
+                  >
+                    Add bank account
+                  </Text>
+
+                  <Text
+                    style={
+                      destStyles.addFlowSubtitle
+                    }
+                  >
+                    Enter the account details below.
+                  </Text>
+                </View>
+              </View>
+
+              {/* Bank */}
+              <View
+                style={destStyles.fieldGroup}
+              >
+                <Text
+                  style={destStyles.fieldLabel}
+                >
+                  Bank
+                </Text>
+
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  onPress={() =>
+                    setShowBankPicker(true)
+                  }
+                  style={[
+                    destStyles.selectField,
+                    selectedBank &&
+                    destStyles.selectFieldActive,
+                  ]}
+                >
+                  <View
+                    style={
+                      destStyles.selectFieldContent
+                    }
+                  >
+                    <Ionicons
+                      name="business-outline"
+                      size={18}
+                      color={
+                        selectedBank
+                          ? COLOR.forestDeep
+                          : COLOR.textFaint
+                      }
+                    />
+
+                    <Text
+                      style={[
+                        destStyles.selectFieldText,
+                        !selectedBank &&
+                        destStyles.selectFieldPlaceholder,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {selectedBank?.name ||
+                        "Select bank"}
+                    </Text>
+                  </View>
+
+                  <Ionicons
+                    name="chevron-down"
+                    size={17}
+                    color={COLOR.textFaint}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* Account number */}
+              <View
+                style={destStyles.fieldGroup}
+              >
+                <Text
+                  style={destStyles.fieldLabel}
+                >
+                  Account number
+                </Text>
+
+                <View
+                  style={[
+                    destStyles.accountInputRow,
+                    resolved &&
+                    destStyles.accountInputResolved,
+                  ]}
+                >
+                  <TextInput
+                    value={accountNumber}
+                    onChangeText={
+                      handleAccountNumberChange
+                    }
+                    keyboardType="number-pad"
+                    placeholder="10-digit account number"
+                    placeholderTextColor={
+                      COLOR.textFaint
+                    }
+                    style={
+                      destStyles.accountInput
+                    }
+                    maxLength={10}
+                  />
+
+                  {isResolving && (
+                    <ActivityIndicator
+                      size="small"
+                      color={COLOR.forestDeep}
+                    />
+                  )}
+
+                  {!isResolving && resolved && (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={19}
+                      color={COLOR.forestMid}
+                    />
+                  )}
+                </View>
+              </View>
+
+              {/* Resolved identity */}
+              {resolved && (
+                <View
+                  style={
+                    destStyles.resolvedMinimal
+                  }
+                >
+                  <View
+                    style={
+                      destStyles.resolvedIcon
+                    }
+                  >
+                    <Ionicons
+                      name="checkmark"
+                      size={14}
+                      color={COLOR.forestDeep}
+                    />
+                  </View>
+
+                  <View
+                    style={
+                      destStyles.resolvedContent
+                    }
+                  >
+                    <Text
+                      style={
+                        destStyles.resolvedLabel
+                      }
+                    >
+                      Account verified
+                    </Text>
+
+                    <Text
+                      style={
+                        destStyles.resolvedName
+                      }
+                    >
+                      {resolved.account_name}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Save */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleSave}
+                disabled={
+                  !resolved || isSaving
+                }
+                style={[
+                  destStyles.saveButton,
+                  (!resolved || isSaving) &&
+                  destStyles.saveButtonDisabled,
+                ]}
+              >
+                {isSaving ? (
+                  <ActivityIndicator
+                    size="small"
+                    color="#FFF"
+                  />
+                ) : (
+                  <Text
+                    style={
+                      destStyles.saveButtonText
+                    }
+                  >
+                    Save account
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* ─────────────────────────────────────────────────────────
+              BANK PICKER
+          ───────────────────────────────────────────────────────── */}
+
+          <Modal
+            visible={showBankPicker}
+            transparent
+            animationType="slide"
+            onRequestClose={() =>
+              setShowBankPicker(false)
+            }
+          >
+            <View
+              style={destStyles.bankModalBackdrop}
             >
-              {isSaving ? (
-                <ActivityIndicator size="small" color="#FFF" />
-              ) : (
-                <Text style={destStyles.primaryBtnText}>Save account</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
+              <TouchableOpacity
+                activeOpacity={1}
+                style={destStyles.bankModalDismiss}
+                onPress={() =>
+                  setShowBankPicker(false)
+                }
+              />
+
+              <View
+                style={destStyles.bankModal}
+              >
+                <View
+                  style={destStyles.bankModalHeader}
+                >
+                  <View>
+                    <Text
+                      style={
+                        destStyles.bankModalTitle
+                      }
+                    >
+                      Select bank
+                    </Text>
+
+                    <Text
+                      style={
+                        destStyles.bankModalSubtitle
+                      }
+                    >
+                      Search and choose your bank.
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() =>
+                      setShowBankPicker(false)
+                    }
+                    hitSlop={10}
+                  >
+                    <Ionicons
+                      name="close"
+                      size={22}
+                      color={COLOR.textMuted}
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <View
+                  style={destStyles.searchRow}
+                >
+                  <Ionicons
+                    name="search-outline"
+                    size={15}
+                    color={COLOR.textFaint}
+                  />
+
+                  <TextInput
+                    value={bankSearch}
+                    onChangeText={setBankSearch}
+                    placeholder="Search banks"
+                    placeholderTextColor={
+                      COLOR.textFaint
+                    }
+                    style={
+                      destStyles.searchInput
+                    }
+                    autoFocus
+                  />
+
+                  {bankSearch.length > 0 && (
+                    <TouchableOpacity
+                      onPress={() =>
+                        setBankSearch("")
+                      }
+                      hitSlop={8}
+                    >
+                      <Ionicons
+                        name="close-circle"
+                        size={16}
+                        color={COLOR.textFaint}
+                      />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={
+                    destStyles.bankList
+                  }
+                >
+                  {isBanksLoading && (
+                    <ActivityIndicator
+                      size="small"
+                      color={COLOR.forestDeep}
+                      style={{ marginTop: 24 }}
+                    />
+                  )}
+
+                  {!isBanksLoading && filteredBanks.map((bank) => {
+                    const selected =
+                      bank.code ===
+                      selectedBankCode;
+
+                    return (
+                      <TouchableOpacity
+                        key={
+                          bank.code + bank.name
+                        }
+                        activeOpacity={0.7}
+                        onPress={() =>
+                          handleSelectBank(
+                            bank
+                          )
+                        }
+                        style={[
+                          destStyles.bankRow,
+                          selected &&
+                          destStyles.bankRowSelected,
+                        ]}
+                      >
+                        <View
+                          style={
+                            destStyles.bankRowIcon
+                          }
+                        >
+                          <Ionicons
+                            name="business-outline"
+                            size={17}
+                            color={
+                              selected
+                                ? COLOR.forestDeep
+                                : COLOR.textMuted
+                            }
+                          />
+                        </View>
+
+                        <Text
+                          style={
+                            destStyles.bankRowText
+                          }
+                          numberOfLines={1}
+                        >
+                          {bank.name}
+                        </Text>
+
+                        {selected && (
+                          <Ionicons
+                            name="checkmark"
+                            size={19}
+                            color={
+                              COLOR.forestDeep
+                            }
+                          />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+
+                  {!isBanksLoading && filteredBanks.length === 0 && (
+                    <Text
+                      style={
+                        destStyles.noBank
+                      }
+                    >
+                      No matching bank.
+                    </Text>
+                  )}
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
+        </>
       )}
     </View>
   );
@@ -2322,10 +2809,9 @@ const reviewStyles = StyleSheet.create({
   }
 });
 
+
+//Step Pin
 const StepPin = ({
-  selectedTarget,
-  selectedDestination,
-  quote,
   hasWithdrawalPin,
   pinMode,
   withdrawalPin,
@@ -2339,11 +2825,8 @@ const StepPin = ({
   onResetPin,
   onCancelReset,
   pinError,
-  amountInKobo,
-  withdrawAll,
-isPinStatusLoading,
-newWithdrawalPin,
-selectedPlan
+  isPinStatusLoading,
+  newWithdrawalPin,
 }: {
   selectedPlan?: Plan;
   selectedTarget?: WithdrawalTarget;
@@ -2351,16 +2834,19 @@ selectedPlan
   amountInKobo: number;
   withdrawAll: boolean;
   quote?: WithdrawalPreview;
+
   hasWithdrawalPin: boolean;
   isPinStatusLoading: boolean;
   pinMode: "enter" | "reset";
+
   withdrawalPin: string;
   newWithdrawalPin: string;
   pinError: string | null;
   resetOtp: string;
+
   isSendingPinOtp: boolean;
   isResettingPin: boolean;
-  
+
   onChangeWithdrawalPin: (v: string) => void;
   onChangeNewWithdrawalPin: (v: string) => void;
   onChangeResetOtp: (v: string) => void;
@@ -2368,154 +2854,197 @@ selectedPlan
   onResetPin: () => void;
   onCancelReset: () => void;
 }) => {
-  const cleanPin = (v: string) => v.replace(/[^0-9]/g, "").slice(0, 4);
-  const cleanOtp = (v: string) => v.replace(/[^0-9]/g, "").slice(0, 6);
-  const resetReady = resetOtp.length === 6 && newWithdrawalPin.length === 4;
-  const activePin = hasWithdrawalPin ? withdrawalPin : newWithdrawalPin;
+  const cleanPin = (v: string) =>
+    v.replace(/[^0-9]/g, "").slice(0, 4);
+
+  const cleanOtp = (v: string) =>
+    v.replace(/[^0-9]/g, "").slice(0, 6);
+
+  const resetReady =
+    resetOtp.length === 6 &&
+    newWithdrawalPin.length === 4;
+
+  const activePin = hasWithdrawalPin
+    ? withdrawalPin
+    : newWithdrawalPin;
+
+  const handlePinChange = (value: string) => {
+    const cleaned = cleanPin(value);
+
+    if (hasWithdrawalPin) {
+      onChangeWithdrawalPin(cleaned);
+    } else {
+      onChangeNewWithdrawalPin(cleaned);
+    }
+  };
 
   return (
     <View style={stepStyles.wrap}>
-      <StepHeading
-        title="Review & approve"
-        sub="Confirm the details, then enter your PIN to send."
-      />
-
-      {/* Summary */}
-      <SummaryCard
-        plan={selectedPlan}
-        target={selectedTarget}
-        destination={selectedDestination}
-        amountInKobo={amountInKobo}
-        withdrawAll={withdrawAll}
-      />
-
-      <View style={reviewStyles.card}>
-        <ReviewRow label="Withdrawal amount" value={quoteAmount(quote?.requested_amount)} />
-        <ReviewRow label="You’ll receive" value={quoteAmount(quote?.recipient_amount)} />
-        <ReviewRow
-          label="Total fee"
-          value={quote ? formatMoney(quote.provider_transfer_fee + quote.government_levy) : "—"}
-        />
-        <ReviewRow label="Total deducted" value={quoteAmount(quote?.total_deduction)} />
-        <ReviewRow label="Remaining balance" value={quoteAmount(quote?.remaining_balance)} last />
-      </View>
-
-      {quote?.allowance_applied && quote.xavault_subsidy > 0 ? (
-        <View style={reviewStyles.subsidyBadge}>
-          <Ionicons name="checkmark-circle-outline" size={15} color={COLOR.forestMid} />
-          <Text style={reviewStyles.subsidyText}>Fee covered by XAVAULT</Text>
-        </View>
-      ) : null}
-
-      {/* PIN card */}
-      <View style={pinStyles.card}>
-        <View style={pinStyles.cardHeader}>
-          <View style={pinStyles.cardIcon}>
-            <Ionicons name="shield-checkmark-outline" size={16} color={COLOR.forestDeep} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={pinStyles.cardTitle}>
-              {isPinStatusLoading
-                ? "Checking security settings…"
-                : hasWithdrawalPin
-                  ? "Enter your PIN"
-                  : "Create a withdrawal PIN"}
+      {pinMode === "reset" ? (
+        /* ─────────────────────────────────────────────
+           RESET PIN
+        ───────────────────────────────────────────── */
+        <View style={minimalPinStyles.resetContainer}>
+          <View style={minimalPinStyles.header}>
+            <Text style={minimalPinStyles.title}>
+              Reset your PIN
             </Text>
-            <Text style={pinStyles.cardSub}>
-              {!isPinStatusLoading && !hasWithdrawalPin
-                ? "You'll use this 4-digit PIN for all future withdrawals."
-                : "This PIN secures all your withdrawals."}
+
+            <Text style={minimalPinStyles.subtitle}>
+              Enter the code sent to your email and create
+              a new 4-digit withdrawal PIN.
             </Text>
           </View>
-        </View>
 
-        {isPinStatusLoading ? (
-          <LoadingState text="Checking PIN status…" />
-        ) : pinMode === "reset" ? (
-          <View style={pinStyles.form}>
-            <View style={pinStyles.otpWrap}>
-              <Text style={pinStyles.otpLabel}>Email OTP</Text>
-              <TextInput
-                value={resetOtp}
-                onChangeText={(v) => onChangeResetOtp(cleanOtp(v))}
-                keyboardType="number-pad"
-                placeholder="6-digit code"
-                placeholderTextColor={COLOR.textFaint}
-                style={pinStyles.otpInput}
-                maxLength={6}
-              />
-            </View>
-            <Text style={pinStyles.newPinLabel}>New PIN</Text>
+          <View style={minimalPinStyles.field}>
+            <Text style={minimalPinStyles.label}>
+              Email code
+            </Text>
+
+            <TextInput
+              value={resetOtp}
+              onChangeText={(value) =>
+                onChangeResetOtp(cleanOtp(value))
+              }
+              keyboardType="number-pad"
+              placeholder="6-digit code"
+              placeholderTextColor={COLOR.textFaint}
+              style={minimalPinStyles.otpInput}
+              maxLength={6}
+            />
+          </View>
+
+          <View style={minimalPinStyles.pinSection}>
+            <Text style={minimalPinStyles.label}>
+              New PIN
+            </Text>
+
             <PinDots value={newWithdrawalPin} />
+
             <PinKeypad
               value={newWithdrawalPin}
-              onChange={(v) => onChangeNewWithdrawalPin(cleanPin(v))}
-            />
-            <View style={pinStyles.actions}>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={onCancelReset}
-                style={pinStyles.secondaryBtn}
-              >
-                <Text style={pinStyles.secondaryBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={onResetPin}
-                disabled={!resetReady || isResettingPin}
-                style={[pinStyles.primaryBtn, (!resetReady || isResettingPin) && { opacity: 0.4 }]}
-              >
-                {isResettingPin ? (
-                  <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                  <Text style={pinStyles.primaryBtnText}>Reset PIN</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          <View style={pinStyles.form}>
-            <PinDots value={activePin} />
-            <PinKeypad
-              value={activePin}
-              onChange={(v) =>
-                hasWithdrawalPin
-                  ? onChangeWithdrawalPin(cleanPin(v))
-                  : onChangeNewWithdrawalPin(cleanPin(v))
+              onChange={(value) =>
+                onChangeNewWithdrawalPin(cleanPin(value))
               }
             />
-            {pinError ? (
-              <View style={pinStyles.inlineError}>
-                <Ionicons name="alert-circle-outline" size={15} color="#B42318" />
-                <Text style={pinStyles.inlineErrorText}>{pinError}</Text>
-              </View>
-            ) : null}
-            {hasWithdrawalPin && (
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={onForgotPin}
-                disabled={isSendingPinOtp}
-                style={pinStyles.forgotBtn}
-              >
-                <Text style={pinStyles.forgotBtnText}>
-                  {isSendingPinOtp ? "Sending OTP…" : "Forgot PIN?"}
+          </View>
+
+          <View style={minimalPinStyles.resetActions}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={onCancelReset}
+              style={minimalPinStyles.cancelButton}
+            >
+              <Text style={minimalPinStyles.cancelButtonText}>
+                Cancel
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={onResetPin}
+              disabled={!resetReady || isResettingPin}
+              style={[
+                minimalPinStyles.resetButton,
+                (!resetReady || isResettingPin) &&
+                minimalPinStyles.buttonDisabled,
+              ]}
+            >
+              {isResettingPin ? (
+                <ActivityIndicator
+                  size="small"
+                  color="#FFF"
+                />
+              ) : (
+                <Text style={minimalPinStyles.resetButtonText}>
+                  Reset PIN
                 </Text>
-              </TouchableOpacity>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        /* ─────────────────────────────────────────────
+           ENTER / CREATE PIN
+        ───────────────────────────────────────────── */
+        <View style={minimalPinStyles.container}>
+          <View style={minimalPinStyles.header}>
+            <Text style={minimalPinStyles.title}>
+              {isPinStatusLoading
+                ? "Checking PIN"
+                : hasWithdrawalPin
+                  ? "Approve withdrawal"
+                  : "Create withdrawal PIN"}
+            </Text>
+
+            {!isPinStatusLoading && (
+              <Text style={minimalPinStyles.subtitle}>
+                {hasWithdrawalPin
+                  ? "Enter your 4-digit PIN to authorize this withdrawal."
+                  : "Create a 4-digit PIN to secure your withdrawals."}
+              </Text>
             )}
           </View>
-        )}
-      </View>
 
-      {/* Warning notice */}
-      <View style={stepStyles.notice}>
-        <Ionicons name="alert-circle-outline" size={14} color={COLOR.amber} />
-        <Text style={stepStyles.noticeText}>
-          Withdraw {quoteAmount(quote?.requested_amount)}. You’ll receive approximately {quoteAmount(quote?.recipient_amount)} after a {quote ? formatMoney(quote.provider_transfer_fee + quote.government_levy) : "—"} fee.
-        </Text>
-      </View>
+          {isPinStatusLoading ? (
+            <View style={minimalPinStyles.loading}>
+              <ActivityIndicator
+                size="small"
+                color={COLOR.forestMid}
+              />
+
+              <Text style={minimalPinStyles.loadingText}>
+                Checking security settings…
+              </Text>
+            </View>
+          ) : (
+            <>
+              <View style={minimalPinStyles.pinSection}>
+                <PinDots value={activePin} />
+
+                <PinKeypad
+                  value={activePin}
+                  onChange={handlePinChange}
+                />
+              </View>
+
+              {pinError ? (
+                <View style={minimalPinStyles.error}>
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={15}
+                    color="#B42318"
+                  />
+
+                  <Text style={minimalPinStyles.errorText}>
+                    {pinError}
+                  </Text>
+                </View>
+              ) : null}
+
+              {hasWithdrawalPin && (
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={onForgotPin}
+                  disabled={isSendingPinOtp}
+                  style={minimalPinStyles.forgotButton}
+                >
+                  <Text style={minimalPinStyles.forgotText}>
+                    {isSendingPinOtp
+                      ? "Sending code…"
+                      : "Forgot PIN?"}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+        </View>
+      )}
     </View>
   );
 };
+
+
 
 // ─── PIN sub-components ───────────────────────────────────────────────────────
 
@@ -2600,79 +3129,79 @@ const ProcessingOverlay = ({
       : overlayStyles.cardProcessing;
 
   return (
-  <View style={overlayStyles.wrap}>
-    <View style={[overlayStyles.card, toneStyle]}>
-      {isSubmitting ? (
-        <View style={overlayStyles.spinnerWrap}>
-          <ActivityIndicator color={COLOR.forestDeep} size="large" />
-        </View>
-      ) : (
-        <View
-          style={[
-            overlayStyles.statusIcon,
-            isCompleted
-              ? overlayStyles.statusIconCompleted
+    <View style={overlayStyles.wrap}>
+      <View style={[overlayStyles.card, toneStyle]}>
+        {isSubmitting ? (
+          <View style={overlayStyles.spinnerWrap}>
+            <ActivityIndicator color={COLOR.forestDeep} size="large" />
+          </View>
+        ) : (
+          <View
+            style={[
+              overlayStyles.statusIcon,
+              isCompleted
+                ? overlayStyles.statusIconCompleted
+                : isFailed
+                  ? overlayStyles.statusIconFailed
+                  : overlayStyles.statusIconProcessing
+            ]}
+          >
+            <Ionicons
+              name={isCompleted ? "checkmark" : isFailed ? "close" : "time-outline"}
+              size={30}
+              color="#FFF"
+            />
+          </View>
+        )}
+        <Text style={overlayStyles.title}>
+          {isSubmitting
+            ? "Sending withdrawal..."
+            : isCompleted
+              ? "Withdrawal completed"
               : isFailed
-                ? overlayStyles.statusIconFailed
-                : overlayStyles.statusIconProcessing
-          ]}
-        >
-          <Ionicons
-            name={isCompleted ? "checkmark" : isFailed ? "close" : "time-outline"}
-            size={30}
-            color="#FFF"
-          />
-        </View>
-      )}
-      <Text style={overlayStyles.title}>
-        {isSubmitting
-          ? "Sending withdrawal..."
-          : isCompleted
-            ? "Withdrawal completed"
-            : isFailed
-              ? "Withdrawal failed"
-              : timedOut
-                ? "Still processing"
-                : "Transfer processing"}
-      </Text>
-      <Text style={overlayStyles.sub}>
-        {isSubmitting
-          ? "Keep this screen open while Paystack accepts your request."
-          : isCompleted
-            ? `${amount} was successfully transferred.`
-            : isFailed
-              ? "The transfer was not completed. The funds remain in your plan or envelope."
-              : timedOut
-                ? `${amount} was accepted and is still awaiting confirmation. You can close this screen and check Transactions later.`
-                : `${amount} was accepted and is awaiting confirmation from Paystack.`}
-      </Text>
-      {!isSubmitting && receipt ? (
-        <View style={overlayStyles.receiptBox}>
-          <View style={overlayStyles.receiptRow}>
-            <Text style={overlayStyles.receiptLabel}>Reference</Text>
-            <Text style={overlayStyles.receiptValue} numberOfLines={1}>
-              {receipt.reference}
-            </Text>
+                ? "Withdrawal failed"
+                : timedOut
+                  ? "Still processing"
+                  : "Transfer processing"}
+        </Text>
+        <Text style={overlayStyles.sub}>
+          {isSubmitting
+            ? "Keep this screen open while Paystack accepts your request."
+            : isCompleted
+              ? `${amount} was successfully transferred.`
+              : isFailed
+                ? "The transfer was not completed. The funds remain in your plan or envelope."
+                : timedOut
+                  ? `${amount} was accepted and is still awaiting confirmation. You can close this screen and check Transactions later.`
+                  : `${amount} was accepted and is awaiting confirmation from Paystack.`}
+        </Text>
+        {!isSubmitting && receipt ? (
+          <View style={overlayStyles.receiptBox}>
+            <View style={overlayStyles.receiptRow}>
+              <Text style={overlayStyles.receiptLabel}>Reference</Text>
+              <Text style={overlayStyles.receiptValue} numberOfLines={1}>
+                {receipt.reference}
+              </Text>
+            </View>
+            <View style={overlayStyles.receiptRow}>
+              <Text style={overlayStyles.receiptLabel}>Status</Text>
+              <Text style={overlayStyles.receiptValue}>{receipt.status}</Text>
+            </View>
+            <View style={overlayStyles.receiptRow}>
+              <Text style={overlayStyles.receiptLabel}>To</Text>
+              <Text style={overlayStyles.receiptValue} numberOfLines={1}>
+                {receipt.destination}
+              </Text>
+            </View>
           </View>
-          <View style={overlayStyles.receiptRow}>
-            <Text style={overlayStyles.receiptLabel}>Status</Text>
-            <Text style={overlayStyles.receiptValue}>{receipt.status}</Text>
-          </View>
-          <View style={overlayStyles.receiptRow}>
-            <Text style={overlayStyles.receiptLabel}>To</Text>
-            <Text style={overlayStyles.receiptValue} numberOfLines={1}>
-              {receipt.destination}
-            </Text>
-          </View>
-        </View>
-      ) : null}
-      {!isSubmitting && (
-        <TouchableOpacity activeOpacity={0.85} onPress={onDone} style={overlayStyles.doneBtn}>
-          <Text style={overlayStyles.doneBtnText}>Done</Text>
-        </TouchableOpacity>
-      )}
+        ) : null}
+        {!isSubmitting && (
+          <TouchableOpacity activeOpacity={0.85} onPress={onDone} style={overlayStyles.doneBtn}>
+            <Text style={overlayStyles.doneBtnText}>Done</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
-  </View>
   );
 };
 
@@ -2842,102 +3371,528 @@ const amountStyles = StyleSheet.create({
 });
 
 const destStyles = StyleSheet.create({
+  // ─────────────────────────────────────────────────────────────
+  // SEARCH
+  // ─────────────────────────────────────────────────────────────
+
   searchRow: {
     height: 46,
-    borderRadius: 14,
-    borderWidth: 1.5,
+    borderRadius: 12,
+    borderWidth: 1,
     borderColor: COLOR.border,
     backgroundColor: COLOR.surface,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    paddingHorizontal: 12
+    paddingHorizontal: 12,
   },
+
   searchInput: {
     flex: 1,
     color: COLOR.textBody,
     fontSize: 14,
-    fontWeight: "700",
-    paddingVertical: 0
+    fontWeight: "500",
+    paddingVertical: 0,
   },
+
+  // ─────────────────────────────────────────────────────────────
+  // SAVED DESTINATIONS
+  // ─────────────────────────────────────────────────────────────
+
+  destinationRow: {
+    minHeight: 68,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: COLOR.border,
+  },
+
+  destinationRowSelected: {
+    backgroundColor: COLOR.forestLight,
+    borderRadius: 12,
+    borderBottomWidth: 0,
+    paddingHorizontal: 10,
+  },
+
+  destinationIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLOR.bgSubtle,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  destinationIconSelected: {
+    backgroundColor: COLOR.forestLight,
+  },
+
+  destinationContent: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 12,
+  },
+
+  destinationTitle: {
+    color: COLOR.textBody,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  destinationMeta: {
+    marginTop: 4,
+    color: COLOR.textMuted,
+    fontSize: 12,
+    fontWeight: "500",
+  },
+
+  radio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: COLOR.textFaint,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  radioSelected: {
+    borderColor: COLOR.forestDeep,
+  },
+
+  radioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: COLOR.forestDeep,
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // EMPTY STATE
+  // ─────────────────────────────────────────────────────────────
+
+  emptyMinimal: {
+    alignItems: "center",
+    paddingVertical: 28,
+    paddingHorizontal: 20,
+  },
+
+  emptyIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: COLOR.bgSubtle,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+
+  emptyTitle: {
+    color: COLOR.textBody,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  emptySubtitle: {
+    marginTop: 4,
+    color: COLOR.textMuted,
+    fontSize: 12,
+    fontWeight: "500",
+    textAlign: "center",
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // ADD ACCOUNT ENTRY
+  // ─────────────────────────────────────────────────────────────
+
+  addAccountRow: {
+    minHeight: 54,
+    marginTop: 8,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: COLOR.border,
+  },
+
+  addAccountIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: COLOR.forestLight,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  addAccountText: {
+    flex: 1,
+    marginLeft: 10,
+    color: COLOR.forestDeep,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  // Keep these aliases if another part of the component
+  // still references the old names during the transition.
+
   addToggle: {
-    marginTop: 14,
+    marginTop: 8,
+    minHeight: 54,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: COLOR.border,
-    borderStyle: "dashed",
-    backgroundColor: COLOR.surface,
-    paddingVertical: 13
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: COLOR.border,
+    backgroundColor: "transparent",
   },
+
   addToggleIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: COLOR.forestLight,
     alignItems: "center",
-    justifyContent: "center"
+    justifyContent: "center",
   },
+
   addToggleText: {
     color: COLOR.forestDeep,
-    fontSize: 13,
-    fontWeight: "800"
+    fontSize: 14,
+    fontWeight: "600",
   },
-  form: {
-    marginTop: 14,
-    borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: COLOR.border,
-    backgroundColor: COLOR.surface,
-    padding: 16,
-    gap: 12
+
+  // ─────────────────────────────────────────────────────────────
+  // ADD ACCOUNT FLOW
+  // ─────────────────────────────────────────────────────────────
+
+  addFlow: {
+    marginTop: 8,
+    paddingTop: 8,
   },
-  segment: {
+
+  addFlowHeader: {
     flexDirection: "row",
-    backgroundColor: COLOR.bgSubtle,
-    borderRadius: 12,
-    padding: 4,
-    gap: 4
-  },
-  segItem: {
-    flex: 1,
-    flexDirection: "row",
-    height: 38,
-    borderRadius: 10,
     alignItems: "center",
-    justifyContent: "center",
-    gap: 6
+    marginBottom: 24,
   },
-  segItemActive: {
-    backgroundColor: COLOR.forestDeep
+
+  addFlowHeaderText: {
+    flex: 1,
+    marginLeft: 12,
   },
-  segText: {
+
+  addFlowTitle: {
+    color: COLOR.textBody,
+    fontSize: 17,
+    fontWeight: "700",
+  },
+
+  addFlowSubtitle: {
+    marginTop: 4,
     color: COLOR.textMuted,
     fontSize: 12,
-    fontWeight: "800"
+    fontWeight: "500",
   },
-  segTextActive: {
-    color: "#FFF"
+
+  fieldGroup: {
+    marginBottom: 18,
   },
+
   fieldLabel: {
-    color: COLOR.textFaint,
-    fontSize: 10,
-    fontWeight: "900",
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-    marginBottom: -6
+    marginBottom: 7,
+    color: COLOR.textMuted,
+    fontSize: 11,
+    fontWeight: "600",
   },
+
+  // ─────────────────────────────────────────────────────────────
+  // BANK SELECT
+  // ─────────────────────────────────────────────────────────────
+
+  selectField: {
+    minHeight: 52,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLOR.border,
+    backgroundColor: COLOR.surface,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  selectFieldActive: {
+    borderColor: COLOR.forestMid,
+    backgroundColor: COLOR.forestLight,
+  },
+
+  selectFieldContent: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  selectFieldText: {
+    flex: 1,
+    marginLeft: 10,
+    color: COLOR.textBody,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  selectFieldPlaceholder: {
+    color: COLOR.textFaint,
+    fontWeight: "500",
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // ACCOUNT NUMBER
+  // ─────────────────────────────────────────────────────────────
+
+  accountInputRow: {
+    minHeight: 52,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLOR.border,
+    backgroundColor: COLOR.surface,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  accountInputResolved: {
+    borderColor: COLOR.forestMid,
+    backgroundColor: COLOR.forestLight,
+  },
+
+  accountInput: {
+    flex: 1,
+    color: COLOR.textBody,
+    fontSize: 15,
+    fontWeight: "600",
+    paddingVertical: 0,
+  },
+
+  // Keep fieldInput for any existing references.
+  fieldInput: {
+    height: 52,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLOR.border,
+    backgroundColor: COLOR.surface,
+    color: COLOR.textBody,
+    fontSize: 15,
+    fontWeight: "600",
+    paddingHorizontal: 14,
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // VERIFIED ACCOUNT
+  // ─────────────────────────────────────────────────────────────
+
+  resolvedMinimal: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    marginBottom: 18,
+  },
+
+  resolvedIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: COLOR.forestLight,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  resolvedContent: {
+    flex: 1,
+    marginLeft: 10,
+  },
+
+  resolvedLabel: {
+    color: COLOR.textMuted,
+    fontSize: 11,
+    fontWeight: "500",
+  },
+
+  resolvedName: {
+    marginTop: 2,
+    color: COLOR.forestDeep,
+    fontSize: 14,
+    fontWeight: "700",
+    flex: 1,
+  },
+
+  // Keep the old name working if needed.
+  resolvedBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLOR.forestBorder,
+    backgroundColor: COLOR.forestLight,
+    padding: 12,
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // SAVE
+  // ─────────────────────────────────────────────────────────────
+
+  saveButton: {
+    height: 50,
+    borderRadius: 12,
+    backgroundColor: COLOR.forestDeep,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  saveButtonDisabled: {
+    opacity: 0.4,
+  },
+
+  saveButtonText: {
+    color: "#FFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  // Keep old action styles available so the component
+  // doesn't break if an old reference remains.
+  formActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+
+  secondaryBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: COLOR.bgSubtle,
+    borderWidth: 1,
+    borderColor: COLOR.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  secondaryBtnText: {
+    color: COLOR.forestDeep,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  primaryBtn: {
+    flex: 2,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: COLOR.forestMid,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  primaryBtnText: {
+    color: "#FFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // BANK PICKER
+  // ─────────────────────────────────────────────────────────────
+
+  bankModalBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0, 0, 0, 0.25)",
+  },
+
+  bankModalDismiss: {
+    flex: 1,
+  },
+
+  bankModal: {
+    maxHeight: "75%",
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: COLOR.surface,
+  },
+
+  bankModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 18,
+  },
+
+  bankModalTitle: {
+    color: COLOR.textBody,
+    fontSize: 17,
+    fontWeight: "700",
+  },
+
+  bankModalSubtitle: {
+    marginTop: 4,
+    color: COLOR.textMuted,
+    fontSize: 12,
+    fontWeight: "500",
+  },
+
+  bankList: {
+    paddingTop: 8,
+    paddingBottom: 16,
+  },
+
+  bankRow: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: COLOR.border,
+  },
+
+  bankRowSelected: {
+    backgroundColor: COLOR.forestLight,
+  },
+
+  bankRowIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: COLOR.bgSubtle,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  bankRowText: {
+    flex: 1,
+    marginLeft: 10,
+    marginRight: 10,
+    color: COLOR.textBody,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+
+  // ─────────────────────────────────────────────────────────────
+  // LEGACY BANK STYLES
+  // ─────────────────────────────────────────────────────────────
+
   bankScroll: {
     maxHeight: 180,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: COLOR.border,
     backgroundColor: COLOR.bgSubtle,
-    padding: 8
+    padding: 8,
   },
+
   bankChip: {
     flexDirection: "row",
     alignItems: "center",
@@ -2947,88 +3902,33 @@ const destStyles = StyleSheet.create({
     borderColor: COLOR.border,
     backgroundColor: COLOR.surface,
     paddingHorizontal: 12,
-    paddingVertical: 9
+    paddingVertical: 9,
   },
+
   bankChipActive: {
     borderColor: COLOR.forestMid,
-    backgroundColor: COLOR.forestLight
+    backgroundColor: COLOR.forestLight,
   },
+
   bankChipText: {
+    flex: 1,
     color: COLOR.textMuted,
     fontSize: 13,
-    fontWeight: "700",
-    flex: 1
+    fontWeight: "600",
   },
+
   bankChipTextActive: {
     color: COLOR.forestDeep,
-    fontWeight: "800"
+    fontWeight: "700",
   },
+
   noBank: {
     color: COLOR.textFaint,
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "500",
     textAlign: "center",
-    paddingVertical: 12
+    paddingVertical: 16,
   },
-  fieldInput: {
-    height: 48,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: COLOR.border,
-    backgroundColor: COLOR.bgSubtle,
-    color: COLOR.textBody,
-    fontSize: 15,
-    fontWeight: "800",
-    paddingHorizontal: 14
-  },
-  resolvedBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLOR.forestBorder,
-    backgroundColor: COLOR.forestLight,
-    padding: 12
-  },
-  resolvedName: {
-    color: COLOR.forestMid,
-    fontSize: 13,
-    fontWeight: "900",
-    flex: 1
-  },
-  formActions: {
-    flexDirection: "row",
-    gap: 10
-  },
-  secondaryBtn: {
-    flex: 1,
-    height: 46,
-    borderRadius: 14,
-    backgroundColor: COLOR.bgSubtle,
-    borderWidth: 1.5,
-    borderColor: COLOR.border,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  secondaryBtnText: {
-    color: COLOR.forestDeep,
-    fontSize: 13,
-    fontWeight: "900"
-  },
-  primaryBtn: {
-    flex: 2,
-    height: 46,
-    borderRadius: 14,
-    backgroundColor: COLOR.forestMid,
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  primaryBtnText: {
-    color: "#FFF",
-    fontSize: 13,
-    fontWeight: "900"
-  }
 });
 
 const pinStyles = StyleSheet.create({
@@ -3210,6 +4110,221 @@ const pinStyles = StyleSheet.create({
     fontWeight: "900"
   }
 });
+
+
+
+
+const minimalPinStyles = StyleSheet.create({
+  container: {
+    paddingTop: 8,
+    paddingBottom: 24,
+  },
+
+  header: {
+    alignItems: "center",
+    marginBottom: 28,
+    paddingHorizontal: 12,
+  },
+
+  title: {
+    color: COLOR.textBody,
+    fontSize: 21,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+    textAlign: "center",
+  },
+
+  subtitle: {
+    color: COLOR.textMuted,
+    fontSize: 13,
+    fontWeight: "500",
+    lineHeight: 19,
+    marginTop: 7,
+    maxWidth: 300,
+    textAlign: "center",
+  },
+
+  pinSection: {
+    alignItems: "center",
+    gap: 18,
+  },
+
+  dots: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 14,
+    paddingVertical: 4,
+  },
+
+  dot: {
+    width: 15,
+    height: 15,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: COLOR.border,
+    backgroundColor: COLOR.surface,
+  },
+
+  dotFilled: {
+    backgroundColor: COLOR.forestDeep,
+    borderColor: COLOR.forestDeep,
+  },
+
+  keypad: {
+    gap: 10,
+    marginTop: 4,
+  },
+
+  keyRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 10,
+  },
+
+  key: {
+    width: 86,
+    height: 54,
+    borderRadius: 16,
+    backgroundColor: COLOR.bgSubtle,
+    borderWidth: 1,
+    borderColor: COLOR.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  keyGhost: {
+    width: 86,
+    height: 54,
+  },
+
+  keyText: {
+    color: COLOR.forestDeep,
+    fontSize: 21,
+    fontWeight: "700",
+  },
+
+  error: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 18,
+    paddingHorizontal: 16,
+  },
+
+  errorText: {
+    color: "#B42318",
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "center",
+    flexShrink: 1,
+  },
+
+  forgotButton: {
+    alignSelf: "center",
+    marginTop: 18,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+
+  forgotText: {
+    color: COLOR.forestMid,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  loading: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+    gap: 10,
+  },
+
+  loadingText: {
+    color: COLOR.textMuted,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  /* ─────────────────────────────────────────────
+     RESET PIN
+  ───────────────────────────────────────────── */
+
+  resetContainer: {
+    paddingTop: 8,
+    paddingBottom: 24,
+  },
+
+  field: {
+    marginBottom: 24,
+  },
+
+  label: {
+    color: COLOR.textMuted,
+    fontSize: 11,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+
+  otpInput: {
+    height: 50,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: COLOR.border,
+    backgroundColor: COLOR.bgSubtle,
+    color: COLOR.textBody,
+    fontSize: 16,
+    fontWeight: "700",
+    paddingHorizontal: 14,
+    letterSpacing: 3,
+    textAlign: "center",
+  },
+
+  resetActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 28,
+  },
+
+  cancelButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 13,
+    backgroundColor: COLOR.bgSubtle,
+    borderWidth: 1,
+    borderColor: COLOR.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  cancelButtonText: {
+    color: COLOR.forestDeep,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  resetButton: {
+    flex: 1.5,
+    height: 48,
+    borderRadius: 13,
+    backgroundColor: COLOR.forestDeep,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  resetButtonText: {
+    color: "#FFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  buttonDisabled: {
+    opacity: 0.4,
+  },
+});
+
+
 
 const overlayStyles = StyleSheet.create({
   wrap: {
