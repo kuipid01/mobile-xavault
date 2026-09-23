@@ -122,7 +122,11 @@ export const isLoggedIn = async (): Promise<boolean> => {
 export const loginUser = async (data: LoginPayload) => {
   log.info("Logging in user:", data.email);
 
-  const res = await api.post("/auth/login", data);
+  // Failure here is a normal outcome (wrong password), never a dead session:
+  // skip refresh recovery so the error surfaces to the login screen.
+  const res = await api.post("/auth/login", data, {
+    skipAuthRecovery: true,
+  } as any);
   const response = res.data.data;
 
   log.info("Login response token presence", {
@@ -239,7 +243,7 @@ const revokeRefreshTokenOnServer = async (
     api.post(
       "/auth/logout",
       { refresh_token: refreshToken },
-      { suppressGlobalErrorModal: true } as any,
+      { suppressGlobalErrorModal: true, skipAuthRecovery: true } as any,
     );
 
   try {

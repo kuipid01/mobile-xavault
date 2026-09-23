@@ -47,6 +47,10 @@ type RefreshResponse = {
 type RetryableRequestConfig = InternalAxiosRequestConfig & {
   _retry?: boolean;
   suppressGlobalErrorModal?: boolean;
+  /** Requests that expect failure as a normal outcome (login, payment
+   * status checks, fire-and-forget revokes) must never trigger refresh
+   * recovery or logout on 401/403 — a wrong password is not a dead session. */
+  skipAuthRecovery?: boolean;
 };
 
 // ─── Logging ──────────────────────────────────────────────────────────────────
@@ -263,9 +267,19 @@ api.interceptors.response.use(
     // global error modal for that request so a 401 storm can't stack modals.
     let sessionTerminated = false;
 
-    if (status === 401 && originalRequest && !originalRequest._retry) {
-      originalRequest._retry = true;
-      log.info(`401 on ${url} — attempting token refresh and retry`);
+    // Never run refresh recovery for requests made WITHOUT credentials (e.g.
+    // a failed login attempt): there is no session to recover, and a wrong
+    // password must surface its error instead of being swallowed as
+    // "session terminated". Requests WITH a header still recover normally.
+    const hadAuthHeader = Boolean(originalRequest?.headers?.Authorization);
+
+    if (
+      status === 401 &&
+      originalRequest &&
+      !originalRequest._retry &&
+      !originalRequest.skipAuthRecovery &&
+      hadAuthHeader
+    ) {
 
       try {
         const token = await refreshAuthTokens();
@@ -286,6 +300,10 @@ api.interceptors.response.use(
       }
     }
 
+    // Every failure surfaces unless THIS request opted out — the user must
+    // get feedback on every attempt (a wrong password shows the modal every
+    // time). Opt-outs live only on configs that produce noise: pollers,
+    // fire-and-forget calls, locally-handled checks.
     if (
       !sessionTerminated &&
       !originalRequest?.suppressGlobalErrorModal &&

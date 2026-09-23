@@ -70,11 +70,12 @@ export type WithdrawResponse = {
   };
 };
 
+// User-action writes: failure must ALWAYS surface in the global modal — the
+// person pressed a button and needs feedback on every attempt.
 export const requestWithdrawal = async (planId: string, payload: WithdrawPayload) => {
   const res = await api.post<ApiResponse<WithdrawResponse>>(
     `/withdrawals/${planId}/request`,
-    payload,
-    { suppressGlobalErrorModal: true } as any
+    payload
   );
   return res.data.data;
 };
@@ -82,12 +83,13 @@ export const requestWithdrawal = async (planId: string, payload: WithdrawPayload
 export const previewWithdrawal = async (planId: string, payload: WithdrawalPreviewPayload) => {
   const res = await api.post<ApiResponse<WithdrawalPreview>>(
     `/withdrawals/${planId}/preview`,
-    payload,
-    { suppressGlobalErrorModal: true } as any
+    payload
   );
   return res.data.data;
 };
 
+// Status check inside the withdrawal modal's own verify UI: "still
+// processing" is an expected outcome, so the modal owns the error display.
 export const getWithdrawal = async (withdrawalId: string) => {
   const res = await api.get<ApiResponse<WithdrawalRecord>>(
     `/withdrawals/${withdrawalId}`,
@@ -99,8 +101,7 @@ export const getWithdrawal = async (withdrawalId: string) => {
 export const cancelWithdrawal = async (withdrawalId: string, reason?: string) => {
   const res = await api.post<ApiResponse<WithdrawalRecord>>(
     `/withdrawals/${withdrawalId}/cancel`,
-    { reason: reason || "" },
-    { suppressGlobalErrorModal: true } as any
+    { reason: reason || "" }
   );
   return res.data.data;
 };
@@ -112,16 +113,21 @@ export type WithdrawalHistoryPage = {
   total: number;
 };
 
+// Query-backed GET feeding the 5s history poller: screens render their own
+// empty/error states, so an interceptor modal here is the "incessant modal"
+// source we set out to kill.
 export const getWithdrawals = async (page = 1) => {
   const res = await api.get<ApiResponse<WithdrawalHistoryPage>>(
-    `/withdrawals/history?page=${page}&limit=50`
+    `/withdrawals/history?page=${page}&limit=50`,
+    { suppressGlobalErrorModal: true } as any
   );
   return res.data.data || { items: [], page, limit: 50, total: 0 };
 };
 
 export const getPlanWithdrawals = async (planId: string) => {
   const res = await api.get<ApiResponse<WithdrawalHistoryPage>>(
-    `/withdrawals/${planId}/withdrawals`
+    `/withdrawals/${planId}/withdrawals`,
+    { suppressGlobalErrorModal: true } as any
   );
   return res.data.data?.items || [];
 };

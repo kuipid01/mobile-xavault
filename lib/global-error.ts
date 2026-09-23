@@ -15,47 +15,13 @@ export const registerGlobalErrorListener = (next: GlobalErrorListener) => {
   };
 };
 
-// Coalesce rapid-fire failures: when several requests fail at once (e.g. a
-// 401 storm after a dead session, or a network blip hitting 5 screens in
-// parallel), show ONE modal instead of stacking/re-popping endlessly.
-const COALESCE_WINDOW_MS = 1500;
-
-// A poller (e.g. the withdrawals 5s refetchInterval) can re-produce the SAME
-// error forever. Suppressing identical payloads for a longer window is what
-// makes the modal truly non-incessant; a NEW error always shows immediately.
-const SAME_ERROR_SUPPRESS_MS = 60_000;
-
-let lastPublishedAt = 0;
-let lastPayloadKey: string | null = null;
-
-const payloadKey = (payload: GlobalErrorPayload) =>
-  `${payload.title}::${payload.message}`;
-
+// Every error shows by default — the user must get feedback on every attempt
+// (a wrong password pressed twice shows the modal twice). Suppression is
+// OPT-IN per request via `suppressGlobalErrorModal` on the axios config, for
+// sources whose failures are noise (pollers, fire-and-forget revokes,
+// locally-handled checks). While a modal is already open, the modal component
+// itself ignores an identical re-publish so it can't visibly flicker.
 export const publishGlobalError = (payload: GlobalErrorPayload) => {
-  const now = Date.now();
-  const key = payloadKey(payload);
-
-  if (
-    key === lastPayloadKey &&
-    now - lastPublishedAt < SAME_ERROR_SUPPRESS_MS
-  ) {
-    console.debug(
-      "[GlobalError] suppressed repeating identical error:",
-      payload.title,
-    );
-    return;
-  }
-
-  if (now - lastPublishedAt < COALESCE_WINDOW_MS) {
-    console.debug(
-      "[GlobalError] suppressed duplicate within coalesce window:",
-      payload.title,
-    );
-    return;
-  }
-
-  lastPublishedAt = now;
-  lastPayloadKey = key;
   listener?.(payload);
 };
 
